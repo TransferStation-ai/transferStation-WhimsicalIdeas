@@ -1,0 +1,385 @@
+buildscript {
+    repositories {
+        // These repositories are only for Gradle plugins, put any other repositories in the repository block further below
+        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'org.spongepowered:mixingradle:0.7-SNAPSHOT'
+    }
+}
+
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+}
+
+apply plugin: 'org.spongepowered.mixin'
+
+group = mod_group_id
+version = mod_version
+
+base {
+    archivesName = mod_id
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(17)
+}
+
+minecraft {
+    // The mappings can be changed at any time and must be in the following format.
+    // Channel:   Version:
+    // official   MCVersion             Official field/method names from Mojang mapping files
+    // parchment  YYYY.MM.DD-MCVersion  Open community-sourced parameter names and javadocs layered on top of official
+    //
+    // You must be aware of the Mojang license when using the 'official' or 'parchment' mappings.
+    // See more information here: https://github.com/MinecraftForge/MCPConfig/blob/master/Mojang.md
+    //
+    // Parchment is an unofficial project maintained by ParchmentMC, separate from MinecraftForge
+    // Additional setup is needed to use their mappings: https://parchmentmc.org/docs/getting-started
+    //
+    // Use non-default mappings at your own risk. They may not always work.
+    // Simply re-run your setup task after changing the mappings to update your workspace.
+    mappings channel: mapping_channel, version: mapping_version
+
+    // When true, this property will have all Eclipse/IntelliJ IDEA run configurations run the "prepareX" task for the given run configuration before launching the game.
+    // In most cases, it is not necessary to enable.
+    // enableEclipsePrepareRuns = true
+    // enableIdeaPrepareRuns = true
+
+    // This property allows configuring Gradle's ProcessResources task(s) to run on IDE output locations before launching the game.
+    // It is REQUIRED to be set to true for this template to function.
+    // See https://docs.gradle.org/current/dsl/org.gradle.language.jvm.tasks.ProcessResources.html
+    copyIdeResources = true
+
+    // When true, this property will add the folder name of all declared run configurations to generated IDE run configurations.
+    // The folder name can be set on a run configuration using the "folderName" property.
+    // By default, the folder name of a run configuration is the name of the Gradle project containing it.
+    // generateRunFolders = true
+
+    // This property enables access transformers for use in development.
+    // They will be applied to the Minecraft artifact.
+    // The access transformer file can be anywhere in the project.
+    // However, it must be at "META-INF/accesstransformer.cfg" in the final mod jar to be loaded by Forge.
+    // This default location is a best practice to automatically put the file in the right place in the final jar.
+    // See https://docs.minecraftforge.net/en/latest/advanced/accesstransformers/ for more information.
+    // accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+
+    // Default run configurations.
+    // These can be tweaked, removed, or duplicated as needed.
+    runs {
+        // applies to all the run configs below
+        configureEach {
+            workingDirectory project.file('run')
+
+            // Recommended logging data for a userdev environment
+            // The markers can be added/remove as needed separated by commas.
+            // "SCAN": For mods scan.
+            // "REGISTRIES": For firing of registry events.
+            // "REGISTRYDUMP": For getting the contents of all registries.
+            property 'forge.logging.markers', 'REGISTRIES'
+
+
+            // Recommended logging level for the console
+            // You can set various levels here.
+            // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
+            property 'forge.logging.console.level', 'debug'
+
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        client {
+            // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+
+        server {
+            property 'forge.enabledGameTestNamespaces', mod_id
+            args '--nogui'
+        }
+
+        // This run config launches GameTestServer and runs all registered gametests, then exits.
+        // By default, the server will crash when no gametests are provided.
+        // The gametest system is also enabled by default for other run configs under the /test command.
+        gameTestServer {
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+
+        data {
+            // example of overriding the workingDirectory set in configureEach above
+            workingDirectory project.file('run-data')
+
+            // Specify the modid for data generation, where to output the resulting resource, and where to look for existing resources.
+            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+        }
+    }
+}
+
+mixin {
+    add sourceSets.main, "${mod_id}.refmap.json"
+
+    config "${mod_id}.mixins.json"
+}
+
+// Include resources generated by data generators.
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories {
+    // Put repositories for dependencies here
+    // ForgeGradle automatically adds the Forge maven and Maven Central for you
+
+    // If you have mod jar dependencies in ./libs, you can declare them as a repository like so.
+    // See https://docs.gradle.org/current/userguide/declaring_repositories.html#sub:flat_dir_resolver
+    // flatDir {
+    //     dir 'libs'
+    // }
+}
+
+dependencies {
+    // Specify the version of Minecraft to use.
+    // Any artifact can be supplied so long as it has a "userdev" classifier artifact and is a compatible patcher artifact.
+    // The "userdev" classifier will be requested and setup by ForgeGradle.
+    // If the group id is "net.minecraft" and the artifact id is one of ["client", "server", "joined"],
+    // then special handling is done to allow a setup of a vanilla dependency without the use of an external repository.
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    // Example mod dependency with JEI - using fg.deobf() ensures the dependency is remapped to your development mappings
+    // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
+    // compileOnly fg.deobf("mezz.jei:jei-${mc_version}-common-api:${jei_version}")
+    // compileOnly fg.deobf("mezz.jei:jei-${mc_version}-forge-api:${jei_version}")
+    // runtimeOnly fg.deobf("mezz.jei:jei-${mc_version}-forge:${jei_version}")
+
+    // Example mod dependency using a mod jar from ./libs with a flat dir repository
+    // This maps to ./libs/coolmod-${mc_version}-${coolmod_version}.jar
+    // The group id is ignored when searching -- in this case, it is "blank"
+    // implementation fg.deobf("blank:coolmod-${mc_version}:${coolmod_version}")
+
+    // For more info:
+    // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
+    // http://www.gradle.org/docs/current/userguide/dependency_management.html
+
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+
+}
+
+// ===================== Native C++ Build (MSVC + MinGW) =====================
+def nativeSrcDir = file('src/main/native')
+def nativeObjDir = file("${buildDir}/native/obj")
+def nativeOutDir = file("${buildDir}/native/bin")
+def nativeDllTarget = file("${nativeOutDir}/native-renderer.dll")
+def nativeResourcesDir = file('src/main/resources/natives/windows')
+
+def javaHome = System.getProperty('java.home') ?: System.getenv('JAVA_HOME')
+if (javaHome == null || javaHome.isEmpty()) {
+    javaHome = "${System.getProperty('java.home')}"
+}
+
+// Try to detect a native C++ compiler
+def detectCompiler() {
+    // 1. Try MSVC via vswhere
+    def vsWhere = ["${System.env['ProgramFiles(x86)'] ?: 'C:\\Program Files (x86)'}\\Microsoft Visual Studio\\Installer\\vswhere.exe"]
+    if (file(vsWhere[0]).exists()) {
+        return 'msvc'
+    }
+    // 2. Try MSVC via common install paths
+    def msvcPaths = [
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat",
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat",
+    ]
+    for (p in msvcPaths) {
+        if (file(p).exists()) return 'msvc'
+    }
+    // 3. Try MinGW (llvm-mingw or regular mingw-w64)
+    def mingwBins = [
+        "C:\\tools\\llvm-mingw\\llvm-mingw-20260602-ucrt-x86_64\\bin",
+        "C:\\tools\\w64devkit\\bin",
+        "C:\\mingw64\\bin",
+        "C:\\msys64\\mingw64\\bin",
+    ]
+    for (b in mingwBins) {
+        if (file("${b}/clang++.exe").exists() || file("${b}/g++.exe").exists()) {
+            return b  // return path to bin dir
+        }
+    }
+    // 4. Try PATH
+    try {
+        exec { commandLine 'where', 'clang++' }
+        return 'mingw-path'
+    } catch (ignored) {}
+    try {
+        exec { commandLine 'where', 'g++' }
+        return 'mingw-path'
+    } catch (ignored) {}
+    return null
+}
+
+task buildNativeDll {
+    description = 'Compile native-renderer.dll using MSVC or MinGW'
+    group = 'native'
+
+    outputs.file nativeDllTarget
+    inputs.dir nativeSrcDir
+    onlyIf { detectCompiler() != null }
+
+    doLast {
+        nativeObjDir.mkdirs()
+        nativeOutDir.mkdirs()
+        nativeResourcesDir.mkdirs()
+
+        def sourceFiles = fileTree(nativeSrcDir).matching { include 'src/*.cpp' }.files
+        if (sourceFiles.isEmpty()) {
+            throw new GradleException("No C++ source files found in ${nativeSrcDir}/src/")
+        }
+
+        def includeArgs = [
+            "-I${nativeSrcDir}/include",
+            "-I${javaHome}/include",
+            "-I${javaHome}/include/win32",
+        ]
+
+        def compiler = detectCompiler()
+
+        if (compiler == 'msvc') {
+            // === MSVC build ===
+            def objFiles = []
+            def clArgs = ['/nologo', '/O2', '/MT', '/EHsc', '/std:c++20']
+            includeArgs.each { clArgs.add("/I${it.replace('/', '\\')}") }
+
+            sourceFiles.each { src ->
+                def objFile = new File(nativeObjDir, src.name.replace('.cpp', '.obj'))
+                objFiles.add(objFile)
+                def compileArgs = ['cl.exe'] + clArgs + ['/c', src.absolutePath.replace('/', '\\'),
+                    '/Fo' + objFile.absolutePath.replace('/', '\\')]
+                exec {
+                    commandLine 'cmd', '/c', '''@echo off
+                        setlocal
+                        set VSCMD_START_DIR=%CD%
+                        for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe" -latest -property installationPath 2>nul`) do set VS_PATH=%%i
+                        if defined VS_PATH (
+                            call "%%VS_PATH%%\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1
+                        ) else if exist "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" (
+                            call "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1
+                        ) else if exist "C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat" (
+                            call "C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1
+                        ) else if exist "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" (
+                            call "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1
+                        ) else (
+                            echo Visual Studio not found!
+                            exit /b 1
+                        )
+                        ''' + compileArgs.collect{ "\"${it}\"" }.join(' ')
+                }
+            }
+
+            def linkArgs = ['link.exe', '/nologo', '/DLL', '/OUT:' + nativeDllTarget.absolutePath.replace('/', '\\')] +
+                objFiles.collect { it.absolutePath.replace('/', '\\') } +
+                ['opengl32.lib', 'user32.lib', 'gdi32.lib', 'ntdll.lib']
+
+            exec {
+                commandLine 'cmd', '/c', '''@echo off
+                    setlocal
+                    set VSCMD_START_DIR=%CD%
+                    for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe" -latest -property installationPath 2>nul`) do set VS_PATH=%%i
+                    if defined VS_PATH (
+                        call "%%VS_PATH%%\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1
+                    ) else if exist "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" (
+                        call "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1
+                    ) else if exist "C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat" (
+                        call "C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1
+                    ) else if exist "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" (
+                        call "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1
+                    ) else (
+                        echo Visual Studio not found!
+                        exit /b 1
+                    )
+                    ''' + linkArgs.collect{ "\"${it}\"" }.join(' ')
+            }
+        } else {
+            // === MinGW / Clang build ===
+            def mingwBin = compiler == 'mingw-path' ? '' : "${compiler}/"
+            def cxx = file("${mingwBin}clang++.exe").exists() ? "${mingwBin}clang++.exe" : "${mingwBin}g++.exe"
+
+            // Compile each .cpp to .o and link at once (simpler than MSVC's .obj approach)
+            def sourceFileList = sourceFiles.collect { it.absolutePath.replace('/', '\\') }.join(' ')
+            def linkLibs = ['-lopengl32', '-lgdi32', '-luser32', '-lntdll']
+
+            exec {
+                commandLine cxx,
+                    '-O2', '-std=c++20', '-shared',
+                    '-static', '-static-libgcc', '-static-libstdc++',
+                    '-o', nativeDllTarget.absolutePath.replace('/', '\\'),
+                    *sourceFiles.collect { it.absolutePath.replace('/', '\\') },
+                    *includeArgs,
+                    *linkLibs,
+                    '-Wl,--out-implib,' + file("${nativeOutDir}/libnative-renderer.dll.a").absolutePath.replace('/', '\\')
+            }
+        }
+
+        // Copy built DLL to resources
+        copy {
+            from nativeDllTarget
+            into nativeResourcesDir
+        }
+
+        // Copy compiler runtime DLLs (e.g. libunwind.dll) to resources if building with MinGW/Clang
+        if (compiler != 'msvc') {
+            String binDir = compiler == 'mingw-path' ? '' : compiler
+            String[] runtimeDlls = ['libunwind.dll', 'libc++.dll', 'libc++abi.dll',
+                                    'libgcc_s_seh-1.dll', 'libgcc_s_dw2-1.dll',
+                                    'libstdc++-6.dll', 'libwinpthread-1.dll']
+            for (String dllName : runtimeDlls) {
+                File dllFile = new File("${binDir}/${dllName}")
+                if (dllFile.exists()) {
+                    copy {
+                        from dllFile
+                        into nativeResourcesDir
+                    }
+                    println "Copied runtime dependency: ${dllName}"
+                }
+            }
+        }
+        println "Native DLL built: ${nativeDllTarget}"
+    }
+}
+
+// Jar configuration: merge manifest + native DLL + reobf
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes(["Specification-Title"     : mod_id,
+                    "Specification-Vendor"    : mod_authors,
+                    "Specification-Version"   : "1",
+                    "Implementation-Title"    : project.name,
+                    "Implementation-Version"  : project.jar.archiveVersion,
+                    "Implementation-Vendor"   : mod_authors,
+                    "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")])
+    }
+
+    finalizedBy 'reobfJar'
+}
+
+// Process resources: depends on native build + template expansion
+tasks.named('processResources', ProcessResources).configure {
+    dependsOn buildNativeDll
+
+    var replaceProperties = [minecraft_version   : minecraft_version, minecraft_version_range: minecraft_version_range,
+                             forge_version       : forge_version, forge_version_range: forge_version_range,
+                             loader_version_range: loader_version_range,
+                             mod_id              : mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
+                             mod_authors         : mod_authors, mod_description: mod_description,]
+
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
