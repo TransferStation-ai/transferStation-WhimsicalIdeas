@@ -13,7 +13,7 @@ You ask me what to do if I break down? Collapse is also part of the nonsense(
 
 Although fixing one problem may lead to another proble
 
-But I still recommend you use it [github issues](https://github.com/TransferStation-ai/ransferStation-WhimsicalIdeas/issues
+But I still recommend you use it [github issues](https://github.com/TransferStation-ai/ransferStation-WhimsicalIdeas/issues)
 
 He is also the model loader for mC-based gmod
 
