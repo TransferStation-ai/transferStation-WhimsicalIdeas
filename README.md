@@ -15,11 +15,11 @@ Although fixing one problem may lead to another proble
 
 But I still recommend you use it [github issues](https://github.com/TransferStation-ai/ransferStation-WhimsicalIdeas/issues)
 
-He is also the model loader for mC-based gmod
-
 Developers don't look at any issues other than the tracker
-----------
+---------------
+关于使用的资源
+感谢以下项目提供的参考以及技术支持
 
-因为我无法处理后面的事情只能先把内容上传上来了
+Gui来源：[ysm](https://github.com/YesSteveModel/YSM-Wiki-Issues)
 
-Because I can't handle the rest of the work, I can only upload the content first
+起源模型加载器参考：[点这里跳转](https://developer.valvesoftware.com/wiki/Category:Zh/Modeling)
