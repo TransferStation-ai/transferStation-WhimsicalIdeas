@@ -1,21 +1,19 @@
 # transferStation-WhimsicalIdeas
-This mod carries some of my own MC ideas and some expansions for certain mods
+以下是项目中文介绍
+--------------------------
+使用的许可证: GPL 3.0
+
+关于资源
+
+使用了[ysm](https://github.com/YesSteveModel/YSM-Wiki-Issues)
+
+相关资料来源[起源模型](https://developer.valvesoftware.com/wiki/Category:Zh/Modeling)
+
+Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
+
+
 
 --------------------------
-License: GPL 3.0
+[本项目的的issues](https://github.com/TransferStation-ai/TransferStation-WhimsicalIdeas/issues)
 
---------------------------
-This mod is all about nonsensical humor
 
-You never know what will happen in the next second
-
-You ask me what to do if I break down? Collapse is also part of the nonsense(
-
-Although fixing one problem may lead to another proble
-
-But I still recommend you use it [github issues](https://github.com/TransferStation-ai/TransferStation-WhimsicalIdeas/issues)
-
-He is also the model loader for mC-based gmod
-
-Developers don't look at any issues other than the tracker
-----------
