@@ -5,7 +5,7 @@
 
 关于资源
 
-使用了[ysm](https://github.com/YesSteveModel/YSM-Wiki-Issues)
+使用了[ysm ui](https://github.com/YesSteveModel/YSM-Wiki-Issues)
 
 相关资料来源[起源模型](https://developer.valvesoftware.com/wiki/Category:Zh/Modeling)
 
