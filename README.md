@@ -19,8 +19,3 @@ He is also the model loader for mC-based gmod
 
 Developers don't look at any issues other than the tracker
 ----------
-
-不要将其改为1.21.1
-因为这踏马的是1.20.1的分支
-这个项目原本就是mc forge1.20.1的项目
-Because I can't handle the rest of the work, I can only upload the content first
