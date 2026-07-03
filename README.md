@@ -11,7 +11,11 @@
 
 Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 
+本模组做的事情包括
 
+允许你在 Mc里使用盖瑞模组的模型！
+
+随机 生 物 台 词
 
 --------------------------
 [本项目的的issues](https://github.com/TransferStation-ai/TransferStation-WhimsicalIdeas/issues)
