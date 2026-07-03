@@ -1,8 +1,15 @@
 buildscript {
     repositories {
-        // These repositories are only for Gradle plugins, put any other repositories in the repository block further below
-        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
-        mavenCentral()
+        maven {
+            name = 'SpongePowered'
+            url = 'https://repo.spongepowered.org/repository/maven-public/'
+            content { includeGroupByRegex("org\\.spongepowered.*") }
+        }
+        maven {
+            name = 'MavenCentral-BS'
+            url = 'https://repo.maven.apache.org/maven2'
+            content { excludeGroupByRegex("org\\.spongepowered.*") }
+        }
     }
     dependencies {
         classpath 'org.spongepowered:mixingradle:0.7-SNAPSHOT'
@@ -131,16 +138,29 @@ mixin {
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
-    // Put repositories for dependencies here
-    // ForgeGradle automatically adds the Forge maven and Maven Central for you
-
-    // If you have mod jar dependencies in ./libs, you can declare them as a repository like so.
-    // See https://docs.gradle.org/current/userguide/declaring_repositories.html#sub:flat_dir_resolver
-    // flatDir {
-    //     dir 'libs'
-    // }
+    maven {
+        name = 'SpongePowered'
+        url = 'https://repo.spongepowered.org/repository/maven-public/'
+        content { includeGroupByRegex("org\\.spongepowered.*") }
+    }
+    maven {
+        name = 'Aliyun'
+        url = "https://maven.aliyun.com/repository/public"
+    }
+    maven {
+        name = 'HuaweiCloud'
+        url = "https://repo.huaweicloud.com/repository/maven/"
+    }
+    maven {
+        name = 'Tsinghua'
+        url = "https://mirrors.tuna.tsinghua.edu.cn/maven/"
+    }
+    maven {
+        name = 'AliyunGoogle'
+        url = "https://maven.aliyun.com/repository/google"
+    }
+    flatDir { dirs "libs" }
 }
-
 dependencies {
     // Specify the version of Minecraft to use.
     // Any artifact can be supplied so long as it has a "userdev" classifier artifact and is a compatible patcher artifact.
@@ -148,6 +168,10 @@ dependencies {
     // If the group id is "net.minecraft" and the artifact id is one of ["client", "server", "joined"],
     // then special handling is done to allow a setup of a vanilla dependency without the use of an external repository.
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    compileOnly "org.lwjgl:lwjgl-glfw:3.3.1"
+    compileOnly "org.lwjgl:lwjgl:3.3.1"
+    compileOnly "org.joml:joml:1.10.5"
 
     // Example mod dependency with JEI - using fg.deobf() ensures the dependency is remapped to your development mappings
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
@@ -180,12 +204,16 @@ if (javaHome == null || javaHome.isEmpty()) {
     javaHome = "${System.getProperty('java.home')}"
 }
 
-// Try to detect a native C++ compiler
+// Try to detect a native C++ compiler (cached to avoid repeated exec calls)
+ext._compilerResult = null
+ext._compilerDetected = false
 def detectCompiler() {
+    if (ext._compilerDetected) return ext._compilerResult
+    ext._compilerDetected = true
     // 1. Try MSVC via vswhere
     def vsWhere = ["${System.env['ProgramFiles(x86)'] ?: 'C:\\Program Files (x86)'}\\Microsoft Visual Studio\\Installer\\vswhere.exe"]
     if (file(vsWhere[0]).exists()) {
-        return 'msvc'
+        ext._compilerResult = 'msvc'; return ext._compilerResult
     }
     // 2. Try MSVC via common install paths
     def msvcPaths = [
@@ -193,7 +221,7 @@ def detectCompiler() {
         "C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat",
     ]
     for (p in msvcPaths) {
-        if (file(p).exists()) return 'msvc'
+        if (file(p).exists()) { ext._compilerResult = 'msvc'; return ext._compilerResult }
     }
     // 3. Try MinGW (llvm-mingw or regular mingw-w64)
     def mingwBins = [
@@ -204,17 +232,17 @@ def detectCompiler() {
     ]
     for (b in mingwBins) {
         if (file("${b}/clang++.exe").exists() || file("${b}/g++.exe").exists()) {
-            return b  // return path to bin dir
+            ext._compilerResult = b; return ext._compilerResult
         }
     }
-    // 4. Try PATH
+    // 4. Try PATH (only check once, avoid repeated exec)
     try {
-        exec { commandLine 'where', 'clang++' }
-        return 'mingw-path'
+        exec { commandLine 'where', 'clang++'; standardOutput = new ByteArrayOutputStream() }
+        ext._compilerResult = 'mingw-path'; return ext._compilerResult
     } catch (ignored) {}
     try {
-        exec { commandLine 'where', 'g++' }
-        return 'mingw-path'
+        exec { commandLine 'where', 'g++'; standardOutput = new ByteArrayOutputStream() }
+        ext._compilerResult = 'mingw-path'; return ext._compilerResult
     } catch (ignored) {}
     return null
 }
@@ -225,6 +253,14 @@ task buildNativeDll {
 
     outputs.file nativeDllTarget
     inputs.dir nativeSrcDir
+    inputs.property('javaHome', javaHome)
+    outputs.upToDateWhen {
+        if (!nativeDllTarget.exists()) return false
+        def srcDir = new File(nativeSrcDir, 'src')
+        if (!srcDir.exists()) return true
+        def latestSrc = srcDir.listFiles()?.collect { it.lastModified() }?.max() ?: 0
+        return nativeDllTarget.lastModified() > latestSrc
+    }
     onlyIf { detectCompiler() != null }
 
     doLast {
@@ -357,7 +393,12 @@ tasks.named('jar', Jar).configure {
                     "Implementation-Title"    : project.name,
                     "Implementation-Version"  : project.jar.archiveVersion,
                     "Implementation-Vendor"   : mod_authors,
-                    "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")])
+                    "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                    "MixinConfigs"            : "${mod_id}.mixins.json"])
+    }
+
+    from("${buildDir}/classes/java/main") {
+        include "*.refmap.json"
     }
 
     finalizedBy 'reobfJar'

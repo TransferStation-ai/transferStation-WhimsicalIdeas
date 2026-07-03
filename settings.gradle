@@ -1,10 +1,11 @@
 pluginManagement {
     repositories {
-        gradlePluginPortal()
         maven {
-            name = 'MinecraftForge'
+            name = 'ForgeGradle-PM'
             url = 'https://maven.minecraftforge.net/'
+            content { includeGroupByRegex("net\\.minecraftforge.*") }
         }
+        gradlePluginPortal()
     }
 }
 
