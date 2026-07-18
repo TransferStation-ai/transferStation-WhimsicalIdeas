@@ -11,7 +11,7 @@
 
 Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 
-已参考该项目的动画系统: [参考](https://wikis.khronos.org/opengl/Main_Page)
+动画系统[参考](https://wikis.khronos.org/opengl/Main_Page)
 
 本模组做的事情包括
 
