@@ -3,7 +3,7 @@
 --------------------------
 使用的许可证: GPL 3.0
 
-关于资源
+关于署名
 
 使用了[ysm ui](https://github.com/YesSteveModel/YSM-Wiki-Issues)
 
