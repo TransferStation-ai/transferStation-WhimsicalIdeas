@@ -11,6 +11,8 @@
 
 Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 
+已参考该项目的动画系统: [参考](https://wikis.khronos.org/opengl/Main_Page)
+
 本模组做的事情包括
 
 允许你在 Mc里使用盖瑞模组的模型！
@@ -20,4 +22,4 @@ Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 --------------------------
 [本项目的的issues](https://github.com/TransferStation-ai/TransferStation-WhimsicalIdeas/issues)
 
-
+https://github.com/shiroha-233/MC-MMD-rust
