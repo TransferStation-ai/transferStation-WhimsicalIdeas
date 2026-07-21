@@ -559,6 +559,43 @@ public class VmtParser {
         }
     }
 
+    /**
+     * VMT 材质继承解析器。
+     * 支持 %includematerial 继承链，合并参数。
+     */
+    public static class VmtIncludeResolver {
+        private final java.util.function.Function<String, VmtMaterial> materialLoader;
+        
+        public VmtIncludeResolver(java.util.function.Function<String, VmtMaterial> materialLoader) {
+            this.materialLoader = materialLoader;
+        }
+        
+        /**
+         * 解析一个 VMT 材质，追踪其 %includematerial 链并合并参数。
+         * @param vmt 已解析的 VmtMaterial 对象
+         * @param maxDepth 最大继承深度（防止循环引用）
+         * @return 合并了所有父材质参数的新 VmtMaterial
+         */
+        public VmtMaterial resolve(VmtMaterial vmt, int maxDepth) {
+            if (maxDepth <= 0) return vmt;
+            
+            String include = vmt.parameters.get("%includematerial");
+            if (include == null || include.isEmpty()) return vmt;
+            
+            VmtMaterial parent = materialLoader.apply(include);
+            if (parent == null) return vmt;
+            
+            VmtMaterial resolved = resolve(parent, maxDepth - 1);
+            
+            // 合并：子 VMT 的参数覆盖父 VMT
+            VmtMaterial result = new VmtMaterial();
+            result.shader = vmt.shader != null ? vmt.shader : resolved.shader;
+            result.parameters.putAll(resolved.parameters);
+            result.parameters.putAll(vmt.parameters); // 子覆盖父
+            return result;
+        }
+    }
+
     public static VmtMaterial parse(byte[] data) throws IOException {
         String content = new String(data, StandardCharsets.UTF_8);
         return parse(content);
