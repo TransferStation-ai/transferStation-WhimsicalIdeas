@@ -135,6 +135,11 @@ public class ParticleManager {
         }
     }
 
+    /** Return the list of registered system names */
+    public List<String> getRegisteredSystemNames() {
+        return List.copyOf(registry.keySet());
+    }
+
     public int getTotalParticleCount() {
         int count = 0;
         synchronized (activeEmitters) {

@@ -23,6 +23,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.GmodModelConfig;
+import transferstation.transferstation_whimsicalideas.client.particle.ParticleManager;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.NpcEntity;
 import transferstation.transferstation_whimsicalideas.client.model.NpcModelRegistry;
@@ -160,6 +161,24 @@ public class Transferstation_whimsicalideas {
                 LOGGER.info("Native renderer loaded successfully");
             } else {
                 LOGGER.info("Native renderer not available, using Java fallback");
+            }
+
+            loadBuiltInParticles();
+        }
+
+        private static void loadBuiltInParticles() {
+            // 从 mod jar 的 valve_content/particles/ 目录加载
+            var loc = new net.minecraft.resources.ResourceLocation(
+                    Transferstation_whimsicalideas.MODID,
+                    "valve_content/particles/builtin.pcf");
+            var opt = net.minecraft.client.Minecraft.getInstance().getResourceManager().getResource(loc);
+            if (opt.isPresent()) {
+                try (var input = opt.get().open()) {
+                    byte[] data = input.readAllBytes();
+                    ParticleManager.getInstance().loadPcfFromBytes("builtin", data);
+                } catch (Exception e) {
+                    // Not all builds have bundled particles
+                }
             }
         }
     }
