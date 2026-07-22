@@ -13,6 +13,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
+import transferstation.transferstation_whimsicalideas.client.particle.renderer.ParticleRenderer;
+
 public class ParticleManager {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static ParticleManager INSTANCE;
@@ -24,6 +26,9 @@ public class ParticleManager {
 
     // PCF file cache (raw bytes)
     private final Map<String, byte[]> pcfCache = new ConcurrentHashMap<>();
+
+    // Renderer registry: maps renderer type to implementation
+    private final Map<PcfParticleSystemDef.RendererType, ParticleRenderer> renderers = new HashMap<>();
 
     private ParticleManager() {}
 
@@ -127,12 +132,26 @@ public class ParticleManager {
     public void render(PoseStack poseStack, MultiBufferSource bufferSource, float partialTicks) {
         synchronized (activeEmitters) {
             for (var emitter : activeEmitters) {
-                // Delegate rendering to the appropriate renderer based on emitter definition
                 var def = emitter.getDefinition();
                 if (def.renderer == null) continue;
-                // Renderers will be selected and dispatched here
+                var renderer = renderers.get(def.renderer.type);
+                if (renderer != null) {
+                    renderer.render(poseStack, bufferSource, emitter, emitter.getParticles(), partialTicks, 0xF000F0);
+                }
             }
         }
+    }
+
+    /** Return the number of active emitters */
+    public int getActiveEmitterCount() {
+        synchronized (activeEmitters) {
+            return activeEmitters.size();
+        }
+    }
+
+    /** Register a particle renderer for the given renderer type */
+    public void registerRenderer(PcfParticleSystemDef.RendererType type, ParticleRenderer renderer) {
+        renderers.put(type, renderer);
     }
 
     /** Return the list of registered system names */
