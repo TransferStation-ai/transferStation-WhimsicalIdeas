@@ -2,12 +2,11 @@ package transferstation.transferstation_whimsicalideas.client.particle;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.logging.LogUtils;
-import net.minecraft.client.Minecraft;
+
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -54,7 +53,7 @@ public class ParticleManager {
             }
             pcfCache.put(path.getFileName().toString(), data);
             LOGGER.info("[ParticleManager] Loaded {} particle systems from {}", systems.systemDefinitions.size(), path);
-        } catch (IOException e) {
+        } catch (Exception e) {
             LOGGER.error("[ParticleManager] Failed to load PCF: {}", path, e);
         }
     }
@@ -67,7 +66,7 @@ public class ParticleManager {
                 registerSystem(def);
             }
             pcfCache.put(name, data);
-        } catch (IOException e) {
+        } catch (Exception e) {
             LOGGER.error("[ParticleManager] Failed to parse PCF from bytes: {}", name, e);
         }
     }
@@ -101,13 +100,13 @@ public class ParticleManager {
         dt = Math.min(dt, 0.05f); // cap to prevent physics explosion
 
         synchronized (activeEmitters) {
+            int globalCount = getTotalParticleCount();
             Iterator<ParticleEmitter> it = activeEmitters.iterator();
             while (it.hasNext()) {
                 ParticleEmitter emitter = it.next();
                 emitter.tick(dt);
 
-                // Enforce particle caps
-                int globalCount = getTotalParticleCount();
+                // Enforce particle caps using local count tracking
                 if (globalCount > maxGlobalParticles) {
                     emitter.active = false;
                 }
@@ -119,6 +118,7 @@ public class ParticleManager {
                 if (!emitter.active && emitter.getParticleCount() == 0) {
                     it.remove();
                 }
+                globalCount = getTotalParticleCount();
             }
         }
     }
