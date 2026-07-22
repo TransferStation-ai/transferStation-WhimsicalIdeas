@@ -255,6 +255,24 @@ public class NpcModelRegistry {
         LOGGER.info("[NpcModelRegistry] Registered NPC entity: {} with model: {} and spawn egg", entityId, modelName);
     }
 
+    /**
+     * Registers a built-in NPC entity type via the DeferredRegister.
+     * Designed for use during mod construction (before DeferredRegister is frozen).
+     * Health, speed, and armor are accepted for future attribute configuration;
+     * currently only scale is applied to the entity size.
+     */
+    @SuppressWarnings("unchecked")
+    public static RegistryObject<EntityType<?>> registerBuiltinNpc(
+            String entityId, String modelPath, float health, float speed, float armor, float scale) {
+        var entityType = (RegistryObject<EntityType<?>>) (RegistryObject<?>) ENTITY_TYPES.register(entityId, () ->
+            EntityType.Builder.<Mob>of((type, world) -> new NpcEntity(type, world, modelPath),
+                MobCategory.CREATURE)
+                .sized(0.6f * scale, 1.8f * scale)
+                .build(entityId));
+        registeredNpcs.put(entityId, entityType);
+        return entityType;
+    }
+
     public static EntityType<NpcRagdoll> getNpcRagdollType() {
         return NPC_RAGDOLL != null ? NPC_RAGDOLL.get() : null;
     }

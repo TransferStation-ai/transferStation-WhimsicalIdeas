@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "npcs": [
+    {
+      "id": "metrocop",
+      "displayName": "Metrocop",
+      "modelPath": "valve_content/models/npc/metrocop",
+      "attributes": {
+        "health": 30.0,
+        "speed": 0.25,
+        "armor": 10.0,
+        "scale": 1.0
+      },
+      "eggColor": { "primary": 0x444444, "secondary": 0x8888FF }
+    },
+    {
+      "id": "combine_soldier",
+      "displayName": "Combine Soldier",
+      "modelPath": "valve_content/models/npc/combine_soldier",
+      "attributes": {
+        "health": 50.0,
+        "speed": 0.28,
+        "armor": 30.0,
+        "scale": 1.0
+      },
+      "eggColor": { "primary": 0x555555, "secondary": 0xFF8800 }
+    },
+    {
+      "id": "zombie_classic",
+      "displayName": "Zombie",
+      "modelPath": "valve_content/models/npc/zombie_classic",
+      "attributes": {
+        "health": 75.0,
+        "speed": 0.2,
+        "armor": 0.0,
+        "scale": 1.0
+      },
+      "eggColor": { "primary": 0x88AA44, "secondary": 0x445522 }
+    },
+    {
+      "id": "headcrab",
+      "displayName": "Headcrab",
+      "modelPath": "valve_content/models/npc/headcrab",
+      "attributes": {
+        "health": 15.0,
+        "speed": 0.35,
+        "armor": 0.0,
+        "scale": 0.6
+      },
+      "eggColor": { "primary": 0x885533, "secondary": 0xCC9966 }
+    },
+    {
+      "id": "vortigaunt",
+      "displayName": "Vortigaunt",
+      "modelPath": "valve_content/models/npc/vortigaunt",
+      "attributes": {
+        "health": 80.0,
+        "speed": 0.22,
+        "armor": 5.0,
+        "scale": 1.1
+      },
+      "eggColor": { "primary": 0x446688, "secondary": 0x88CCEE }
+    },
+    {
+      "id": "antlion",
+      "displayName": "Antlion",
+      "modelPath": "valve_content/models/npc/antlion",
+      "attributes": {
+        "health": 40.0,
+        "speed": 0.4,
+        "armor": 15.0,
+        "scale": 0.9
+      },
+      "eggColor": { "primary": 0x664422, "secondary": 0xAA8855 }
+    },
+    {
+      "id": "fast_zombie",
+      "displayName": "Fast Zombie",
+      "modelPath": "valve_content/models/npc/fast_zombie",
+      "attributes": {
+        "health": 50.0,
+        "speed": 0.45,
+        "armor": 0.0,
+        "scale": 0.9
+      },
+      "eggColor": { "primary": 0x99BB55, "secondary": 0x669933 }
+    },
+    {
+      "id": "manhack",
+      "displayName": "Manhack",
+      "modelPath": "valve_content/models/npc/manhack",
+      "attributes": {
+        "health": 20.0,
+        "speed": 0.5,
+        "armor": 5.0,
+        "scale": 0.5
+      },
+      "eggColor": { "primary": 0x888888, "secondary": 0xFFFF00 }
+    },
+    {
+      "id": "rollermine",
+      "displayName": "Rollermine",
+      "modelPath": "valve_content/models/npc/rollermine",
+      "attributes": {
+        "health": 50.0,
+        "speed": 0.3,
+        "armor": 40.0,
+        "scale": 0.7
+      },
+      "eggColor": { "primary": 0x4488AA, "secondary": 0xAAEEFF }
+    },
+    {
+      "id": "stalker",
+      "displayName": "Stalker",
+      "modelPath": "valve_content/models/npc/stalker",
+      "attributes": {
+        "health": 100.0,
+        "speed": 0.18,
+        "armor": 0.0,
+        "scale": 1.0
+      },
+      "eggColor": { "primary": 0x222233, "secondary": 0x555577 }
+    }
+  ]
+}

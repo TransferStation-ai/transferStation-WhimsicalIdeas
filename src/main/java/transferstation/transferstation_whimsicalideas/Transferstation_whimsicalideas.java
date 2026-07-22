@@ -1,5 +1,6 @@
 package transferstation.transferstation_whimsicalideas;
 
+import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -30,6 +31,8 @@ import transferstation.transferstation_whimsicalideas.client.model.NpcModelRegis
 import transferstation.transferstation_whimsicalideas.event.FractureHandler;
 import transferstation.transferstation_whimsicalideas.event.InjuryEventHandler;
 
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
@@ -49,6 +52,10 @@ public class Transferstation_whimsicalideas {
         java.nio.file.Path configDir = FMLPaths.CONFIGDIR.get().resolve(MODID);
         NpcModelRegistry.scanAndRegister(configDir);
 
+        // Register built-in Valve NPC entities from the bundled registry JSON.
+        // Must happen in the constructor while DeferredRegister is still unfrozen.
+        registerBuiltinValveNpcs();
+
         net.minecraftforge.fml.ModLoadingContext.get().registerConfig(
                 ModConfig.Type.COMMON, Config.SPEC, MODID + "-common.toml");
 
@@ -59,6 +66,37 @@ public class Transferstation_whimsicalideas {
         bus.register(InjuryEventHandler.class);
 
         modBus.addListener(this::onEntityAttributeCreation);
+    }
+
+    /**
+     * Registers all built-in Valve NPC entities from the bundled
+     * {@code valve_npc_registry.json} asset.
+     * <p>
+     * Must be called during mod construction while the DeferredRegister is still
+     * open. Entity registration must NOT be deferred to FMLClientSetupEvent
+     * because Forge freezes the registry after mod construction.
+     */
+    private static void registerBuiltinValveNpcs() {
+        try (var is = Transferstation_whimsicalideas.class.getClassLoader()
+                .getResourceAsStream("assets/transferstation_whimsicalideas/valve_npc_registry.json")) {
+            if (is == null) {
+                LOGGER.debug("[Transferstation] No valve_npc_registry.json found on classpath, skipping");
+                return;
+            }
+            var json = JsonParser.parseReader(new InputStreamReader(is, StandardCharsets.UTF_8)).getAsJsonObject();
+            var npcs = json.getAsJsonArray("npcs");
+            for (var elem : npcs) {
+                var npc = elem.getAsJsonObject();
+                String id = npc.get("id").getAsString();
+                String modelPath = npc.get("modelPath").getAsString();
+                float scale = npc.getAsJsonObject("attributes").get("scale").getAsFloat();
+                String entityId = "valve_" + id;
+                NpcModelRegistry.registerBuiltinNpc(entityId, modelPath, 20f, 0.25f, 0f, scale);
+            }
+            LOGGER.info("[Transferstation] Registered {} built-in Valve NPCs", npcs.size());
+        } catch (Exception e) {
+            LOGGER.debug("[Transferstation] No built-in Valve NPCs to register");
+        }
     }
 
     @SuppressWarnings("unchecked")
