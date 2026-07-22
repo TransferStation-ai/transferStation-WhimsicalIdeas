@@ -59,6 +59,9 @@ public class Transferstation_whimsicalideas {
         net.minecraftforge.fml.ModLoadingContext.get().registerConfig(
                 ModConfig.Type.COMMON, Config.SPEC, MODID + "-common.toml");
 
+        // 注册网络通道
+        transferstation.transferstation_whimsicalideas.network.NpcChatNetwork.register();
+
         IEventBus bus = MinecraftForge.EVENT_BUS;
         bus.register(EntityChatHandler.class);
         bus.register(CleanupHandler.class);
