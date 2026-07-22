@@ -36,8 +36,6 @@ public class BeamParticleRenderer implements ParticleRenderer {
         builder.begin(VertexFormat.Mode.DEBUG_LINES, DefaultVertexFormat.POSITION_COLOR);
 
         Matrix4f matrix = poseStack.last().pose();
-        float beamWidth = emitter.getDefinition().renderer != null ?
-            emitter.getDefinition().renderer.beamWidth : 2f;
 
         // Connect particles sequentially to form beam
         for (int i = 0; i < particles.size() - 1; i++) {
