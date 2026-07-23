@@ -28,6 +28,9 @@ import transferstation.transferstation_whimsicalideas.client.particle.ParticleMa
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.NpcEntity;
 import transferstation.transferstation_whimsicalideas.client.model.NpcModelRegistry;
+import transferstation.transferstation_whimsicalideas.client.voice.VoiceCaptureService;
+import transferstation.transferstation_whimsicalideas.client.voice.VoiceConfig;
+import transferstation.transferstation_whimsicalideas.client.voice.VoskSttEngine;
 import transferstation.transferstation_whimsicalideas.event.FractureHandler;
 import transferstation.transferstation_whimsicalideas.event.InjuryEventHandler;
 
@@ -119,7 +122,25 @@ public class Transferstation_whimsicalideas {
         @SubscribeEvent
         public static void onClientSetup(FMLClientSetupEvent event) {
             LOGGER.info("Client setup complete");
+            // Initialize voice input services
+            initializeVoiceInput();
             initializeClientComponents();
+        }
+
+        private static void initializeVoiceInput() {
+            // Load voice config
+            VoiceConfig.load();
+
+            // Initialize microphone detection
+            VoiceCaptureService.initialize();
+
+            // Check if Vosk model exists and initialize on background thread
+            if (VoiceConfig.isModelAvailable()) {
+                VoskSttEngine.initialize();
+            } else {
+                LOGGER.info("[TransferStation] Vosk model not found at {}; voice input disabled until model is downloaded",
+                        VoiceConfig.getModelPath());
+            }
         }
 
         /**
