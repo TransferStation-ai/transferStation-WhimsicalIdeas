@@ -9,6 +9,9 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.model.NpcChatHandler;
+import transferstation.transferstation_whimsicalideas.client.voice.VoiceCaptureService;
+import transferstation.transferstation_whimsicalideas.client.voice.VoiceConfig;
+import transferstation.transferstation_whimsicalideas.client.voice.VoskSttEngine;
 
 import java.io.IOException;
 import java.net.URI;
@@ -185,6 +188,103 @@ public class AiConfigScreen extends Screen {
                     statusType = StatusType.SUCCESS;
                 }
         ).pos(cx - 50, y).size(280, 18).build());
+
+        // ──── Voice Input Section ────
+        y += 16;
+        y += 16;
+        // Enable voice toggle
+        var voiceToggle = addRenderableWidget(Button.builder(
+            Component.translatable(
+                VoiceConfig.isEnabled()
+                    ? "gui.transferstation_whimsicalideas.voice_enabled"
+                    : "gui.transferstation_whimsicalideas.voice_disabled"),
+            btn -> {
+                VoiceConfig.setEnabled(!VoiceConfig.isEnabled());
+                btn.setMessage(Component.translatable(
+                    VoiceConfig.isEnabled()
+                        ? "gui.transferstation_whimsicalideas.voice_enabled"
+                        : "gui.transferstation_whimsicalideas.voice_disabled"));
+            }
+        ).pos(cx - 50, y).size(280, 18).build());
+
+        y += 22;
+        // Auto-send toggle
+        var autoSendToggle = addRenderableWidget(Button.builder(
+            Component.translatable(
+                VoiceConfig.isAutoSend()
+                    ? "gui.transferstation_whimsicalideas.voice_autosend_on"
+                    : "gui.transferstation_whimsicalideas.voice_autosend_off"),
+            btn -> {
+                VoiceConfig.setAutoSend(!VoiceConfig.isAutoSend());
+                btn.setMessage(Component.translatable(
+                    VoiceConfig.isAutoSend()
+                        ? "gui.transferstation_whimsicalideas.voice_autosend_on"
+                        : "gui.transferstation_whimsicalideas.voice_autosend_off"));
+            }
+        ).pos(cx - 50, y).size(280, 18).build());
+
+        y += 22;
+        // Download model button
+        addRenderableWidget(Button.builder(
+            Component.translatable("gui.transferstation_whimsicalideas.voice_download_model"),
+            btn -> {
+                btn.active = false;
+                btn.setMessage(Component.literal("§e下载中..."));
+                java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    boolean ok = VoiceConfig.downloadDefaultModel();
+                    net.minecraft.client.Minecraft.getInstance().execute(() -> {
+                        if (ok) {
+                            btn.setMessage(Component.literal("§a下载完成"));
+                            statusMessage = net.minecraft.network.chat.Component.translatable(
+                                "gui.transferstation_whimsicalideas.voice_download_done").getString();
+                            statusTimer = 80;
+                            statusType = StatusType.SUCCESS;
+                            VoskSttEngine.initialize()
+                                .thenRunAsync(() -> {}, net.minecraft.client.Minecraft.getInstance());
+                        } else {
+                            btn.setMessage(Component.translatable(
+                                "gui.transferstation_whimsicalideas.voice_download_model"));
+                            btn.active = true;
+                            statusMessage = net.minecraft.network.chat.Component.translatable(
+                                "gui.transferstation_whimsicalideas.voice_download_failed").getString();
+                            statusTimer = 100;
+                            statusType = StatusType.ERROR;
+                        }
+                    });
+                });
+            }
+        ).pos(cx - 50, y).size(280, 18).build());
+
+        y += 22;
+        // Test mic button
+        addRenderableWidget(Button.builder(
+            Component.translatable("gui.transferstation_whimsicalideas.voice_test_mic"),
+            btn -> {
+                if (VoiceCaptureService.isRecording()) {
+                    VoiceCaptureService.stopRecording();
+                    btn.setMessage(Component.translatable("gui.transferstation_whimsicalideas.voice_test_mic"));
+                    statusMessage = net.minecraft.network.chat.Component.translatable(
+                        "gui.transferstation_whimsicalideas.voice_test_done").getString();
+                    statusTimer = 60;
+                    statusType = StatusType.SUCCESS;
+                } else {
+                    VoiceCaptureService.startRecording(data -> {
+                        net.minecraft.client.Minecraft.getInstance().execute(() -> {
+                            statusMessage = net.minecraft.network.chat.Component.translatable(
+                                "gui.transferstation_whimsicalideas.voice_test_received",
+                                data.length).getString();
+                            statusTimer = 80;
+                            statusType = StatusType.SUCCESS;
+                        });
+                    });
+                    btn.setMessage(Component.literal("§c停止测试"));
+                    statusMessage = net.minecraft.network.chat.Component.translatable(
+                        "gui.transferstation_whimsicalideas.voice_test_recording").getString();
+                    statusTimer = 0;
+                    statusType = StatusType.INFO;
+                }
+            }
+        ).pos(cx - 50, y).size(280, 18).build());
     }
 
     private void testConnection() {
@@ -312,6 +412,7 @@ public class AiConfigScreen extends Screen {
         if (apiKeyField != null) NpcChatHandler.setApiKey(apiKeyField.getValue());
         if (endpointField != null) NpcChatHandler.setApiEndpoint(endpointField.getValue());
         NpcChatHandler.setEnabled(enabled);
+        VoiceConfig.save();
         minecraft.setScreen(null);
     }
 }
