@@ -1,37 +1,47 @@
-# Task 2 Report: Particle & ParticleEmitter Runtime
+# Task 2 Report: NpcChatScreen — 聊天界面 GUI
 
 ## Implementation Summary
 
-Created two Java source files implementing the runtime core of the particle system:
+Created `NpcChatScreen.java` — a full-screen chat GUI for interacting with NPCs.
 
-### `Particle.java`
-- Data class representing a single particle with position, velocity, color, size, rotation, age, lifetime, and animation frame state
-- `tick(float dt)` — updates position via velocity, increments age, tracks previous position for trail rendering
-- `getProgress()` — normalized lifetime [0..1]
-- Alpha getter/setter delegates to `color.w`
+### `NpcChatScreen.java` (260 lines)
 
-### `ParticleEmitter.java`
-- Manages a pool of `Particle` instances driven by a `PcfParticleSystemDef.SystemDefinition`
-- Continuous emission mode with configurable rate and max particles
-- `tick(float dt)` — emits new particles when continuous, updates all alive particles, applies per-frame operators, removes dead particles
-- `burst(int count)` — one-shot emission up to `maxParticles`
-- 12 initializer types: `position_sphere`, `position_box`, `position_circle`, `velocity_random`, `color_random`, `alpha_random`, `lifetime_random`, `size_random`, `rotation_random`
-- 10 operator types: `gravity`, `friction`/`damping`, `noise`, `color_fade`, `alpha_fade`, `size_scale`, `oscillator`, `vortex`, `wind`
-- `onSpawn` callback for external hooks (e.g., attaching trail emitters)
-- `renderer.type` switch sets default particle size per renderer kind
+- **Class:** `NpcChatScreen extends Screen` — Minecraft GUI screen
+- **Constructor:** Takes `NpcEntity` parameter; extracts `npcUuid` and `npcName`
+- **init():** Sets up `EditBox` input field, Send button, and Close button
+- **render():** Renders title, scrollable chat history with scissor clipping, typewriter effect output, input label, and "typing" indicator
+- **sendMessage():** Validates input (non-empty, cooldown 1s, not awaiting reply), adds message locally, sends `ChatC2SPacket` to server via `PacketDistributor.SERVER.noArg()`
+- **onNpcReply():** Called by `ChatS2CPacket.handle`; sets up typewriter effect state
+- **tick():** Drives typewriter animation (2 ticks/char ≈ 10 chars/sec), trims message history to 100 entries
+- **mouseScrolled():** Scrolls chat history
+- **keyPressed():** ESC closes, Enter sends, otherwise delegates to EditBox
+- **charTyped() / mouseClicked():** Delegates to EditBox
+- **isPauseScreen():** Returns `false` (does not pause game)
+- **onClose():** Returns to game screen
+- **Inner class `ChatMessage`:** Simple data holder for message text and player/NPC flag
+
+### Fixes Applied (vs. brief code)
+
+1. **`SimpleChannel.send` argument order:** Forge 1.20.1 API requires `(PacketTarget, MSG)` — changed from `CHANNEL.send(packet, target)` to `CHANNEL.send(target, packet)`
+2. **`mouseScrolled` signature:** 1.20.1 `Screen` uses 3 parameters `(double mouseX, double mouseY, double delta)` not 4 — removed `deltaX` parameter
 
 ## Files Modified
-- `src/main/java/.../particle/Particle.java` — created (47 lines)
-- `src/main/java/.../particle/ParticleEmitter.java` — created (299 lines)
 
-## Self-Review Findings
-- **Fixed:** 5 instances of `org.joml.Math.PI * 2` (double) being assigned to float variables without explicit cast — added `(float)` wrapper.
-- **Minor assumption:** `java.lang.Math.cbrt()` used in `position_sphere` initializer because `org.joml.Math` does not expose `cbrt`. The spec used bare `Math.cbrt`, but since `org.joml.Math` is imported, this would fail to compile. Using fully-qualified `java.lang.Math.cbrt` resolves this cleanly.
-- **Note:** `Random` noise operator uses `Math.random()` (java.lang) rather than level random — acceptable for visual noise; not deterministic but typical for particle effects.
+- `src/main/java/.../client/NpcChatScreen.java` — created (260 lines)
+
+## Compilation Results
+
+- **`NpcChatScreen.java`:** Compiles cleanly — **PASS**
+- **Other errors (expected):** 2 errors in pre-existing files:
+  - `ChatC2SPacket.java:35`: `NpcEntity.handleChatMessage` not yet implemented
+  - `ChatS2CPacket.java:58`: `NpcEntity.handleGesture` not yet implemented
+- **Pre-existing warnings:** 2 `ResourceLocation(String, String)` deprecation warnings in `NpcChatNetwork.java` and `Transferstation_whimsicalideas.java`
 
 ## Concerns
-- No unit tests exist yet for Particle or ParticleEmitter; they depend on Minecraft's `Level` and Forge environment.
-- The `forces` field on `SystemDefinition` is not consumed by the emitter — may need a future task to wire it up.
+
+- None. The screen integrates with the task 1 network layer as designed.
 
 ## Verification
-- **Build:** `gradlew compileJava` — **BUILD SUCCESSFUL** (4 actionable tasks, 2 executed, 2 up-to-date)
+
+- **Build:** `gradlew compileJava` — **BUILD FAILED** (2 expected errors in other files; NpcChatScreen compiles successfully)
+- **Commit:** `7a57077` — `feat(ui): add NpcChatScreen with chat history and typewriter effect`

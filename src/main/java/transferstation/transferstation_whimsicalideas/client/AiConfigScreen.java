@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 
@@ -29,6 +30,8 @@ public class AiConfigScreen extends Screen {
     private EditBox apiKeyField;
     private EditBox endpointField;
     private Button enableButton;
+    private Button providerDropdown;
+    private EditBox modelField;
     private boolean enabled;
     private String statusMessage = "";
     private int statusTimer = 0;
@@ -57,6 +60,8 @@ public class AiConfigScreen extends Screen {
         NpcChatHandler.setApiKey(props.getProperty("apiKey", ""));
         NpcChatHandler.setApiEndpoint(props.getProperty("endpoint", "https://api.player2.game/v1/chat"));
         NpcChatHandler.setEnabled(Boolean.parseBoolean(props.getProperty("enabled", "false")));
+        NpcChatHandler.setProvider(NpcChatHandler.AiProvider.fromId(props.getProperty("provider", "custom")));
+        NpcChatHandler.setModelName(props.getProperty("model", "gmod-npc"));
         this.enabled = NpcChatHandler.isEnabled();
     }
 
@@ -67,12 +72,15 @@ public class AiConfigScreen extends Screen {
             props.setProperty("apiKey", apiKeyField.getValue());
             props.setProperty("endpoint", endpointField.getValue());
             props.setProperty("enabled", String.valueOf(enabled));
+            props.setProperty("provider", NpcChatHandler.getProvider().id);
+            props.setProperty("model", modelField.getValue());
             try (var writer = Files.newBufferedWriter(CONFIG_PATH, StandardCharsets.UTF_8)) {
                 props.store(writer, "AI Provider Configuration for TransferStation WhimsicalIdeas");
             }
             NpcChatHandler.setApiKey(apiKeyField.getValue());
             NpcChatHandler.setApiEndpoint(endpointField.getValue());
             NpcChatHandler.setEnabled(enabled);
+            NpcChatHandler.setModelName(modelField.getValue());
             statusMessage = Component.translatable("gui.transferstation_whimsicalideas.saved_successfully").getString();
             statusTimer = 60;
             statusType = StatusType.SUCCESS;
@@ -80,6 +88,27 @@ public class AiConfigScreen extends Screen {
             statusMessage = Component.translatable("gui.transferstation_whimsicalideas.save_failed", e.getMessage()).getString();
             statusTimer = 100;
             statusType = StatusType.ERROR;
+        }
+    }
+
+    private void updateEndpointForProvider(NpcChatHandler.AiProvider provider) {
+        switch (provider) {
+            case OPENAI -> {
+                endpointField.setValue("https://api.openai.com/v1/chat/completions");
+                modelField.setValue("gpt-3.5-turbo");
+            }
+            case DEEPSEEK -> {
+                endpointField.setValue("https://api.deepseek.com/v1/chat/completions");
+                modelField.setValue("deepseek-chat");
+            }
+            case OLLAMA -> {
+                endpointField.setValue("http://localhost:11434/api/chat");
+                modelField.setValue("llama3");
+            }
+            case CUSTOM -> {
+                endpointField.setValue("https://api.player2.game/v1/chat");
+                modelField.setValue("gmod-npc");
+            }
         }
     }
 
@@ -119,6 +148,26 @@ public class AiConfigScreen extends Screen {
                     btn.setMessage(Component.translatable(enabled ? "gui.transferstation_whimsicalideas.ai_chat_enabled" : "gui.transferstation_whimsicalideas.ai_chat_disabled"));
                 }
         ).pos(cx - 50, y).size(280, 18).build());
+
+        // Provider selector
+        y += 28;
+        providerDropdown = addRenderableWidget(Button.builder(
+            Component.literal("Provider: " + NpcChatHandler.getProvider().id),
+            btn -> {
+                var providers = NpcChatHandler.AiProvider.values();
+                int next = (java.util.Arrays.asList(providers).indexOf(NpcChatHandler.getProvider()) + 1) % providers.length;
+                NpcChatHandler.setProvider(providers[next]);
+                btn.setMessage(Component.literal("Provider: " + providers[next].id));
+                updateEndpointForProvider(providers[next]);
+            }
+        ).pos(cx - 50, y).size(280, 18).build());
+
+        y += 28;
+        modelField = new EditBox(font, cx - 50, y, 280, 16, Component.translatable("gui.transferstation_whimsicalideas.model"));
+        modelField.setValue(NpcChatHandler.getModelName());
+        modelField.setMaxLength(64);
+        modelField.setTextColor(0xF3EFE0);
+        addWidget(modelField);
 
         y += 28;
         addRenderableWidget(Button.builder(
@@ -199,6 +248,7 @@ public class AiConfigScreen extends Screen {
     public void tick() {
         apiKeyField.tick();
         endpointField.tick();
+        if (modelField != null) modelField.tick();
         if (statusTimer > 0) statusTimer--;
     }
 
@@ -233,6 +283,7 @@ public class AiConfigScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (apiKeyField.mouseClicked(mouseX, mouseY, button)) setFocused(apiKeyField);
         else if (endpointField.mouseClicked(mouseX, mouseY, button)) setFocused(endpointField);
+        else if (modelField.mouseClicked(mouseX, mouseY, button)) setFocused(modelField);
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
@@ -240,6 +291,7 @@ public class AiConfigScreen extends Screen {
     public boolean charTyped(char codePoint, int modifiers) {
         if (apiKeyField.isFocused()) return apiKeyField.charTyped(codePoint, modifiers);
         if (endpointField.isFocused()) return endpointField.charTyped(codePoint, modifiers);
+        if (modelField.isFocused()) return modelField.charTyped(codePoint, modifiers);
         return super.charTyped(codePoint, modifiers);
     }
 
@@ -248,6 +300,7 @@ public class AiConfigScreen extends Screen {
         if (keyCode == 256) { onClose(); return true; }
         if (apiKeyField.isFocused()) return apiKeyField.keyPressed(keyCode, scanCode, modifiers);
         if (endpointField.isFocused()) return endpointField.keyPressed(keyCode, scanCode, modifiers);
+        if (modelField.isFocused()) return modelField.keyPressed(keyCode, scanCode, modifiers);
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 

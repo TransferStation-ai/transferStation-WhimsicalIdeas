@@ -1,50 +1,42 @@
-# 任务 3 报告：ParticleManager 全局管理器
+# 任务 3 报告：重构 NpcChatHandler — 结构化 JSON + 多 Provider + AI 动作
 
 ## 状态：DONE
 
-## 创建的文件
+## 修改的文件
 
-- `src/main/java/transferstation/transferstation_whimsicalideas/client/particle/ParticleManager.java`
+- `src/main/java/transferstation/transferstation_whimsicalideas/client/model/NpcChatHandler.java`
+- `src/main/java/transferstation/transferstation_whimsicalideas/npc/ai/AINpcAgent.java`
 
 ## 实现细节
 
-### ParticleManager 类（单例）
+### NpcChatHandler.java 重构
 
-实现了粒子系统的中央调度器，功能包括：
+1. **AiProvider 枚举** — 支持 CUSTOM、OPENAI、DEEPSEEK、OLLAMA 四种 provider，每个有 id 和 defaultModel
+2. **Provider/Model 配置字段** — `static AiProvider provider` 和 `static String modelName`，带 getter/setter
+3. **sendMessage 重写** — 使用 `buildRequest` + `parseResponse` + `processStructuredResponse` 三阶段流程
+4. **buildRequest** — 根据 provider 构建不同格式的 HTTP 请求体（OpenAI/Dify 格式、Ollama 格式、Custom 格式）
+5. **parseResponse** — 根据 provider 从不同 JSON 路径提取回复文本
+6. **processStructuredResponse** — 解析可选的结构化 JSON（emotion/gesture/action），更新 NPC 状态，发送 S2C 包
+7. **executeAiAction** — 执行 AI 动作命令（chop_wood/follow/stop/guard/emote）
+8. **extractPlainReply** — 从结构化 JSON 中提取纯文本回复
+9. **buildSystemPrompt 更新** — 末尾添加结构化 JSON 输出格式指令
+10. **删除 processActions** — 旧的关键词匹配方法被新的结构化 JSON 处理替代
 
-1. **注册与加载**：
-   - `registerSystem(SystemDefinition)` — 注册粒子系统定义
-   - `loadPcfFile(Path)` — 从文件系统加载 .pcf 文件并注册其中所有系统
-   - `loadPcfFromBytes(String, byte[])` — 从字节数组加载（如 jar 资源）
+### AINpcAgent.java 增强
 
-2. **粒子效果生成**：
-   - `spawnEffect(String, Level, double, double, double)` — 在指定位置生成粒子效果
-   - `spawnEffect(String, Level, double, double, double, Consumer<Particle>)` — 带 onSpawn 回调的重载
-   - 首次生成时自动 burst 初始粒子（连续模式 burst min(emissionRate, 20)，burst 模式 burst maxParticles）
+1. **orderFollowPlayer** 签名从 `Mob` 改为 `LivingEntity`，允许传入 `Player`
+2. **orderGuard(BlockPos)** — 新增方法，NPC 守卫指定位置
+3. **GuardGoal** 内部类 — 守卫 AI 目标，超出半径后自动返回守卫点
 
-3. **每 tick 更新**：
-   - `tick(float)` — 更新所有发射器，dt 上限 0.05s 防止物理爆炸
-   - 强制粒子数量上限（全局 10,000，每个效果 2,000）
-   - 自动清理已结束的发射器（非活跃且粒子数为 0）
+## 编译结果
 
-4. **渲染与清理**：
-   - `render(PoseStack, MultiBufferSource, float)` — 渲染框架（具体渲染器分派留空供后续任务实现）
-   - `getTotalParticleCount()` — 获取全局粒子总数
-   - `clearAll()` — 清除所有发射器
-   - `onWorldUnload()` — 世界卸载时清理
-
-### 与现有 API 的兼容性
-
-- 使用 `PcfParticleSystemDef.SystemDefinition` 作为注册类型
-- 使用 `ParticleEmitter(def, level, onSpawn)` 构造函数
-- 使用 `emitter.origin`（Vector3f）、`emitter.active`（boolean）
-- 使用 `PcfParser.parse(byte[])` 解析 PCF 数据
-- 使用 `Minecraft Forge 1.20.1` 的 `PoseStack`、`MultiBufferSource`、`Level`
-
-## 编译验证
-
-- BUILD SUCCESSFUL (compileJava)，无 Java 编译错误
+- `gradlew compileJava` — 仅剩 **3 个预期错误**（均将在任务 5 修复）：
+  - `NpcChatHandler.java:327`: `npc.handleGesture(emotion, gesture)` 方法不存在
+  - `ChatC2SPacket.java:35`: `npc.handleChatMessage(sender, packet.message)` 方法不存在
+  - `ChatS2CPacket.java:58`: `npc.handleGesture(packet.emotion, packet.gesture)` 方法不存在
+- 另有 2 个 pre-existing deprecation 警告（`ResourceLocation` 构造函数）
 
 ## 提交
 
-- 提交：仅包含 `ParticleManager.java`
+- `6f2e1a9` feat(chat): refactor NpcChatHandler with structured JSON, multi-provider, and AI actions
+- 2 files changed, 286 insertions(+), 53 deletions(-)
