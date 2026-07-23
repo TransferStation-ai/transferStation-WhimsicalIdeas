@@ -137,5 +137,12 @@
 
     "hud.transferstation_whimsicalideas.fracture": "§4[骨折]",
     "hud.transferstation_whimsicalideas.bleeding": "§c[流血]",
-    "hud.transferstation_whimsicalideas.arrow_embedded": "§6[箭矢嵌入]"
+    "hud.transferstation_whimsicalideas.arrow_embedded": "§6[箭矢嵌入]",
+    "gui.transferstation_whimsicalideas.npc_chat.title": "与 %s 对话",
+    "gui.transferstation_whimsicalideas.npc_chat.input_hint": "输入消息...",
+    "gui.transferstation_whimsicalideas.npc_chat.input_label": "消息：",
+    "gui.transferstation_whimsicalideas.npc_chat.send": "发送",
+    "gui.transferstation_whimsicalideas.npc_chat.typing": "%s 正在输入...",
+    "gui.transferstation_whimsicalideas.provider": "提供商",
+    "gui.transferstation_whimsicalideas.model": "模型名称"
 }

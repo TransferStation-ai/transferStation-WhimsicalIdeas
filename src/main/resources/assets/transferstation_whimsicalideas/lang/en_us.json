@@ -137,5 +137,12 @@
 
     "hud.transferstation_whimsicalideas.fracture": "§4[FRACTURE]",
     "hud.transferstation_whimsicalideas.bleeding": "§c[BLEEDING]",
-    "hud.transferstation_whimsicalideas.arrow_embedded": "§6[ARROW EMBEDDED]"
+    "hud.transferstation_whimsicalideas.arrow_embedded": "§6[ARROW EMBEDDED]",
+    "gui.transferstation_whimsicalideas.npc_chat.title": "Chat with %s",
+    "gui.transferstation_whimsicalideas.npc_chat.input_hint": "Type a message...",
+    "gui.transferstation_whimsicalideas.npc_chat.input_label": "Message:",
+    "gui.transferstation_whimsicalideas.npc_chat.send": "Send",
+    "gui.transferstation_whimsicalideas.npc_chat.typing": "%s is typing...",
+    "gui.transferstation_whimsicalideas.provider": "Provider",
+    "gui.transferstation_whimsicalideas.model": "Model Name"
 }
