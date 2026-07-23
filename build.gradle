@@ -162,6 +162,7 @@ repositories {
         url = "https://maven.aliyun.com/repository/google"
     }
     flatDir { dirs "libs" }
+    mavenCentral()
 }
 dependencies {
     // Specify the version of Minecraft to use.
@@ -191,7 +192,7 @@ dependencies {
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
 
     // Vosk offline speech recognition
-    implementation 'org.alphacep:vosk:0.3.45'
+    implementation 'com.alphacephei:vosk:0.3.45'
     implementation 'net.java.dev.jna:jna:5.14.0'
 
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
