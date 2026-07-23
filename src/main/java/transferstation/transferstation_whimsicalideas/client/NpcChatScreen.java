@@ -10,6 +10,9 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import transferstation.transferstation_whimsicalideas.client.model.NpcEntity;
+import transferstation.transferstation_whimsicalideas.client.voice.VoiceCaptureService;
+import transferstation.transferstation_whimsicalideas.client.voice.VoiceConfig;
+import transferstation.transferstation_whimsicalideas.client.voice.VoskSttEngine;
 import transferstation.transferstation_whimsicalideas.network.ChatC2SPacket;
 import transferstation.transferstation_whimsicalideas.network.NpcChatNetwork;
 
@@ -30,6 +33,13 @@ public class NpcChatScreen extends Screen {
     private long lastSendTime = 0;
     private boolean awaitingReply = false;
 
+    // Voice input state
+    private boolean voiceModeAvailable = false;
+    private boolean isRecording = false;
+    private Button micButton;
+    private String voiceStatusText = "";
+    private int voiceStatusTimer = 0;
+
     // Typewriter effect state
     private String pendingReply = "";
     private String displayReply = "";
@@ -47,7 +57,18 @@ public class NpcChatScreen extends Screen {
         int cx = width / 2;
         int chatHeight = Math.min(height - 80, 300);
 
-        // Input field at bottom
+        // Mic button (to the left of the input field)
+        boolean micAvail = VoiceCaptureService.isAvailable()
+                && VoiceConfig.isEnabled()
+                && VoskSttEngine.isInitialized();
+        micButton = addRenderableWidget(Button.builder(
+            Component.literal(micAvail ? "🎤" : "§7🎤"),
+            btn -> handleMicPress()
+        ).bounds(cx - 165, height - 30, 20, 18).build());
+        micButton.active = micAvail;
+        this.voiceModeAvailable = micAvail;
+
+        // Input field at bottom (shifted right to make room for mic button)
         inputField = new EditBox(font, cx - 140, height - 30, 260, 18,
             Component.translatable("gui.transferstation_whimsicalideas.npc_chat.input_hint"));
         inputField.setMaxLength(INPUT_MAX_LENGTH);
@@ -137,12 +158,59 @@ public class NpcChatScreen extends Screen {
         if (awaitingReply) {
             graphics.drawCenteredString(font, Component.translatable("gui.transferstation_whimsicalideas.npc_chat.typing"), cx, chatBottom + 5, 0x888888);
         }
+
+        // Voice status text
+        if (!voiceStatusText.isEmpty()) {
+            graphics.drawCenteredString(font, Component.literal(voiceStatusText), cx, chatBottom + 16, 0xFFFFFF);
+        }
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         scrollOffset -= (int) (delta * 10);
         return true;
+    }
+
+    private void handleMicPress() {
+        if (!voiceModeAvailable) return;
+
+        if (!isRecording) {
+            // Start recording
+            isRecording = true;
+            micButton.setMessage(Component.literal("§c🔴"));
+            voiceStatusText = "§c录音中...";
+            voiceStatusTimer = 0;
+
+            VoiceCaptureService.startRecording(wavData -> {
+                net.minecraft.client.Minecraft.getInstance().execute(() -> {
+                    micButton.setMessage(Component.literal("§e⏳"));
+                    voiceStatusText = "§e识别中...";
+
+                    VoskSttEngine.transcribe(wavData)
+                        .thenAccept(text -> {
+                            net.minecraft.client.Minecraft.getInstance().execute(() -> {
+                                isRecording = false;
+                                if (text != null && !text.isEmpty()) {
+                                    if (VoiceConfig.isAutoSend()) {
+                                        inputField.setValue(text);
+                                        sendMessage();
+                                    } else {
+                                        inputField.setValue(text);
+                                    }
+                                    voiceStatusText = "";
+                                } else {
+                                    voiceStatusText = "§7未检测到语音";
+                                    voiceStatusTimer = 40;
+                                }
+                                micButton.setMessage(Component.literal("🎤"));
+                            });
+                        });
+                });
+            });
+        } else {
+            // Stop recording
+            VoiceCaptureService.stopRecording();
+        }
     }
 
     public void sendMessage() {
@@ -174,6 +242,12 @@ public class NpcChatScreen extends Screen {
     @Override
     public void tick() {
         inputField.tick();
+
+        // Voice status timer
+        if (voiceStatusTimer > 0) {
+            voiceStatusTimer--;
+            if (voiceStatusTimer <= 0) voiceStatusText = "";
+        }
 
         // Typewriter effect
         if (!pendingReply.isEmpty()) {
