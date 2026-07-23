@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.level.Level;
@@ -24,6 +25,7 @@ public class AINpcAgent {
 
     private FollowOwnerGoal followGoal;
     private ChopWoodGoal chopGoal;
+    private GuardGoal guardGoal;
 
     public AINpcAgent(Mob npc) {
         this.npc = npc;
@@ -36,11 +38,18 @@ public class AINpcAgent {
         npc.goalSelector.addGoal(2, chopGoal);
     }
 
-    public void orderFollowPlayer(Mob toFollow) {
+    public void orderFollowPlayer(LivingEntity toFollow) {
         clearGoals();
         this.mode = "follow";
         this.followGoal = new FollowOwnerGoal(npc, toFollow, 1.0, 4.0f, 2.0f);
         npc.goalSelector.addGoal(2, followGoal);
+    }
+
+    public void orderGuard(BlockPos pos) {
+        clearGoals();
+        this.mode = "guard";
+        this.guardGoal = new GuardGoal(npc, pos);
+        npc.goalSelector.addGoal(2, guardGoal);
     }
 
     public void clearOrders() {
@@ -56,6 +65,10 @@ public class AINpcAgent {
         if (chopGoal != null) {
             npc.goalSelector.removeGoal(chopGoal);
             chopGoal = null;
+        }
+        if (guardGoal != null) {
+            npc.goalSelector.removeGoal(guardGoal);
+            guardGoal = null;
         }
     }
 
@@ -194,6 +207,42 @@ public class AINpcAgent {
                 npc.getNavigation().moveTo(target, speed);
                 cooldown = 10;
             }
+        }
+    }
+
+    /**
+     * Guards a specific position, returning to it if the NPC wanders too far.
+     */
+    private static class GuardGoal extends Goal {
+        private final Mob npc;
+        private final BlockPos guardPos;
+        private final float radius;
+
+        GuardGoal(Mob npc, BlockPos pos) {
+            this(npc, pos, 4.0f);
+        }
+
+        GuardGoal(Mob npc, BlockPos pos, float radius) {
+            this.npc = npc;
+            this.guardPos = pos;
+            this.radius = radius;
+            this.setFlags(EnumSet.of(Flag.MOVE));
+        }
+
+        @Override
+        public boolean canUse() {
+            return npc.distanceToSqr(guardPos.getX() + 0.5, guardPos.getY() + 0.5, guardPos.getZ() + 0.5)
+                > (double) radius * radius;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return canUse();
+        }
+
+        @Override
+        public void tick() {
+            npc.getNavigation().moveTo(guardPos.getX() + 0.5, guardPos.getY(), guardPos.getZ() + 0.5, 1.0);
         }
     }
 }
