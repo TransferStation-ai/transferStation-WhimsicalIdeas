@@ -144,5 +144,18 @@
     "gui.transferstation_whimsicalideas.npc_chat.send": "发送",
     "gui.transferstation_whimsicalideas.npc_chat.typing": "%s 正在输入...",
     "gui.transferstation_whimsicalideas.provider": "提供商",
-    "gui.transferstation_whimsicalideas.model": "模型名称"
+    "gui.transferstation_whimsicalideas.model": "模型名称",
+
+    "gui.transferstation_whimsicalideas.voice_section": "语音输入",
+    "gui.transferstation_whimsicalideas.voice_enabled": "语音输入：已启用",
+    "gui.transferstation_whimsicalideas.voice_disabled": "语音输入：已禁用",
+    "gui.transferstation_whimsicalideas.voice_autosend_on": "自动发送：开",
+    "gui.transferstation_whimsicalideas.voice_autosend_off": "自动发送：关",
+    "gui.transferstation_whimsicalideas.voice_download_model": "下载语音模型 (~42MB)",
+    "gui.transferstation_whimsicalideas.voice_download_done": "模型下载完成，请重新打开聊天界面",
+    "gui.transferstation_whimsicalideas.voice_download_failed": "模型下载失败，请检查网络后重试",
+    "gui.transferstation_whimsicalideas.voice_test_mic": "测试麦克风",
+    "gui.transferstation_whimsicalideas.voice_test_recording": "录音中... 点击停止",
+    "gui.transferstation_whimsicalideas.voice_test_done": "麦克风测试完成",
+    "gui.transferstation_whimsicalideas.voice_test_received": "已收到 %d 字节音频数据"
 }

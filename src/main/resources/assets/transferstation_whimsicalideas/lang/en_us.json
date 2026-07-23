@@ -144,5 +144,18 @@
     "gui.transferstation_whimsicalideas.npc_chat.send": "Send",
     "gui.transferstation_whimsicalideas.npc_chat.typing": "%s is typing...",
     "gui.transferstation_whimsicalideas.provider": "Provider",
-    "gui.transferstation_whimsicalideas.model": "Model Name"
+    "gui.transferstation_whimsicalideas.model": "Model Name",
+
+    "gui.transferstation_whimsicalideas.voice_section": "Voice Input",
+    "gui.transferstation_whimsicalideas.voice_enabled": "Voice Input: ENABLED",
+    "gui.transferstation_whimsicalideas.voice_disabled": "Voice Input: DISABLED",
+    "gui.transferstation_whimsicalideas.voice_autosend_on": "Auto-Send: ON",
+    "gui.transferstation_whimsicalideas.voice_autosend_off": "Auto-Send: OFF",
+    "gui.transferstation_whimsicalideas.voice_download_model": "Download Voice Model (~42MB)",
+    "gui.transferstation_whimsicalideas.voice_download_done": "Model downloaded. Reopen chat to use voice input.",
+    "gui.transferstation_whimsicalideas.voice_download_failed": "Download failed. Check your network and try again.",
+    "gui.transferstation_whimsicalideas.voice_test_mic": "Test Microphone",
+    "gui.transferstation_whimsicalideas.voice_test_recording": "Recording... Click to stop",
+    "gui.transferstation_whimsicalideas.voice_test_done": "Microphone test complete",
+    "gui.transferstation_whimsicalideas.voice_test_received": "Received %d bytes of audio data"
 }
