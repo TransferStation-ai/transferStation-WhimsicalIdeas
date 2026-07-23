@@ -25,6 +25,10 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 
+import net.minecraft.client.Minecraft;
+
+import transferstation.transferstation_whimsicalideas.client.NpcChatScreen;
+
 import javax.annotation.Nullable;
 import java.util.UUID;
 
@@ -178,34 +182,9 @@ public class NpcEntity extends PathfinderMob {
         }
 
         if (itemStack.isEmpty()) {
-            if (!level().isClientSide()) {
-                if (NpcChatHandler.isEnabled()) {
-                    NpcChatHandler.sendMessage(this, player, "Hello!").thenAccept(reply -> {
-                        if (player instanceof ServerPlayer serverPlayer) {
-                            ServerLevel serverLevel = (ServerLevel) level();
-                            serverLevel.getServer().execute(() -> {
-                                if (serverPlayer.isRemoved()) return;
-                                serverPlayer.sendSystemMessage(
-                                        Component.translatable("npc.transferstation_whimsicalideas.npc_chat_prefix",
-                                                getDisplayName().getString(), reply));
-                            });
-                        }
-                    });
-                } else {
-                    player.displayClientMessage(
-                            Component.translatable("npc.transferstation_whimsicalideas.npc_chat_prefix",
-                                    getDisplayName().getString(), npcData.getMoodDescription().getString()),
-                            false);
-                }
-
-                String ownerInfo = npcData.getOwnerUUID() != null ?
-                        Component.translatable("npc.transferstation_whimsicalideas.owner",
-                                npcData.getOwnerUUID().toString().substring(0, 8)).getString()
-                        : Component.translatable("npc.transferstation_whimsicalideas.no_owner").getString();
-                player.displayClientMessage(
-                        Component.translatable("npc.transferstation_whimsicalideas.npc_info",
-                                ownerInfo, npcData.getAffection(), npcData.getLoyalty()),
-                        false);
+            if (level().isClientSide()) {
+                // Client: open chat screen
+                Minecraft.getInstance().setScreen(new NpcChatScreen(this));
             }
             npcData.onInteract();
             return InteractionResult.sidedSuccess(level().isClientSide());
@@ -345,6 +324,35 @@ public class NpcEntity extends PathfinderMob {
 
     public void setAnimation(String animation) {
         this.currentAnimation = animation;
+    }
+
+    /**
+     * Called server-side when a chat packet arrives for this NPC.
+     * Processes the message through AI and sends reply via S2C packet.
+     */
+    public void handleChatMessage(Player player, String message) {
+        if (npcData == null) npcData = new NpcData();
+        npcData.onInteract();
+
+        NpcChatHandler.sendMessage(this, player, message).thenAccept(reply -> {
+            // Reply is handled inside processStructuredResponse (S2C packet sent there)
+        });
+    }
+
+    /**
+     * Called client-side (or server-side) when a gesture packet arrives or is processed.
+     */
+    public void handleGesture(String emotion, String gesture) {
+        if (npcData != null) {
+            switch (emotion) {
+                case "happy" -> npcData.setCurrentMood("happy");
+                case "angry" -> npcData.setCurrentMood("angry");
+                case "scared" -> npcData.setCurrentMood("scared");
+                case "sad" -> npcData.setCurrentMood("sad");
+                default -> npcData.setCurrentMood("neutral");
+            }
+        }
+        setAnimation(gesture);
     }
 
     @Override
