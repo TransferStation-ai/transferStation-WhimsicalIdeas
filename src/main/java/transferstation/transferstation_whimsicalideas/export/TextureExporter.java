@@ -2,6 +2,7 @@ package transferstation.transferstation_whimsicalideas.export;
 
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
+import transferstation.transferstation_whimsicalideas.client.model.VtfParser;
 
 import javax.imageio.ImageIO;
 import java.io.IOException;
