@@ -26,7 +26,7 @@ Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 但我只能说你要不好好再看看项目名字呢？
 
 --------------------------
-[本项目的的issues](https://github.com/TransferStation/TransferStation-WhimsicalIdeas/issues)
+[本项目的issues](https://github.com/TransferStation/TransferStation-WhimsicalIdeas/issues)
 
 以下是内容介绍/以及技术文档
 
