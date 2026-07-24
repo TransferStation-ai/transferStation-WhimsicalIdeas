@@ -157,5 +157,12 @@
     "gui.transferstation_whimsicalideas.voice_test_mic": "Test Microphone",
     "gui.transferstation_whimsicalideas.voice_test_recording": "Recording... Click to stop",
     "gui.transferstation_whimsicalideas.voice_test_done": "Microphone test complete",
-    "gui.transferstation_whimsicalideas.voice_test_received": "Received %d bytes of audio data"
+    "gui.transferstation_whimsicalideas.voice_test_received": "Received %d bytes of audio data",
+
+    "command.transferstation_whimsicalideas.export.usage": "/exportmodel <package> [format] [output]",
+    "command.transferstation_whimsicalideas.export.started": "§7Exporting model '%s' as %s format...",
+    "command.transferstation_whimsicalideas.export.success": "§aExport successful: %s",
+    "command.transferstation_whimsicalideas.export.failed": "§cExport failed: %s",
+    "command.transferstation_whimsicalideas.export.not_found": "§cModel package not found: %s",
+    "command.transferstation_whimsicalideas.export.no_models": "§cNo exportable model files in package %s"
 }

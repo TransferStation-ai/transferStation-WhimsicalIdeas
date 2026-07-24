@@ -157,5 +157,12 @@
     "gui.transferstation_whimsicalideas.voice_test_mic": "测试麦克风",
     "gui.transferstation_whimsicalideas.voice_test_recording": "录音中... 点击停止",
     "gui.transferstation_whimsicalideas.voice_test_done": "麦克风测试完成",
-    "gui.transferstation_whimsicalideas.voice_test_received": "已收到 %d 字节音频数据"
+    "gui.transferstation_whimsicalideas.voice_test_received": "已收到 %d 字节音频数据",
+
+    "command.transferstation_whimsicalideas.export.usage": "/exportmodel <包名> [格式] [输出路径]",
+    "command.transferstation_whimsicalideas.export.started": "§7正在导出模型 '%s' 为 %s 格式...",
+    "command.transferstation_whimsicalideas.export.success": "§a导出成功：%s",
+    "command.transferstation_whimsicalideas.export.failed": "§c导出失败：%s",
+    "command.transferstation_whimsicalideas.export.not_found": "§c未找到模型包：%s",
+    "command.transferstation_whimsicalideas.export.no_models": "§c模型包 %s 中没有可导出的模型文件"
 }
