@@ -25,6 +25,8 @@ Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 
 但我只能说你要不好好再看看项目名字呢？
 
+也请不要问我为什么，这明明是脑抽的产物，为什么会自带一套模型加载系统
+
 --------------------------
 [本项目的issues](https://github.com/TransferStation/TransferStation-WhimsicalIdeas/issues)
 
