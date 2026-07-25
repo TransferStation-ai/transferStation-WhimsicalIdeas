@@ -1,3 +1,22 @@
+# BBModel 加载器实现计划
+
+> **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
+
+**目标：** 为项目添加 Blockbench (.bbmodel) 文件加载能力，使其能直接作为角色/NPC 模型使用
+
+**架构：** 新增 `BBModelParser` 将 `.bbmodel` JSON 解析为 `SourceModelData`；在 `ModelLoadManager.loadFromDirectory()` 中添加 BBModel 检测分支；在 4 个 `hasAnyModelFile()` 方法中添加 `.bbmodel` 文件类型检测
+
+**技术栈：** Java 17, Minecraft Forge 1.20.1, Gson (已有依赖), BufferedImage, DynamicTexture
+
+---
+
+### 任务 1：创建 `BBModelParser.java`
+
+**文件：**
+- 创建：`src/main/java/transferstation/transferstation_whimsicalideas/client/model/BBModelParser.java`
+
+- [ ] **步骤 1：编写 BBModelParser 基础结构**
+
 ```java
 package transferstation.transferstation_whimsicalideas.client.model;
 
@@ -71,6 +90,10 @@ public class BBModelParser {
 
         return result;
     }
+```
+
+- [ ] **步骤 2：实现 parseTextures — 解码 base64 嵌入纹理**
+
 ```java
     private static Map<Integer, ResourceLocation> parseTextures(JsonObject root, Path packageDir) {
         Map<Integer, ResourceLocation> textureMap = new HashMap<>();
@@ -127,6 +150,10 @@ public class BBModelParser {
         if (a == 0) a = 255;
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
+```
+
+- [ ] **步骤 3：实现 parseMeshElement — 处理 "free" 格式网格**
+
 ```java
     private static SourceModelData.MeshData parseMeshElement(JsonObject elem, Map<Integer, ResourceLocation> textureMap) {
         JsonArray verts = elem.getAsJsonArray("vertices");
@@ -228,6 +255,10 @@ public class BBModelParser {
             vertices.set(i * 8 + 5, nz[i]);
         }
     }
+```
+
+- [ ] **步骤 4：实现 parseCubeElement — 处理 "java_block" 格式的 box**
+
 ```java
     private static SourceModelData.MeshData parseCubeElement(JsonObject elem, Map<Integer, ResourceLocation> textureMap) {
         JsonArray from = elem.getAsJsonArray("from");
@@ -356,7 +387,7 @@ public class BBModelParser {
             int[] fv = faceVerts[fi];
             float[] fn = faceNormals[fi];
 
-            // Map face corner to UV: v0�?u1,v2), v1�?u1,v1), v2�?u2,v1), v3�?u2,v2)
+            // Map face corner to UV: v0→(u1,v2), v1→(u1,v1), v2→(u2,v1), v3→(u2,v2)
             float[][] faceUv = {
                 {u1 / texW, v2 / texH},
                 {u1 / texW, v1 / texH},
@@ -415,6 +446,10 @@ public class BBModelParser {
         }
         return textureMap.getOrDefault(0, null);
     }
+```
+
+- [ ] **步骤 5：实现 parseOutliner — 骨骼层级**
+
 ```java
     private static void parseOutliner(JsonArray outliner, SourceModelData result) {
         List<String> boneNames = new ArrayList<>();
@@ -482,6 +517,10 @@ public class BBModelParser {
             // We skip these; bones are only created for named groups
         }
     }
+```
+
+- [ ] **步骤 6：实现 parseAnimations 和 computeBounds**
+
 ```java
     private static void parseAnimations(JsonArray animations, SourceModelData modelData) {
         for (JsonElement animEl : animations) {
@@ -594,29 +633,85 @@ public class BBModelParser {
             }
         }
     }
+```
+
+---
+
+### 任务 2：更新所有 `hasAnyModelFile()` 方法
+
+**文件：**
+- 修改：`src/main/java/transferstation/transferstation_whimsicalideas/client/GmodModelConfig.java:110`
+- 修改：`src/main/java/transferstation/transferstation_whimsicalideas/ModelSyncManager.java:213`
+- 修改：`src/main/java/transferstation/transferstation_whimsicalideas/client/model/MdlModelRenderer.java:187`
+- 修改：`src/main/java/transferstation/transferstation_whimsicalideas/client/model/ModelLoadManager.java:2603`
+
+- [ ] **步骤 1：更新 GmodModelConfig.java**
+
+在 `hasAnyModelFile()` 方法的条件中添加 `name.endsWith(".bbmodel")`：
+
+编辑文件：`src/main/java/transferstation/transferstation_whimsicalideas/client/GmodModelConfig.java`
 ```java
-// �?110 行：�?name.endsWith(".smd") 后添�?return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".lua") || name.endsWith(".smd") || name.endsWith(".bbmodel");
+// 第 110 行：在 name.endsWith(".smd") 后添加
+return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".lua") || name.endsWith(".smd") || name.endsWith(".bbmodel");
+```
+
+- [ ] **步骤 2：更新 ModelSyncManager.java**
+
+编辑文件：`src/main/java/transferstation/transferstation_whimsicalideas/ModelSyncManager.java`
 ```java
-// �?213 行：添加 .bbmodel
+// 第 213 行：添加 .bbmodel
 return name.endsWith(".mdl") || name.endsWith(".smd")
     || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".bbmodel");
+```
+
+- [ ] **步骤 3：更新 MdlModelRenderer.java**
+
+编辑文件：`src/main/java/transferstation/transferstation_whimsicalideas/client/model/MdlModelRenderer.java`
 ```java
-// �?187 行：添加 .bbmodel
+// 第 187 行：添加 .bbmodel
 return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd") || name.endsWith(".bbmodel");
+```
+
+- [ ] **步骤 4：更新 ModelLoadManager.java (findAnyModelFile)**
+
+编辑文件：`src/main/java/transferstation/transferstation_whimsicalideas/client/model/ModelLoadManager.java`
 ```java
-// �?1124 行：添加 .bbmodel
+// 第 1124 行：添加 .bbmodel
 return name.endsWith(".mdl") || name.endsWith(".smd") || name.endsWith(".bbmodel");
+```
+
+- [ ] **步骤 5：更新 ModelLoadManager.java (hasAnyModelFile)**
+
+编辑文件：`src/main/java/transferstation/transferstation_whimsicalideas/client/model/ModelLoadManager.java`
 ```java
-// �?2603 行：添加 .bbmodel
+// 第 2603 行：添加 .bbmodel
 return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd") || name.endsWith(".bbmodel");
+```
+
+- [ ] **步骤 6：更新 ModelLoadManager.java (loadFromDirectory 文件类型检测)**
+
+编辑文件：`src/main/java/transferstation/transferstation_whimsicalideas/client/model/ModelLoadManager.java`
 ```java
-// �?1475 行：添加 .bbmodel
+// 第 1475 行：添加 .bbmodel
 if (name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd") || name.endsWith(".bbmodel")) {
+```
+
+---
+
+### 任务 3：在 `loadFromDirectory()` 中添加 BBModel 加载分支
+
+**文件：**
+- 修改：`src/main/java/transferstation/transferstation_whimsicalideas/client/model/ModelLoadManager.java:1445`
+
+- [ ] **步骤 1：在 loadFromDirectory 开头添加 BBModel 检测**
+
+在 `loadFromDirectory()` 方法的 `dirFiles` 收集阶段之后，MDL 检测逻辑之前，添加 BBModel 优先检测：
+
 ```java
-// 在以下代码之前插�?BBModel 检测：
+// 在以下代码之前插入 BBModel 检测：
 // Path mdlPath = null, vvdPath = null, vtxPath = null, smdPath = null;
 
-// 优先检�?.bbmodel 文件
+// 优先检测 .bbmodel 文件
 Path bbmodelPath = null;
 for (Map.Entry<Path, List<Path>> entry : dirFiles.entrySet()) {
     for (Path f : entry.getValue()) {
@@ -643,5 +738,20 @@ if (bbmodelPath != null) {
         LOGGER.warn("[ModelLoadManager] BBModel parse failed for {}, falling back: {}", bbmodelPath, e.getMessage());
     }
 }
+```
+
+---
+
+### 任务 4：编译验证
+
+- [ ] **步骤 1：运行 Gradle 编译检查**
+
 ```bash
 .\gradlew.bat compileJava
+```
+
+预期：BUILD SUCCESSFUL，无编译错误
+
+- [ ] **步骤 2：检查 import 完整性**
+
+确认 `BBModelParser.java` 的所有 import 都已导入（javax.imageio.ImageIO, java.util.Base64, java.awt.image.BufferedImage 等）

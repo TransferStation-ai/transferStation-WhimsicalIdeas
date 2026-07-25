@@ -1,14 +1,11 @@
-```java
 package transferstation.transferstation_whimsicalideas.client.model;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.logging.LogUtils;
-import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
 
@@ -23,7 +20,6 @@ import java.util.*;
 public class BBModelParser {
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final Gson GSON = new Gson();
 
     public static SourceModelData parse(Path bbmodelPath, Path packageDir) throws IOException {
         String jsonStr = Files.readString(bbmodelPath);
@@ -37,7 +33,8 @@ public class BBModelParser {
             modelFormat = meta.get("model_format").getAsString();
         }
 
-        result.name = root.has("name") ? root.get("name").getAsString() : bbmodelPath.getFileName().toString().replace(".bbmodel", "");
+        result.name = root.has("name") ? root.get("name").getAsString()
+            : bbmodelPath.getFileName().toString().replace(".bbmodel", "");
 
         Map<Integer, ResourceLocation> textureMap = parseTextures(root, packageDir);
 
@@ -47,13 +44,13 @@ public class BBModelParser {
                 JsonObject elem = elemEl.getAsJsonObject();
                 String type = elem.has("type") ? elem.get("type").getAsString() : "cube";
 
+                SourceModelData.MeshData mesh;
                 if ("mesh".equals(type)) {
-                    SourceModelData.MeshData mesh = parseMeshElement(elem, textureMap);
-                    if (mesh != null) result.meshes.add(mesh);
+                    mesh = parseMeshElement(elem, textureMap);
                 } else {
-                    SourceModelData.MeshData mesh = parseCubeElement(elem, textureMap);
-                    if (mesh != null) result.meshes.add(mesh);
+                    mesh = parseCubeElement(elem, textureMap);
                 }
+                if (mesh != null) result.meshes.add(mesh);
             }
         }
 
@@ -69,9 +66,12 @@ public class BBModelParser {
             parseAnimations(animations, result);
         }
 
+        LOGGER.info("[BBModelParser] Loaded '{}' (format={}): {} meshes, {} bones, {} textures",
+            result.name, modelFormat, result.meshes.size(), result.bones.size(), textureMap.size());
+
         return result;
     }
-```java
+
     private static Map<Integer, ResourceLocation> parseTextures(JsonObject root, Path packageDir) {
         Map<Integer, ResourceLocation> textureMap = new HashMap<>();
         JsonArray textures = root.getAsJsonArray("textures");
@@ -110,8 +110,7 @@ public class BBModelParser {
 
         NativeImage nativeImage = TextureColorResolver.bufferedImageToNativeImage(image);
         ModelLoadManager.getColorResolver().applyNativeImage(loc, nativeImage);
-        ModelLoadManager.getColorResolver().markComplete(regKey, loc,
-            extractCenterPixelColor(image), false, false, false, nativeImage);
+        ModelLoadManager.getColorResolver().markComplete(regKey, loc, extractCenterPixelColor(image), false, false, false, nativeImage);
 
         return loc;
     }
@@ -127,7 +126,7 @@ public class BBModelParser {
         if (a == 0) a = 255;
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
-```java
+
     private static SourceModelData.MeshData parseMeshElement(JsonObject elem, Map<Integer, ResourceLocation> textureMap) {
         JsonArray verts = elem.getAsJsonArray("vertices");
         JsonArray faces = elem.getAsJsonArray("faces");
@@ -138,17 +137,14 @@ public class BBModelParser {
 
         for (int i = 0; i < verts.size(); i++) {
             JsonArray v = verts.get(i).getAsJsonArray();
-            float x = v.get(0).getAsFloat();
-            float y = v.get(1).getAsFloat();
-            float z = v.get(2).getAsFloat();
-            vertexList.add(x);
-            vertexList.add(y);
-            vertexList.add(z);
-            vertexList.add(0f); // nx placeholder
-            vertexList.add(0f); // ny placeholder
-            vertexList.add(0f); // nz placeholder
-            vertexList.add(0f); // u placeholder
-            vertexList.add(0f); // v placeholder
+            vertexList.add(v.get(0).getAsFloat());
+            vertexList.add(v.get(1).getAsFloat());
+            vertexList.add(v.get(2).getAsFloat());
+            vertexList.add(0f);
+            vertexList.add(0f);
+            vertexList.add(0f);
+            vertexList.add(0f);
+            vertexList.add(0f);
         }
 
         for (JsonElement faceEl : faces) {
@@ -158,7 +154,6 @@ public class BBModelParser {
             indexList.add(face.get(2).getAsInt());
         }
 
-        // Parse UVs if available
         JsonArray uvs = elem.getAsJsonArray("uvs");
         if (uvs != null && uvs.size() == verts.size()) {
             for (int i = 0; i < uvs.size(); i++) {
@@ -169,7 +164,6 @@ public class BBModelParser {
             }
         }
 
-        // Parse normals if available
         JsonArray normals = elem.getAsJsonArray("normals");
         if (normals != null && normals.size() == verts.size()) {
             for (int i = 0; i < normals.size(); i++) {
@@ -206,6 +200,7 @@ public class BBModelParser {
             int i0 = indices.get(i);
             int i1 = indices.get(i + 1);
             int i2 = indices.get(i + 2);
+            if (i0 < 0 || i0 >= vertCount || i1 < 0 || i1 >= vertCount || i2 < 0 || i2 >= vertCount) continue;
             float x0 = vertices.get(i0 * 8), y0 = vertices.get(i0 * 8 + 1), z0 = vertices.get(i0 * 8 + 2);
             float x1 = vertices.get(i1 * 8), y1 = vertices.get(i1 * 8 + 1), z1 = vertices.get(i1 * 8 + 2);
             float x2 = vertices.get(i2 * 8), y2 = vertices.get(i2 * 8 + 1), z2 = vertices.get(i2 * 8 + 2);
@@ -228,7 +223,7 @@ public class BBModelParser {
             vertices.set(i * 8 + 5, nz[i]);
         }
     }
-```java
+
     private static SourceModelData.MeshData parseCubeElement(JsonObject elem, Map<Integer, ResourceLocation> textureMap) {
         JsonArray from = elem.getAsJsonArray("from");
         JsonArray to = elem.getAsJsonArray("to");
@@ -256,47 +251,40 @@ public class BBModelParser {
             rz = (float) Math.toRadians(rot.get(2).getAsFloat());
         }
 
-        // 6 faces: north, east, south, west, up, down
-        // Each face: 4 corner positions + normal direction + UV mapping
         JsonObject faces = elem.getAsJsonObject("faces");
         if (faces == null) return null;
 
         List<Float> vertList = new ArrayList<>();
         List<Integer> idxList = new ArrayList<>();
-        int baseVertex = 0;
 
         String[] faceNames = {"north", "east", "south", "west", "up", "down"};
-        // Each face: [v0, v1, v2, v3] indices into the 8 cube corners, normal dir
         int[][] faceVerts = {
-            {0, 1, 5, 4},  // north (z-)
-            {4, 5, 6, 7},  // east (x+)
-            {2, 3, 7, 6},  // south (z+)
-            {0, 4, 7, 3},  // west (x-)
-            {1, 2, 6, 5},  // up (y+)
-            {0, 3, 2, 1},  // down (y-)
+            {0, 1, 5, 4},
+            {4, 5, 6, 7},
+            {2, 3, 7, 6},
+            {0, 4, 7, 3},
+            {1, 2, 6, 5},
+            {0, 3, 2, 1},
         };
         float[][] faceNormals = {
-            {0, 0, -1},  // north
-            {1, 0, 0},   // east
-            {0, 0, 1},   // south
-            {-1, 0, 0},  // west
-            {0, 1, 0},   // up
-            {0, -1, 0},  // down
+            {0, 0, -1},
+            {1, 0, 0},
+            {0, 0, 1},
+            {-1, 0, 0},
+            {0, 1, 0},
+            {0, -1, 0},
         };
 
-        // Precompute the 8 corners of the box
         float[][] corners = {
             {fx, fy, fz}, {fx, fy, tz}, {tx, fy, tz}, {tx, fy, fz},
             {fx, ty, fz}, {fx, ty, tz}, {tx, ty, tz}, {tx, ty, fz},
         };
 
-        // Apply pivot rotation if any
         if (rx != 0 || ry != 0 || rz != 0) {
             for (int i = 0; i < 8; i++) {
                 float px = corners[i][0] - ox;
                 float py = corners[i][1] - oy;
                 float pz = corners[i][2] - oz;
-                // Rotate around Y
                 if (ry != 0) {
                     float cos = (float) Math.cos(ry);
                     float sin = (float) Math.sin(ry);
@@ -304,7 +292,6 @@ public class BBModelParser {
                     float nz = px * sin + pz * cos;
                     px = nx; pz = nz;
                 }
-                // Rotate around X
                 if (rx != 0) {
                     float cos = (float) Math.cos(rx);
                     float sin = (float) Math.sin(rx);
@@ -312,7 +299,6 @@ public class BBModelParser {
                     float nz = py * sin + pz * cos;
                     py = ny; pz = nz;
                 }
-                // Rotate around Z
                 if (rz != 0) {
                     float cos = (float) Math.cos(rz);
                     float sin = (float) Math.sin(rz);
@@ -331,9 +317,8 @@ public class BBModelParser {
             if (face == null) continue;
 
             int texId = 0;
-            if (face.has("texture")) {
-                JsonElement texVal = face.get("texture");
-                texId = texVal.isJsonNull() ? 0 : texVal.getAsInt();
+            if (face.has("texture") && !face.get("texture").isJsonNull()) {
+                texId = face.get("texture").getAsInt();
             }
 
             JsonArray uv = face.getAsJsonArray("uv");
@@ -345,40 +330,31 @@ public class BBModelParser {
                 v2 = uv.get(3).getAsFloat();
             }
 
-            // Determine the texture size for UV normalization
-            ResourceLocation tex = textureMap.get(texId);
-            float texW = 16f, texH = 16f;
-            if (tex != null) {
-                var reg = ModelLoadManager.getColorResolver().getRegistered("bbmodel_" + texId);
-                // Use 16x16 default for Java block models
-            }
-
             int[] fv = faceVerts[fi];
             float[] fn = faceNormals[fi];
 
-            // Map face corner to UV: v0�?u1,v2), v1�?u1,v1), v2�?u2,v1), v3�?u2,v2)
             float[][] faceUv = {
-                {u1 / texW, v2 / texH},
-                {u1 / texW, v1 / texH},
-                {u2 / texW, v1 / texH},
-                {u2 / texW, v2 / texH},
+                {u1 / 16f, v2 / 16f},
+                {u1 / 16f, v1 / 16f},
+                {u2 / 16f, v1 / 16f},
+                {u2 / 16f, v2 / 16f},
             };
 
             for (int ci = 0; ci < 4; ci++) {
                 int ci0 = fv[ci];
-                float cx = corners[ci0][0];
-                float cy = corners[ci0][1];
-                float cz = corners[ci0][2];
-                vertList.add(cx); vertList.add(cy); vertList.add(cz);
-                vertList.add(fn[0]); vertList.add(fn[1]); vertList.add(fn[2]);
-                vertList.add(faceUv[ci][0]); vertList.add(faceUv[ci][1]);
+                vertList.add(corners[ci0][0]);
+                vertList.add(corners[ci0][1]);
+                vertList.add(corners[ci0][2]);
+                vertList.add(fn[0]);
+                vertList.add(fn[1]);
+                vertList.add(fn[2]);
+                vertList.add(faceUv[ci][0]);
+                vertList.add(faceUv[ci][1]);
             }
 
-            int base = baseVertex + fi * 4;
+            int base = fi * 4;
             idxList.add(base); idxList.add(base + 1); idxList.add(base + 2);
             idxList.add(base); idxList.add(base + 2); idxList.add(base + 3);
-
-            baseVertex += 4;
         }
 
         if (vertList.isEmpty()) return null;
@@ -415,21 +391,17 @@ public class BBModelParser {
         }
         return textureMap.getOrDefault(0, null);
     }
-```java
+
     private static void parseOutliner(JsonArray outliner, SourceModelData result) {
         List<String> boneNames = new ArrayList<>();
         List<float[]> bonePositions = new ArrayList<>();
         List<Integer> boneParents = new ArrayList<>();
-
-        // First pass: collect all names from flat outliner reference
         Map<String, Integer> nameToIndex = new HashMap<>();
 
-        // Parse element-level outliner references and group-level tree
         for (JsonElement el : outliner) {
             parseOutlinerNode(el, -1, boneNames, bonePositions, boneParents, nameToIndex);
         }
 
-        // Create bone entries
         for (int i = 0; i < boneNames.size(); i++) {
             String name = boneNames.get(i);
             if (name == null || name.isEmpty()) name = "bone_" + i;
@@ -442,47 +414,36 @@ public class BBModelParser {
     private static void parseOutlinerNode(JsonElement el, int parentIdx,
                                            List<String> names, List<float[]> positions,
                                            List<Integer> parents, Map<String, Integer> nameToIndex) {
-        if (el.isJsonObject()) {
-            JsonObject node = el.getAsJsonObject();
-            String name = node.has("name") ? node.get("name").getAsString() : "bone";
-            float[] origin = new float[]{0, 0, 0};
-            if (node.has("origin")) {
-                JsonArray o = node.getAsJsonArray("origin");
-                origin[0] = o.get(0).getAsFloat();
-                origin[1] = o.get(1).getAsFloat();
-                origin[2] = o.get(2).getAsFloat();
+        if (!el.isJsonObject()) return;
+        JsonObject node = el.getAsJsonObject();
+        String name = node.has("name") ? node.get("name").getAsString() : "bone";
+        float[] origin = new float[]{0, 0, 0};
+        if (node.has("origin")) {
+            JsonArray o = node.getAsJsonArray("origin");
+            origin[0] = o.get(0).getAsFloat();
+            origin[1] = o.get(1).getAsFloat();
+            origin[2] = o.get(2).getAsFloat();
+        }
+        String uniqueName = name;
+        int dedup = 0;
+        while (nameToIndex.containsKey(uniqueName)) {
+            dedup++;
+            uniqueName = name + "_" + dedup;
+        }
+        int idx = names.size();
+        names.add(uniqueName);
+        positions.add(origin);
+        parents.add(parentIdx);
+        nameToIndex.put(uniqueName, idx);
+
+        if (node.has("children")) {
+            JsonArray children = node.getAsJsonArray("children");
+            for (JsonElement child : children) {
+                parseOutlinerNode(child, idx, names, positions, parents, nameToIndex);
             }
-            int idx = names.size();
-            // Use name for dedup
-            String uniqueName = name;
-            int dedup = 0;
-            while (nameToIndex.containsKey(uniqueName)) {
-                dedup++;
-                uniqueName = name + "_" + dedup;
-            }
-            // Handle element reference: if this node references an element name
-            if (node.has("children")) {
-                names.add(uniqueName);
-                positions.add(origin);
-                parents.add(parentIdx);
-                nameToIndex.put(uniqueName, idx);
-                JsonArray children = node.getAsJsonArray("children");
-                for (JsonElement child : children) {
-                    parseOutlinerNode(child, idx, names, positions, parents, nameToIndex);
-                }
-            } else {
-                // This is a leaf element reference; only create bone if it has origin or rotation
-                names.add(uniqueName);
-                positions.add(origin);
-                parents.add(parentIdx);
-                nameToIndex.put(uniqueName, idx);
-            }
-        } else if (el.isJsonPrimitive() && el.getAsJsonPrimitive().isNumber()) {
-            // Outliner can contain numeric element references (element index)
-            // We skip these; bones are only created for named groups
         }
     }
-```java
+
     private static void parseAnimations(JsonArray animations, SourceModelData modelData) {
         for (JsonElement animEl : animations) {
             JsonObject anim = animEl.getAsJsonObject();
@@ -506,7 +467,6 @@ public class BBModelParser {
                 JsonObject channels = animators.getAsJsonObject(boneName);
                 if (channels == null) continue;
 
-                // Find bone index by name
                 int boneIdx = -1;
                 for (int i = 0; i < modelData.bones.size(); i++) {
                     if (modelData.bones.get(i).name.equals(boneName)) {
@@ -518,21 +478,18 @@ public class BBModelParser {
 
                 var track = new transferstation.transferstation_whimsicalideas.client.animation.AnimationData.AnimationTrack("bone" + boneIdx);
 
-                // Parse position keyframes
                 JsonObject posCh = channels.getAsJsonObject("position");
                 if (posCh != null) {
                     for (String frameStr : posCh.keySet()) {
                         int frame = Integer.parseInt(frameStr);
                         JsonArray val = posCh.get(frameStr).getAsJsonArray();
                         float[] pos = {val.get(0).getAsFloat(), val.get(1).getAsFloat(), val.get(2).getAsFloat()};
-                        // Find or create matching rotation keyframe
                         float[] rot = {0, 0, 0};
                         track.addKeyFrame(new transferstation.transferstation_whimsicalideas.client.animation.AnimationData.KeyFrame(frame, pos, rot, new float[]{1, 1, 1}));
                         if (frame + 1 > frameCount) frameCount = frame + 1;
                     }
                 }
 
-                // Parse rotation keyframes
                 JsonObject rotCh = channels.getAsJsonObject("rotation");
                 if (rotCh != null) {
                     for (String frameStr : rotCh.keySet()) {
@@ -541,7 +498,6 @@ public class BBModelParser {
                         float[] rot = {(float) Math.toRadians(val.get(0).getAsFloat()),
                                        (float) Math.toRadians(val.get(1).getAsFloat()),
                                        (float) Math.toRadians(val.get(2).getAsFloat())};
-                        // Try to merge with existing position keyframe
                         boolean merged = false;
                         for (var kf : track.keyFrames) {
                             if (kf.frame == frame) {
@@ -594,54 +550,4 @@ public class BBModelParser {
             }
         }
     }
-```java
-// �?110 行：�?name.endsWith(".smd") 后添�?return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".lua") || name.endsWith(".smd") || name.endsWith(".bbmodel");
-```java
-// �?213 行：添加 .bbmodel
-return name.endsWith(".mdl") || name.endsWith(".smd")
-    || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".bbmodel");
-```java
-// �?187 行：添加 .bbmodel
-return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd") || name.endsWith(".bbmodel");
-```java
-// �?1124 行：添加 .bbmodel
-return name.endsWith(".mdl") || name.endsWith(".smd") || name.endsWith(".bbmodel");
-```java
-// �?2603 行：添加 .bbmodel
-return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd") || name.endsWith(".bbmodel");
-```java
-// �?1475 行：添加 .bbmodel
-if (name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd") || name.endsWith(".bbmodel")) {
-```java
-// 在以下代码之前插�?BBModel 检测：
-// Path mdlPath = null, vvdPath = null, vtxPath = null, smdPath = null;
-
-// 优先检�?.bbmodel 文件
-Path bbmodelPath = null;
-for (Map.Entry<Path, List<Path>> entry : dirFiles.entrySet()) {
-    for (Path f : entry.getValue()) {
-        String name = f.getFileName().toString().toLowerCase();
-        if (name.endsWith(".bbmodel")) {
-            bbmodelPath = f;
-            break;
-        }
-    }
-    if (bbmodelPath != null) break;
 }
-
-if (bbmodelPath != null) {
-    LOGGER.info("[ModelLoadManager] Found Blockbench model file: {}", bbmodelPath);
-    ModelLoadProgress.setPhase(ModelLoadProgress.Phase.PARSING);
-    try {
-        SourceModelData data = BBModelParser.parse(bbmodelPath, packageDir);
-        if (data != null && !data.meshes.isEmpty()) {
-            LOGGER.info("[ModelLoadManager] BBModel loaded: {} meshes, {} triangles, {} vertices",
-                data.meshes.size(), data.totalTriangles(), data.totalVertices());
-            return data;
-        }
-    } catch (Exception e) {
-        LOGGER.warn("[ModelLoadManager] BBModel parse failed for {}, falling back: {}", bbmodelPath, e.getMessage());
-    }
-}
-```bash
-.\gradlew.bat compileJava

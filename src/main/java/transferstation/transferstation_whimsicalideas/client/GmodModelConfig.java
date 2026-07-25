@@ -107,7 +107,7 @@ public class GmodModelConfig {
         try (Stream<Path> files = Files.list(dir)) {
             return files.anyMatch(f -> {
                 String name = f.getFileName().toString().toLowerCase();
-                return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".lua") || name.endsWith(".smd");
+                return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".lua") || name.endsWith(".smd") || name.endsWith(".bbmodel");
             });
         } catch (IOException e) {
             return false;

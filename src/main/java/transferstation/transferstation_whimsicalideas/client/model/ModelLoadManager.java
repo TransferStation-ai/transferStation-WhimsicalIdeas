@@ -1121,7 +1121,7 @@ public class ModelLoadManager {
             return files.filter(Files::isRegularFile)
                 .filter(f -> {
                     String name = f.getFileName().toString().toLowerCase();
-                    return name.endsWith(".mdl") || name.endsWith(".smd");
+                    return name.endsWith(".mdl") || name.endsWith(".smd") || name.endsWith(".bbmodel");
                 })
                 .findFirst()
                 .orElse(null);
@@ -1472,9 +1472,38 @@ public class ModelLoadManager {
                     if (inSkipDir) continue;
                 }
                 String name = f.getFileName().toString().toLowerCase();
-                if (name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd")) {
+                if (name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd") || name.endsWith(".bbmodel")) {
                     dirFiles.computeIfAbsent(parent, k -> new ArrayList<>()).add(f);
                 }
+            }
+        }
+
+        // Check for Blockbench .bbmodel file first
+        Path bbmodelPath = null;
+        for (Map.Entry<Path, List<Path>> entry : dirFiles.entrySet()) {
+            for (Path f : entry.getValue()) {
+                String name = f.getFileName().toString().toLowerCase();
+                if (name.endsWith(".bbmodel")) {
+                    bbmodelPath = f;
+                    break;
+                }
+            }
+            if (bbmodelPath != null) break;
+        }
+
+        if (bbmodelPath != null) {
+            LOGGER.info("[ModelLoadManager] Found Blockbench model file: {}", bbmodelPath);
+            ModelLoadProgress.setPhase(ModelLoadProgress.Phase.PARSING);
+            try {
+                SourceModelData data = BBModelParser.parse(bbmodelPath, packageDir);
+                if (data != null && !data.meshes.isEmpty()) {
+                    LOGGER.info("[ModelLoadManager] BBModel loaded: {} meshes, {} triangles, {} vertices",
+                        data.meshes.size(), data.totalTriangles(), data.totalVertices());
+                    ModelLoadProgress.reset();
+                    return data;
+                }
+            } catch (Exception e) {
+                LOGGER.warn("[ModelLoadManager] BBModel parse failed for {}, falling back: {}", bbmodelPath, e.getMessage());
             }
         }
 
@@ -2600,7 +2629,7 @@ public class ModelLoadManager {
         try (Stream<Path> files = Files.list(dir)) {
             return files.anyMatch(f -> {
                 String name = f.getFileName().toString().toLowerCase();
-                return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd");
+                return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd") || name.endsWith(".bbmodel");
             });
         } catch (IOException e) {
             return false;

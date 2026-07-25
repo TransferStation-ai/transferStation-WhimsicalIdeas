@@ -1,32 +1,25 @@
-# 任务 5 报告：Minecraft 集成层
+# Task 5 Report: Add microphone button to NpcChatScreen
 
-## 状态：DONE
+## Status: DONE
 
-## 变更摘要
+## Summary
 
-### 创建的文件
-1. **`src/main/java/.../client/particle/integration/ParticleClientHandler.java`**
-   - Forge 事件总线订阅者（`@Mod.EventBusSubscriber`，客户端专用）
-   - `onClientTick` — 客户端 Tick 结束时调用 `ParticleManager.getInstance().tick(0.05f)`
-   - `onRenderLevel` — 在 `AFTER_PARTICLES` 阶段调用 `ParticleManager.getInstance().render(...)`
-   - `onPlayerLogout` — 玩家登出时调用 `ParticleManager.getInstance().onWorldUnload()`
+Implemented voice input UI in `NpcChatScreen.java`:
 
-2. **`src/main/java/.../client/particle/integration/ParticleCommands.java`**
-   - Forge 命令注册事件订阅者（`@Mod.EventBusSubscriber`，客户端专用）
-   - `/particle_spawn <name> [pos]` — 在指定位置生成粒子效果
-   - `/particle_list` — 列出所有已注册的粒子系统
+1. **Imports** — Added `VoiceCaptureService`, `VoiceConfig`, `VoskSttEngine` imports.
+2. **Member variables** — Added `voiceModeAvailable`, `isRecording`, `micButton`, `voiceStatusText`, `voiceStatusTimer` after `awaitingReply`.
+3. **Mic button in `init()`** — Added a microphone button (`🎤`) positioned left of the input field at `cx - 165`. Buttons disabled if voice service unavailable.
+4. **`handleMicPress()`** — Added before `sendMessage()`:
+   - Starts recording via `VoiceCaptureService.startRecording()`.
+   - Updates mic button to red dot (`🔴`) with "录音中..." status.
+   - On recording complete, calls `VoskSttEngine.transcribe()` and shows "识别中...".
+   - On transcription result: auto-sends if `VoiceConfig.isAutoSend()`, otherwise just fills input field.
+   - On failure: shows "未检测到语音" for 40 ticks.
+   - On stop: calls `VoiceCaptureService.stopRecording()`.
+5. **Voice timer in `tick()`** — Decrements `voiceStatusTimer`, clears `voiceStatusText` when it reaches 0.
+6. **Voice status in `render()`** — Draws centered voice status text below the chat area (`chatBottom + 16`).
 
-### 修改的文件
-3. **`Transferstation_whimsicalideas.java`**
-   - 添加 `ParticleManager` 导入
-   - 在 `initializeClientComponents()` 末尾添加 `loadBuiltInParticles()` 调用
-   - 新增 `loadBuiltInParticles()` 方法：尝试从 mod jar 资源加载 `valve_content/particles/builtin.pcf`
+## Verification
 
-4. **`ParticleManager.java`**
-   - 添加 `getRegisteredSystemNames()` 方法，返回已注册粒子系统名称的不可变列表
-
-### 编译验证
-- `gradlew compileJava` — BUILD SUCCESSFUL（仅有一个 `ResourceLocation` 双参构造函数的废弃警告）
-
-### 疑虑
-- 无
+- **Compilation**: `BUILD SUCCESSFUL` (2 pre-existing deprecation warnings in unrelated files)
+- **Commit**: `5d3a243` — `feat(voice): add mic button to NpcChatScreen`

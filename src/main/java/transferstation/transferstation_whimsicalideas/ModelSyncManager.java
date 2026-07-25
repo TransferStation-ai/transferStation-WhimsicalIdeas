@@ -211,7 +211,7 @@ public class ModelSyncManager {
             return files.anyMatch(f -> {
                 String name = f.getFileName().toString().toLowerCase();
                 return name.endsWith(".mdl") || name.endsWith(".smd")
-                        || name.endsWith(".vvd") || name.endsWith(".dx90.vtx");
+                        || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".bbmodel");
             });
         } catch (IOException e) {
             return false;

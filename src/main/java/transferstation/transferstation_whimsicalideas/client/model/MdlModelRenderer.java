@@ -184,7 +184,7 @@ public class MdlModelRenderer {
         try (var files = java.nio.file.Files.list(dir)) {
             return files.anyMatch(f -> {
                 String name = f.getFileName().toString().toLowerCase();
-                return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd");
+                return name.endsWith(".mdl") || name.endsWith(".vvd") || name.endsWith(".dx90.vtx") || name.endsWith(".smd") || name.endsWith(".bbmodel");
             });
         } catch (IOException e) {
             return false;

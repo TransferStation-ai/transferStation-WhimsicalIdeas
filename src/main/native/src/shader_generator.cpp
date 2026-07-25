@@ -1,5 +1,20 @@
 #include "shader_generator.h"
-#include <glad/gl.h>
+#include "glad/gl.h"
+
+// Redirect GL function calls to glad function pointers
+#define glCreateShader glad_glCreateShader
+#define glShaderSource glad_glShaderSource
+#define glCompileShader glad_glCompileShader
+#define glGetShaderiv glad_glGetShaderiv
+#define glGetShaderInfoLog glad_glGetShaderInfoLog
+#define glDeleteShader glad_glDeleteShader
+#define glCreateProgram glad_glCreateProgram
+#define glAttachShader glad_glAttachShader
+#define glLinkProgram glad_glLinkProgram
+#define glGetProgramiv glad_glGetProgramiv
+#define glGetProgramInfoLog glad_glGetProgramInfoLog
+#define glDeleteProgram glad_glDeleteProgram
+#define glGetUniformLocation glad_glGetUniformLocation
 #include <cstdio>
 #include <sstream>
 #include <algorithm>
@@ -138,7 +153,7 @@ ShaderGenerator::ShaderSource ShaderGenerator::generateSource(
     return source;
 }
 
-static uint32_t compileShader(uint32_t type, const std::string& source) {
+uint32_t ShaderGenerator::compileShader(uint32_t type, const std::string& source) {
     uint32_t shader = glCreateShader(type);
     const char* src = source.c_str();
     glShaderSource(shader, 1, &src, nullptr);

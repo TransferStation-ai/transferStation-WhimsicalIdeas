@@ -1,13 +1,10 @@
-# SDD Progress: Model Export Command
+# SDD Progress: BBModel Loader
 
-BASE: b2b31a5
+BASE: d939dc13db91cb8ab120f9df225b04520206ef7b
 
 | Task | Status | Commits | Review |
 |------|--------|---------|--------|
-| 1: ModelExportCommand | pending | - | - |
-| 2: ModelExporter | pending | - | - |
-| 3: TextureExporter | pending | - | - |
-| 4: ObjWriter | pending | - | - |
-| 5: BBModelWriter | pending | - | - |
-| 6: Translations | pending | - | - |
-| 7: Build verify | pending | - | - |
+| 1: BBModelParser.java | pending | - | - |
+| 2: hasAnyModelFile 更新 | pending | - | - |
+| 3: loadFromDirectory BBModel 分支 | pending | - | - |
+
