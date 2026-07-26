@@ -31,6 +31,12 @@ public class VvdParser {
         public int tangentDataStart;
     }
 
+    public static class VvdTangent {
+        public float x, y, z, w;
+
+        public VvdTangent() {}
+    }
+
     public static class VvdFixup {
         public int lodIndex;
         public int sourceVertexID;
@@ -67,6 +73,8 @@ public class VvdParser {
         public List<VvdFixup> fixups = new ArrayList<>();
         public List<StudioVertexExt> vertices = new ArrayList<>();
         public List<List<StudioVertexExt>> lodVertices = new ArrayList<>();
+
+        public List<VvdTangent> tangents = new ArrayList<>();
 
         public List<StudioVertexExt> getVerticesForLod(int lod) {
             if (lod <= 0 || lod > lodVertices.size()) {
@@ -244,5 +252,39 @@ public class VvdParser {
                 result.lodVertices.add(lodVerts);
             }
         }
+    }
+
+    public static List<VvdTangent> parseTangents(byte[] data, ParsedVvd vvd) {
+        List<VvdTangent> result = new ArrayList<>();
+        if (vvd == null || vvd.header == null) return result;
+
+        int tangentStart = vvd.header.tangentDataStart;
+        int numVerts = (vvd.vertices != null) ? vvd.vertices.size() : 0;
+        if (tangentStart <= 0 || numVerts <= 0) return result;
+
+        int bufferLimit = data.length;
+        int tangentSize = 16;
+
+        long endPos = (long) tangentStart + (long) numVerts * tangentSize;
+        if (endPos > bufferLimit) {
+            LOGGER.debug("[VvdParser] Tangent data extends beyond file: start={} numVerts={} end={} limit={}",
+                tangentStart, numVerts, endPos, bufferLimit);
+            return result;
+        }
+
+        ByteBuffer buf = ByteBuffer.wrap(data);
+        buf.order(ByteOrder.LITTLE_ENDIAN);
+
+        for (int i = 0; i < numVerts; i++) {
+            int off = tangentStart + i * tangentSize;
+            VvdTangent t = new VvdTangent();
+            t.x = buf.getFloat(off);
+            t.y = buf.getFloat(off + 4);
+            t.z = buf.getFloat(off + 8);
+            t.w = buf.getFloat(off + 12);
+            result.add(t);
+        }
+
+        return result;
     }
 }
