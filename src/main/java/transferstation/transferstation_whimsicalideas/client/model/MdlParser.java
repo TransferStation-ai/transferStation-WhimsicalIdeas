@@ -83,7 +83,7 @@ public class MdlParser {
             LOGGER.warn("[MdlParser] Unknown MDL version {}. Using v53 struct sizes.", ver);
         }
 
-        result.hdr2 = parseStudioHdr2(buf, result.header, bufferLimit, result);
+        result.hdr2 = parseHdr2(buf, result.header, bufferLimit, result);
 
         safeRun(() -> parseBodyParts(buf, result, bufferLimit), "bodyparts");
         safeRun(() -> parseModels(buf, result, bufferLimit), "models");
@@ -92,7 +92,7 @@ public class MdlParser {
         // Skip MDL vertex parsing for VVD-based models (vertices come from .vvd files)
         boolean hasVvdVertexData = result.header.textureindex > 0 && result.header.numbones > 0;
         if (!hasVvdVertexData) {
-            for (StudioMesh mesh : result.meshes) {
+            for (Mesh mesh : result.meshes) {
                 try {
                     parseVerticesFromMesh(buf, mesh, result, bufferLimit);
                 } catch (Exception e) {
@@ -125,12 +125,19 @@ public class MdlParser {
         safeRun(() -> parseMouths(buf, result, bufferLimit), "mouths");
         safeRun(() -> parseKeyValues(buf, result, bufferLimit), "keyvalues");
         safeRun(() -> parseSurfaceProp(buf, result, bufferLimit), "surfaceprop");
+        safeRun(() -> MdlProceduralBones.ProceduralBonesParser.parse(buf, result, bufferLimit), "proceduralbones");
+        safeRun(() -> MdlSequenceData.SequenceDataParser.parseIKRules(buf, result, bufferLimit), "seqikrules");
+        safeRun(() -> MdlSequenceData.SequenceDataParser.parseAutolayers(buf, result, bufferLimit), "seqautolayers");
+        safeRun(() -> MdlSequenceData.SequenceDataParser.parseActivityModifiers(buf, result, bufferLimit), "seqactivitymodifiers");
+        safeRun(() -> MdlSequenceData.SequenceDataParser.parseMovements(buf, result, bufferLimit), "seqmovements");
+        safeRun(() -> MdlSequenceData.SequenceDataParser.parseLocalHierarchies(buf, result, bufferLimit), "localhierarchies");
+        safeRun(() -> MdlFlexAnimation.parse(buf, result, bufferLimit), "flexanimations");
 
         return result;
     }
 
-    private static StudioHdr2 parseStudioHdr2(ByteBuffer buf, StudioHeader header, int bufferLimit, ParsedModel result) {
-        StudioHdr2 hdr2 = new StudioHdr2();
+    private static Hdr2 parseHdr2(ByteBuffer buf, Header header, int bufferLimit, ParsedModel result) {
+        Hdr2 hdr2 = new Hdr2();
         hdr2.hasData = false;
 
         if (header.studiohdr2index <= 0 || header.studiohdr2index >= bufferLimit - 48) {
@@ -159,7 +166,7 @@ public class MdlParser {
                 if (srcBoneBase + numSrcBones * srcBoneSize <= bufferLimit) {
                     for (int s = 0; s < numSrcBones; s++) {
                         int off = srcBoneBase + s * srcBoneSize;
-                        StudioSrcBoneTransform bt = new StudioSrcBoneTransform();
+                        SrcBoneTransform bt = new SrcBoneTransform();
                         bt.pos = new float[]{buf.getFloat(off), buf.getFloat(off + 4), buf.getFloat(off + 8)};
                         bt.quat = new float[]{buf.getFloat(off + 12), buf.getFloat(off + 16), buf.getFloat(off + 20), buf.getFloat(off + 24)};
                         bt.scale = new float[]{buf.getFloat(off + 28), buf.getFloat(off + 32), buf.getFloat(off + 36)};
@@ -187,7 +194,7 @@ public class MdlParser {
                 }
             }
         } catch (Exception e) {
-            LOGGER.debug("[MdlParser] StudioHDR2 parse error (non-fatal): {}", e.getMessage());
+            LOGGER.debug("[MdlParser] HDR2 parse error (non-fatal): {}", e.getMessage());
         } finally {
             buf.position(savedPos);
         }
@@ -245,10 +252,10 @@ public class MdlParser {
         return (long) a + (long) b * (long) c;
     }
 
-    private static StudioHeader parseHeader(ByteBuffer buf, int bufferLimit) {
+    private static Header parseHeader(ByteBuffer buf, int bufferLimit) {
         assertInBounds(buf.position(), 396, bufferLimit, "header");
 
-        StudioHeader h = new StudioHeader();
+        Header h = new Header();
         h.id = buf.getInt();
         h.version = buf.getInt();
         h.checksum = buf.getInt();
@@ -334,7 +341,7 @@ public class MdlParser {
         buf.position(offset);
 
         for (int i = 0; i < numBodyParts; i++) {
-            StudioBodyPart bp = new StudioBodyPart();
+            BodyPart bp = new BodyPart();
             bp.fileOffset = result.header.bodypartindex + i * BODYPART_SIZE;
             bp.sznameindex = buf.getInt();
             bp.nummodels = buf.getInt();
@@ -354,14 +361,14 @@ public class MdlParser {
         int totalModels = 0;
         int modelSize = result.modelSize;
         for (int bpIdx = 0; bpIdx < result.bodyParts.size(); bpIdx++) {
-            StudioBodyPart bp = result.bodyParts.get(bpIdx);
+            BodyPart bp = result.bodyParts.get(bpIdx);
             int numModels = sanitizeCount(bp.nummodels, MAX_MODELS - totalModels, "nummodels");
             int modelAddr = bp.fileOffset + bp.modelindex;
             assertInBounds(modelAddr, (long) numModels * modelSize, bufferLimit, "modelindex");
             for (int i = 0; i < numModels; i++) {
                 int currentAddr = modelAddr + i * modelSize;
                 buf.position(currentAddr);
-                StudioModel m = new StudioModel();
+                Model m = new Model();
                 m.fileOffset = currentAddr;
                 m.bodypartIndex = bpIdx;
                 m.name = readFixedString(buf, 64);
@@ -386,13 +393,13 @@ public class MdlParser {
     private static void parseMeshes(ByteBuffer buf, ParsedModel result, int bufferLimit) {
         int meshSize = result.meshSize;
         for (int modelIdx = 0; modelIdx < result.models.size(); modelIdx++) {
-            StudioModel model = result.models.get(modelIdx);
+            Model model = result.models.get(modelIdx);
             int numMeshes = sanitizeCount(model.nummeshes, MAX_MESHES - result.meshes.size(), "nummeshes");
             int meshAddr = model.fileOffset + model.meshindex;
             assertInBounds(meshAddr, (long) numMeshes * meshSize, bufferLimit, "meshindex");
             buf.position(meshAddr);
             for (int i = 0; i < numMeshes; i++) {
-                StudioMesh m = new StudioMesh();
+                Mesh m = new Mesh();
                 m.material = buf.getInt();
                 m.modelindex = buf.getInt();
                 m.numvertices = buf.getInt();
@@ -417,8 +424,8 @@ public class MdlParser {
         }
     }
 
-    private static void parseVerticesFromMesh(ByteBuffer buf, StudioMesh mesh, ParsedModel result, int bufferLimit) {
-        StudioModel model = result.models.get(mesh.globalModelIndex);
+    private static void parseVerticesFromMesh(ByteBuffer buf, Mesh mesh, ParsedModel result, int bufferLimit) {
+        Model model = result.models.get(mesh.globalModelIndex);
         int baseVertexOffset = model.vertexindex;
         int meshOffset = mesh.vertexoffset;
         int numVertices = sanitizeCount(mesh.numvertices, MAX_VERTICES - result.vertices.size(), "mesh.numvertices");
@@ -430,7 +437,7 @@ public class MdlParser {
                         "MDL parse error: vertex[%d] position %d exceeds buffer limit %d", i, pos, bufferLimit));
             }
             buf.position((int) pos);
-            StudioVertex v = new StudioVertex();
+            Vertex v = new Vertex();
             v.x = buf.getFloat();
             v.y = buf.getFloat();
             v.z = buf.getFloat();
@@ -484,7 +491,7 @@ public class MdlParser {
         for (int i = 0; i < numBones; i++) {
             int boneOff = boneDataBase + i * boneSize;
             buf.position(boneOff);
-            StudioBone b = new StudioBone();
+            Bone b = new Bone();
             b.sznameindex = buf.getInt();
             b.parent = buf.getInt();
             b.bonecontroller = new int[6];
@@ -524,7 +531,7 @@ public class MdlParser {
     }
 
     private static void parseEyeballs(ByteBuffer buf, ParsedModel result, int bufferLimit) {
-        for (StudioModel model : result.models) {
+        for (Model model : result.models) {
             if (model.numeyeballs <= 0) continue;
 
             int offset = model.eyeballindex;
@@ -533,7 +540,7 @@ public class MdlParser {
             buf.position(offset);
 
             for (int i = 0; i < count; i++) {
-                StudioEyeball e = new StudioEyeball();
+                Eyeball e = new Eyeball();
                 e.sznameindex = buf.getInt();
                 e.bone = buf.getInt();
                 e.org = readFloat3(buf);
@@ -571,7 +578,7 @@ public class MdlParser {
         for (int i = 0; i < numTextures; i++) {
             int entryOff = textureIndex + i * textureEntrySize;
             buf.position(entryOff);
-            StudioTexture tex = new StudioTexture();
+            Texture tex = new Texture();
             int nameOff = buf.getInt();
             tex.flags = buf.getInt();
             tex.width = buf.getInt();
@@ -680,7 +687,7 @@ public class MdlParser {
         for (int i = 0; i < numAttachments; i++) {
             int entryOff = attachmentIndex + i * ATTACHMENT_SIZE;
             buf.position(entryOff);
-            StudioAttachment a = new StudioAttachment();
+            Attachment a = new Attachment();
             a.fileOffset = entryOff;
             a.sznameindex = buf.getInt();
             a.flags = buf.getInt();
@@ -712,7 +719,7 @@ public class MdlParser {
         buf.position(boneControllerIndex);
 
         for (int i = 0; i < numBoneControllers; i++) {
-            StudioBoneController bc = new StudioBoneController();
+            BoneController bc = new BoneController();
             bc.bone = buf.getInt();
             bc.channel = buf.getInt();
             bc.flags = buf.getInt();
@@ -737,7 +744,7 @@ public class MdlParser {
         for (int i = 0; i < numHitboxSets; i++) {
             int entryOff = hitboxSetIndex + i * HITBOXSET_SIZE;
             buf.position(entryOff);
-            StudioHitboxSet hs = new StudioHitboxSet();
+            HitboxSet hs = new HitboxSet();
             hs.sznameindex = buf.getInt();
             hs.numhitboxes = buf.getInt();
             hs.hitboxindex = buf.getInt();
@@ -754,7 +761,7 @@ public class MdlParser {
                 for (int h = 0; h < hs.numhitboxes; h++) {
                     int hOff = hitboxDataAddr + h * HITBOX_SIZE;
                     buf.position(hOff);
-                    StudioBbox bbox = new StudioBbox();
+                    Bbox bbox = new Bbox();
                     bbox.bone = buf.getInt();
                     bbox.group = buf.getInt();
                     bbox.bbmin = readFloat3(buf);
@@ -788,7 +795,7 @@ public class MdlParser {
         for (int i = 0; i < numLocalSeq; i++) {
             int entryOff = localSeqIndex + i * seqdescSize;
             buf.position(entryOff);
-            StudioSeqDesc seq = new StudioSeqDesc();
+            SeqDesc seq = new SeqDesc();
             seq.baseptr = buf.getInt();
             seq.sznameindex = buf.getInt();
             if (seq.sznameindex > 0) {
@@ -860,7 +867,7 @@ public class MdlParser {
         for (int i = 0; i < numIKChains; i++) {
             int entryOff = ikChainIndex + i * IKCHAIN_SIZE;
             buf.position(entryOff);
-            StudioIKChain ik = new StudioIKChain();
+            IKChain ik = new IKChain();
             ik.fileOffset = entryOff;
             ik.sznameindex = buf.getInt();
             ik.chain = buf.getInt();
@@ -871,7 +878,7 @@ public class MdlParser {
             for (int l = 0; l < numLinks; l++) {
                 int lOff = linkDataAddr + l * IKLINK_SIZE;
                 buf.position(lOff);
-                StudioIKLink link = new StudioIKLink();
+                IKLink link = new IKLink();
                 link.bone = buf.getInt();
                 link.kneeDir = readFloat3(buf);
                 link.limits = readFloat3(buf);
@@ -900,11 +907,11 @@ public class MdlParser {
         for (int i = 0; i < numFlexDesc; i++) {
             int entryOff = flexDescIndex + i * FLEXDESC_SIZE;
             buf.position(entryOff);
-            StudioFlexDesc fd = new StudioFlexDesc();
+            FlexDesc fd = new FlexDesc();
             fd.sznameindex = buf.getInt();
             fd.name = "";
             if (fd.sznameindex > 0) {
-                int absNameOff = flexDescIndex + fd.sznameindex;
+                int absNameOff = entryOff + fd.sznameindex;
                 fd.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
             }
             result.flexDescs.add(fd);
@@ -922,14 +929,16 @@ public class MdlParser {
         buf.position(flexControllerIndex);
 
         for (int i = 0; i < numFlexControllers; i++) {
-            StudioFlexController fc = new StudioFlexController();
+            int entryOff = flexControllerIndex + i * FLEXCONTROLLER_SIZE;
+            buf.position(entryOff);
+            FlexController fc = new FlexController();
             fc.sznameindex = buf.getInt();
             fc.name = "";
             fc.localToGlobal = new int[]{buf.getInt(), buf.getInt()};
             fc.min = readFloat3(buf);
             fc.max = readFloat3(buf);
             if (fc.sznameindex > 0) {
-                int absNameOff = flexControllerIndex + fc.sznameindex;
+                int absNameOff = entryOff + fc.sznameindex;
                 fc.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
             }
             result.flexControllers.add(fc);
@@ -948,7 +957,7 @@ public class MdlParser {
         for (int i = 0; i < numFlexRules; i++) {
             int entryOff = flexRuleIndex + i * FLEXRULE_SIZE;
             buf.position(entryOff);
-            StudioFlexRule fr = new StudioFlexRule();
+            FlexRule fr = new FlexRule();
             fr.flex = buf.getInt();
             fr.numops = buf.getInt();
             fr.opindex = buf.getInt();
@@ -975,7 +984,7 @@ public class MdlParser {
             int entryOff = animIndex + i * LOCALANIM_SIZE;
             buf.position(entryOff);
 
-            StudioLocalAnim anim = new StudioLocalAnim();
+            LocalAnim anim = new LocalAnim();
             int nameOff = buf.getInt();
             anim.animBlock = buf.getInt();
             anim.animOffset = buf.getInt();
@@ -988,7 +997,7 @@ public class MdlParser {
             skip(buf, 12);
 
             if (nameOff > 0) {
-                int absNameOff = animIndex + nameOff;
+                int absNameOff = entryOff + nameOff;
                 anim.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
             } else {
                 anim.name = "";
@@ -1008,7 +1017,9 @@ public class MdlParser {
         buf.position(paramIndex);
 
         for (int i = 0; i < numParams; i++) {
-            StudioPoseParam pp = new StudioPoseParam();
+            int entryOff = paramIndex + i * POSEPARAM_SIZE;
+            buf.position(entryOff);
+            PoseParam pp = new PoseParam();
             int nameOff = buf.getInt();
             pp.type = buf.getInt();
             pp.start = buf.getFloat();
@@ -1017,7 +1028,7 @@ public class MdlParser {
             skip(buf, 4);
 
             if (nameOff > 0) {
-                int absNameOff = paramIndex + nameOff;
+                int absNameOff = entryOff + nameOff;
                 pp.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
             } else {
                 pp.name = "";
@@ -1040,7 +1051,7 @@ public class MdlParser {
             int entryOff = nodeIndex + i * LOCALNODE_SIZE;
             buf.position(entryOff);
 
-            StudioLocalNode node = new StudioLocalNode();
+            LocalNode node = new LocalNode();
             int nameOff = buf.getInt();
             node.parent = buf.getInt();
 
@@ -1065,7 +1076,7 @@ public class MdlParser {
         buf.position(lockIndex);
 
         for (int i = 0; i < numLocks; i++) {
-            StudioIKAutoplayLock lock = new StudioIKAutoplayLock();
+            IKAutoplayLock lock = new IKAutoplayLock();
             lock.ikChainIndex = buf.getInt();
             lock.lockCount = buf.getInt();
             lock.threshold = buf.getFloat();
@@ -1084,7 +1095,7 @@ public class MdlParser {
         buf.position(mouthIndex);
 
         for (int i = 0; i < numMouths; i++) {
-            StudioMouth mouth = new StudioMouth();
+            Mouth mouth = new Mouth();
             mouth.bone = buf.getInt();
             mouth.flexibleOffsets = new float[]{buf.getFloat(), buf.getFloat(), buf.getFloat()};
             result.mouths.add(mouth);
@@ -1135,8 +1146,8 @@ public class MdlParser {
         result.sequenceAnimData.clear();
         int localAnimSize = 64; // mstudioanimdesc_t size
         for (int si = 0; si < numSeqs; si++) {
-            StudioSeqDesc seq = result.sequences.get(si);
-            StudioSequenceAnimData animData = new StudioSequenceAnimData();
+            SeqDesc seq = result.sequences.get(si);
+            SequenceAnimData animData = new SequenceAnimData();
 
             // Determine which local anim this sequence references
             int animIdx = -1;
@@ -1167,7 +1178,7 @@ public class MdlParser {
                 continue;
             }
 
-            StudioLocalAnim localAnim = result.localAnims.get(animIdx);
+            LocalAnim localAnim = result.localAnims.get(animIdx);
             int segmentOff = localAnimBase + localAnim.segmentIndex;
             if (segmentOff <= 0 || segmentOff >= bufferLimit) {
                 result.sequenceAnimData.add(animData);
@@ -1175,7 +1186,7 @@ public class MdlParser {
             }
 
             // Parse frame 0 bone transforms from segment data
-            StudioAnimFrameData frame0 = new StudioAnimFrameData();
+            AnimFrameData frame0 = new AnimFrameData();
             frame0.frame = 0;
 
             int savedPos = buf.position();
@@ -1202,7 +1213,7 @@ public class MdlParser {
                         continue;
                     }
 
-                    StudioAnimFrameBone fb = new StudioAnimFrameBone();
+                    AnimFrameBone fb = new AnimFrameBone();
                     fb.boneIndex = boneIdx;
                     fb.boneName = result.bones.get(boneIdx).name;
 
@@ -1283,6 +1294,7 @@ public class MdlParser {
             // Allow extended ASCII (128-255) and Unicode for non-English mod paths.
             if (c < 32) return false;
             if (c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*') return false;
+            if (c == '\ufffd') return false;
         }
         return true;
     }
@@ -1325,12 +1337,21 @@ public class MdlParser {
             return new String(bytes, 0, len, StandardCharsets.US_ASCII);
         }
 
-        // Try to detect if the string is valid ASCII first
-        // Then try CP932 (Japanese) and CP1252 (Western European) with improved scoring
+        // Score-based encoding detection: try UTF-8, CP932 (Japanese), CP1252 (Western European).
+        // UTF-8 is tried first because it's the modern standard and increasingly common in mods.
+        // The scoring heuristic naturally prefers the encoding that produces the fewest
+        // replacement characters and the most valid alphanumeric characters.
+        int utf8Score = 0;
         int cp932Score = 0;
         int cp1252Score = 0;
+        String utf8Result = null;
         String cp932Result = null;
         String cp1252Result = null;
+
+        try {
+            utf8Result = new String(bytes, 0, len, StandardCharsets.UTF_8);
+            utf8Score = calculateStringScore(utf8Result);
+        } catch (Exception ignored) {}
 
         try {
             cp932Result = new String(bytes, 0, len, CP932);
@@ -1342,24 +1363,28 @@ public class MdlParser {
             cp1252Score = calculateStringScore(cp1252Result);
         } catch (Exception ignored) {}
 
-        // Choose the encoding with the higher score
-        if (cp932Result != null && cp1252Result != null) {
-            if (cp932Score > cp1252Score) {
-                return cp932Result;
-            } else if (cp1252Score > cp932Score) {
-                return cp1252Result;
-            } else {
-                // If scores are equal, prefer CP1252 as it's more common in Source Engine
-                return cp1252Result;
-            }
-        } else if (cp932Result != null) {
-            return cp932Result;
-        } else if (cp1252Result != null) {
-            return cp1252Result;
+        int bestScore = Math.max(utf8Score, Math.max(cp932Score, cp1252Score));
+        if (bestScore > 0) {
+            if (utf8Result != null && utf8Score == bestScore) return utf8Result;
+            if (cp932Result != null && cp932Score == bestScore) return cp932Result;
+            if (cp1252Result != null && cp1252Score == bestScore) return cp1252Result;
         }
 
-        // Fallback to ASCII replacement
+        String fallback = pickBestFallback(utf8Result, cp1252Result, cp932Result);
+        if (fallback != null) return fallback;
+
         return new String(bytes, 0, len, StandardCharsets.US_ASCII).replace('?', '_');
+    }
+
+    private static String pickBestFallback(String... candidates) {
+        String best = null;
+        for (String s : candidates) {
+            if (s == null) continue;
+            if (s.indexOf('\ufffd') >= 0) continue;
+            best = s;
+            break;
+        }
+        return best;
     }
 
     private static int calculateStringScore(String s) {

@@ -83,8 +83,6 @@ public class MdlDataTypes {
         public int studiohdr2index;
     }
 
-    public static class StudioHeader extends Header {}
-
     public static class BodyPart {
         public int sznameindex;
         public int nummodels;
@@ -93,8 +91,6 @@ public class MdlDataTypes {
         public int fileOffset;
         public String name;
     }
-
-    public static class StudioBodyPart extends BodyPart {}
 
     public static class Model {
         public String name;
@@ -114,8 +110,6 @@ public class MdlDataTypes {
         public int bodypartIndex;
     }
 
-    public static class StudioModel extends Model {}
-
     public static class Mesh {
         public int material;
         public int modelindex;
@@ -133,15 +127,11 @@ public class MdlDataTypes {
         public int meshLocalIndex;
     }
 
-    public static class StudioMesh extends Mesh {}
-
     public static class Vertex {
         public float x, y, z;
         public float nx, ny, nz;
         public float u, v;
     }
-
-    public static class StudioVertex extends Vertex {}
 
     public static class Bone {
         public int sznameindex;
@@ -168,8 +158,6 @@ public class MdlDataTypes {
         }
     }
 
-    public static class StudioBone extends Bone {}
-
     public static class Eyeball {
         public int sznameindex;
         public int bone;
@@ -190,16 +178,12 @@ public class MdlDataTypes {
         public int[] unused2;
     }
 
-    public static class StudioEyeball extends Eyeball {}
-
     public static class Texture {
         public String name;
         public int flags;
         public int width;
         public int height;
     }
-
-    public static class StudioTexture extends Texture {}
 
     public static class Hdr2 {
         public int numSkins;
@@ -215,8 +199,6 @@ public class MdlDataTypes {
         public int[] skinReplacementTables;
     }
 
-    public static class StudioHdr2 extends Hdr2 {}
-
     public static class Attachment {
         public int sznameindex;
         public String name;
@@ -229,8 +211,6 @@ public class MdlDataTypes {
         public int fileOffset;
     }
 
-    public static class StudioAttachment extends Attachment {}
-
     public static class BoneController {
         public int bone;
         public int channel;
@@ -241,8 +221,6 @@ public class MdlDataTypes {
         public int inputField;
     }
 
-    public static class StudioBoneController extends BoneController {}
-
     public static class HitboxSet {
         public int sznameindex;
         public String name;
@@ -250,8 +228,6 @@ public class MdlDataTypes {
         public int hitboxindex;
         public List<Bbox> hitboxes = new ArrayList<>();
     }
-
-    public static class StudioHitboxSet extends HitboxSet {}
 
     public static class Bbox {
         public int bone;
@@ -261,8 +237,6 @@ public class MdlDataTypes {
         public int sznameindex;
         public String name;
     }
-
-    public static class StudioBbox extends Bbox {}
 
     public static class SeqDesc {
         public int baseptr;
@@ -310,8 +284,6 @@ public class MdlDataTypes {
         public int paramValue;
     }
 
-    public static class StudioSeqDesc extends SeqDesc {}
-
     public static class AnimEvent {
         public int cycle;
         public int eventIndex;
@@ -320,8 +292,6 @@ public class MdlDataTypes {
         public int sznameindex;
         public String name;
     }
-
-    public static class StudioAnimEvent extends AnimEvent {}
 
     public static class IKChain {
         public int sznameindex;
@@ -333,8 +303,6 @@ public class MdlDataTypes {
         public List<IKLink> links = new ArrayList<>();
     }
 
-    public static class StudioIKChain extends IKChain {}
-
     public static class IKLink {
         public int bone;
         public float[] kneeDir;
@@ -342,14 +310,10 @@ public class MdlDataTypes {
         public int unused;
     }
 
-    public static class StudioIKLink extends IKLink {}
-
     public static class FlexDesc {
         public int sznameindex;
         public String name;
     }
-
-    public static class StudioFlexDesc extends FlexDesc {}
 
     public static class FlexController {
         public int sznameindex;
@@ -359,16 +323,12 @@ public class MdlDataTypes {
         public float[] max;
     }
 
-    public static class StudioFlexController extends FlexController {}
-
     public static class FlexRule {
         public int flex;
         public int numops;
         public int opindex;
         public int[] ops;
     }
-
-    public static class StudioFlexRule extends FlexRule {}
 
     public static class LocalAnim {
         public String name;
@@ -382,8 +342,6 @@ public class MdlDataTypes {
         public int[] animBlocks;
     }
 
-    public static class StudioLocalAnim extends LocalAnim {}
-
     public static class PoseParam {
         public String name;
         public int type;
@@ -392,14 +350,10 @@ public class MdlDataTypes {
         public int loop;
     }
 
-    public static class StudioPoseParam extends PoseParam {}
-
     public static class LocalNode {
         public String name;
         public int parent;
     }
-
-    public static class StudioLocalNode extends LocalNode {}
 
     public static class IKAutoplayLock {
         public int ikChainIndex;
@@ -407,14 +361,10 @@ public class MdlDataTypes {
         public float threshold;
     }
 
-    public static class StudioIKAutoplayLock extends IKAutoplayLock {}
-
     public static class Mouth {
         public int bone;
         public float[] flexibleOffsets;
     }
-
-    public static class StudioMouth extends Mouth {}
 
     public static class SrcBoneTransform {
         public float[] pos;
@@ -427,8 +377,6 @@ public class MdlDataTypes {
             this.scale = new float[3];
         }
     }
-
-    public static class StudioSrcBoneTransform extends SrcBoneTransform {}
 
     public static class AnimFrameBone {
         public int boneIndex;
@@ -444,14 +392,10 @@ public class MdlDataTypes {
         }
     }
 
-    public static class StudioAnimFrameBone extends AnimFrameBone {}
-
     public static class AnimFrameData {
         public int frame;
         public List<AnimFrameBone> boneTransforms = new ArrayList<>();
     }
-
-    public static class StudioAnimFrameData extends AnimFrameData {}
 
     public static class SequenceAnimData {
         public boolean isReference;
@@ -465,8 +409,6 @@ public class MdlDataTypes {
             return frames.get(frameIndex);
         }
     }
-
-    public static class StudioSequenceAnimData extends SequenceAnimData {}
 
     public enum SequenceType {
         NORMAL,
@@ -502,47 +444,60 @@ public class MdlDataTypes {
     }
 
     public static class ParsedModel {
-        public StudioHeader header;
-        public StudioHdr2 hdr2;
-        public List<StudioBodyPart> bodyParts = new ArrayList<>();
-        public List<StudioModel> models = new ArrayList<>();
-        public List<StudioMesh> meshes = new ArrayList<>();
-        public List<StudioVertex> vertices = new ArrayList<>();
+        public Header header;
+        public Hdr2 hdr2;
+        public List<BodyPart> bodyParts = new ArrayList<>();
+        public List<Model> models = new ArrayList<>();
+        public List<Mesh> meshes = new ArrayList<>();
+        public List<Vertex> vertices = new ArrayList<>();
         public List<Integer> indices = new ArrayList<>();
-        public List<StudioBone> bones = new ArrayList<>();
-        public List<StudioEyeball> eyeballs = new ArrayList<>();
+        public List<Bone> bones = new ArrayList<>();
+        public List<Eyeball> eyeballs = new ArrayList<>();
         public List<Integer> meshTrianglesOffset = new ArrayList<>();
-        public List<StudioTexture> textures = new ArrayList<>();
+        public List<Texture> textures = new ArrayList<>();
         public List<String> cdTextures = new ArrayList<>();
         public List<Integer> skinTable = new ArrayList<>();
         public int vvdVertexCount;
         public List<List<VtxParser.VtxTriangle>> vtxTriangles = new ArrayList<>();
         public List<String> includeModels = new ArrayList<>();
-        public List<StudioAttachment> attachments = new ArrayList<>();
-        public List<StudioBoneController> boneControllers = new ArrayList<>();
-        public List<StudioHitboxSet> hitboxSets = new ArrayList<>();
-        public List<StudioSeqDesc> sequences = new ArrayList<>();
-        public List<StudioIKChain> ikChains = new ArrayList<>();
-        public List<StudioFlexDesc> flexDescs = new ArrayList<>();
-        public List<StudioFlexController> flexControllers = new ArrayList<>();
-        public List<StudioFlexRule> flexRules = new ArrayList<>();
+        public List<Attachment> attachments = new ArrayList<>();
+        public List<BoneController> boneControllers = new ArrayList<>();
+        public List<HitboxSet> hitboxSets = new ArrayList<>();
+        public List<SeqDesc> sequences = new ArrayList<>();
+        public List<IKChain> ikChains = new ArrayList<>();
+        public List<FlexDesc> flexDescs = new ArrayList<>();
+        public List<FlexController> flexControllers = new ArrayList<>();
+        public List<FlexRule> flexRules = new ArrayList<>();
 
         public int modelSize = 148;
         public int meshSize = 116;
         public int boneSize = 216;
         public int seqdescSize = 220;
 
-        public List<StudioLocalAnim> localAnims = new ArrayList<>();
-        public List<StudioPoseParam> poseParams = new ArrayList<>();
-        public List<StudioLocalNode> localNodes = new ArrayList<>();
-        public List<StudioIKAutoplayLock> ikAutoplayLocks = new ArrayList<>();
-        public List<StudioMouth> mouths = new ArrayList<>();
+        public List<LocalAnim> localAnims = new ArrayList<>();
+        public List<PoseParam> poseParams = new ArrayList<>();
+        public List<LocalNode> localNodes = new ArrayList<>();
+        public List<IKAutoplayLock> ikAutoplayLocks = new ArrayList<>();
+        public List<Mouth> mouths = new ArrayList<>();
         public String keyValues;
         public String surfaceProp;
 
-        public List<StudioSrcBoneTransform> srcBoneTransforms = new ArrayList<>();
-        public List<StudioSequenceAnimData> sequenceAnimData = new ArrayList<>();
+        public List<SrcBoneTransform> srcBoneTransforms = new ArrayList<>();
+        public List<SequenceAnimData> sequenceAnimData = new ArrayList<>();
         public List<Integer> referenceSequenceIndices = new ArrayList<>();
         public List<Integer> aPoseSequenceIndices = new ArrayList<>();
+
+        public List<MdlProceduralBones.AxisInterpBone> axisInterpBones = new ArrayList<>();
+        public List<MdlProceduralBones.QuatInterpBone> quatInterpBones = new ArrayList<>();
+        public List<MdlProceduralBones.JiggleBone> jiggleBones = new ArrayList<>();
+        public List<MdlProceduralBones.AimAtBone> aimAtBones = new ArrayList<>();
+
+        public List<java.util.List<MdlSequenceData.IKRule>> sequenceIKRules = new ArrayList<>();
+        public List<java.util.List<MdlSequenceData.Autolayer>> sequenceAutolayers = new ArrayList<>();
+        public List<java.util.List<MdlSequenceData.ActivityModifier>> sequenceActivityModifiers = new ArrayList<>();
+        public List<java.util.List<MdlSequenceData.Movement>> sequenceMovements = new ArrayList<>();
+        public List<MdlSequenceData.LocalHierarchy> localHierarchies = new ArrayList<>();
+
+        public List<java.util.List<MdlFlexAnimation.FlexAnimation>> meshFlexAnimations = new ArrayList<>();
     }
 }
