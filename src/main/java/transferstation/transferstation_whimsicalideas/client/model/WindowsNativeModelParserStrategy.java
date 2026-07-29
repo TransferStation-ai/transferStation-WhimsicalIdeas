@@ -215,8 +215,8 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
 
         try {
             MdlDataTypes.ParsedModel result = new MdlDataTypes.ParsedModel();
-            result.header = new MdlDataTypes.StudioHeader();
-            MdlDataTypes.StudioHeader h = result.header;
+            result.header = new MdlDataTypes.Header();
+            MdlDataTypes.Header h = result.header;
             requireRemaining(buf, 4 * 8);
             h.id = buf.getInt();
             h.version = buf.getInt();
@@ -232,7 +232,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
             requireRemaining(buf, 4);
             int bodyPartCount = buf.getInt();
             for (int i = 0; i < bodyPartCount; i++) {
-                MdlDataTypes.StudioBodyPart bp = new MdlDataTypes.StudioBodyPart();
+                MdlDataTypes.BodyPart bp = new MdlDataTypes.BodyPart();
                 bp.name = readString(buf);
                 requireRemaining(buf, 4 * 2);
                 bp.nummodels = buf.getInt();
@@ -243,7 +243,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
             requireRemaining(buf, 4);
             int modelCount = buf.getInt();
             for (int i = 0; i < modelCount; i++) {
-                MdlDataTypes.StudioModel model = new MdlDataTypes.StudioModel();
+                MdlDataTypes.Model model = new MdlDataTypes.Model();
                 model.name = readString(buf);
                 requireRemaining(buf, 4 * 3);
                 model.nummeshes = buf.getInt();
@@ -255,7 +255,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
             requireRemaining(buf, 4);
             int meshCount = buf.getInt();
             for (int i = 0; i < meshCount; i++) {
-                MdlDataTypes.StudioMesh mesh = new MdlDataTypes.StudioMesh();
+                MdlDataTypes.Mesh mesh = new MdlDataTypes.Mesh();
                 requireRemaining(buf, 4 * 4);
                 mesh.material = buf.getInt();
                 mesh.numvertices = buf.getInt();
@@ -267,7 +267,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
             requireRemaining(buf, 4);
             int boneCount = buf.getInt();
             for (int i = 0; i < boneCount; i++) {
-                MdlDataTypes.StudioBone bone = new MdlDataTypes.StudioBone();
+                MdlDataTypes.Bone bone = new MdlDataTypes.Bone();
                 bone.name = readString(buf);
                 requireRemaining(buf, 4 + 4 * 7);
                 bone.parent = buf.getInt();
@@ -279,7 +279,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
             requireRemaining(buf, 4);
             int texCount = buf.getInt();
             for (int i = 0; i < texCount; i++) {
-                MdlDataTypes.StudioTexture tex = new MdlDataTypes.StudioTexture();
+                MdlDataTypes.Texture tex = new MdlDataTypes.Texture();
                 tex.name = readString(buf);
                 requireRemaining(buf, 4);
                 tex.flags = buf.getInt();

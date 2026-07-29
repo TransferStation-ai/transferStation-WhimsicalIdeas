@@ -106,7 +106,7 @@ public class MdlDiagnostic {
         System.out.println();
         System.out.println("--- Body Parts (" + mdl.bodyParts.size() + ") ---");
         for (int i = 0; i < mdl.bodyParts.size(); i++) {
-            MdlDataTypes.StudioBodyPart bp = mdl.bodyParts.get(i);
+            MdlDataTypes.BodyPart bp = mdl.bodyParts.get(i);
             System.out.println("  [" + i + "] name='" + bp.name + "' numModels=" + bp.nummodels);
         }
 
@@ -114,7 +114,7 @@ public class MdlDiagnostic {
         System.out.println();
         System.out.println("--- Models (" + mdl.models.size() + ") ---");
         for (int i = 0; i < mdl.models.size(); i++) {
-            MdlDataTypes.StudioModel m = mdl.models.get(i);
+            MdlDataTypes.Model m = mdl.models.get(i);
             System.out.println("  [" + i + "] name='" + m.name + "' bodyPart=" + m.bodypartIndex
                 + " type=" + m.type + " radius=" + m.boundingradius
                 + " numMeshes=" + m.nummeshes + " numVerts=" + m.numvertices);
@@ -124,7 +124,7 @@ public class MdlDiagnostic {
         System.out.println();
         System.out.println("--- Meshes (" + mdl.meshes.size() + ") ---");
         for (int i = 0; i < mdl.meshes.size(); i++) {
-            MdlDataTypes.StudioMesh mesh = mdl.meshes.get(i);
+            MdlDataTypes.Mesh mesh = mdl.meshes.get(i);
             System.out.println("  [" + i + "] modelIdx=" + mesh.globalModelIndex
                 + " material=" + mesh.material + " numVerts=" + mesh.numvertices
                 + " vertOffset=" + mesh.vertexoffset + " materialType=" + mesh.materialtype
@@ -135,7 +135,7 @@ public class MdlDiagnostic {
         System.out.println();
         System.out.println("--- Bones (" + mdl.bones.size() + ") ---");
         for (int i = 0; i < mdl.bones.size(); i++) {
-            MdlDataTypes.StudioBone b = mdl.bones.get(i);
+            MdlDataTypes.Bone b = mdl.bones.get(i);
             System.out.print("  [" + i + "] name='" + b.name + "' parent=" + b.parent);
             if (b.pos != null && b.pos.length >= 3) {
                 System.out.print(" pos=(" + fmt(b.pos[0]) + ", " + fmt(b.pos[1]) + ", " + fmt(b.pos[2]) + ")");
@@ -150,7 +150,7 @@ public class MdlDiagnostic {
         System.out.println();
         System.out.println("--- Sequences (" + mdl.sequences.size() + ") ---");
         for (int i = 0; i < mdl.sequences.size(); i++) {
-            MdlDataTypes.StudioSeqDesc seq = mdl.sequences.get(i);
+            MdlDataTypes.SeqDesc seq = mdl.sequences.get(i);
             System.out.println("  [" + i + "] label='" + seq.label + "' numFrames=" + seq.numframes
                 + " flags=0x" + Integer.toHexString(seq.flags)
                 + " fps=(" + fmt(seq.fadeInTime[0]) + "/" + fmt(seq.fadeInTime[1]) + ")"
@@ -161,7 +161,7 @@ public class MdlDiagnostic {
         System.out.println();
         System.out.println("--- Textures (" + mdl.textures.size() + ") ---");
         for (int i = 0; i < mdl.textures.size(); i++) {
-            MdlDataTypes.StudioTexture tex = mdl.textures.get(i);
+            MdlDataTypes.Texture tex = mdl.textures.get(i);
             System.out.println("  [" + i + "] name='" + tex.name + "' flags=0x" + Integer.toHexString(tex.flags)
                 + " dims=" + tex.width + "x" + tex.height);
         }
@@ -194,7 +194,7 @@ public class MdlDiagnostic {
         System.out.println();
         System.out.println("--- Attachments (" + mdl.attachments.size() + ") ---");
         for (int i = 0; i < mdl.attachments.size(); i++) {
-            MdlDataTypes.StudioAttachment a = mdl.attachments.get(i);
+            MdlDataTypes.Attachment a = mdl.attachments.get(i);
             System.out.println("  [" + i + "] name='" + a.name + "' bone=" + a.attachmentbone
                 + " flags=0x" + Integer.toHexString(a.flags)
                 + " org=(" + fmt(a.org[0]) + ", " + fmt(a.org[1]) + ", " + fmt(a.org[2]) + ")");
@@ -204,7 +204,7 @@ public class MdlDiagnostic {
         System.out.println();
         System.out.println("--- Hitbox Sets (" + mdl.hitboxSets.size() + ") ---");
         for (int i = 0; i < mdl.hitboxSets.size(); i++) {
-            MdlDataTypes.StudioHitboxSet hs = mdl.hitboxSets.get(i);
+            MdlDataTypes.HitboxSet hs = mdl.hitboxSets.get(i);
             System.out.println("  [" + i + "] name='" + hs.name + "' numHitboxes=" + hs.numhitboxes);
             for (int h = 0; h < hs.hitboxes.size(); h++) {
                 MdlDataTypes.Bbox bbox = hs.hitboxes.get(h);
@@ -218,7 +218,7 @@ public class MdlDiagnostic {
         System.out.println();
         System.out.println("--- Flex Descriptors (" + mdl.flexDescs.size() + ") ---");
         for (int i = 0; i < mdl.flexDescs.size(); i++) {
-            MdlDataTypes.StudioFlexDesc fd = mdl.flexDescs.get(i);
+            MdlDataTypes.FlexDesc fd = mdl.flexDescs.get(i);
             System.out.println("  [" + i + "] name='" + fd.name + "'");
         }
 
@@ -227,7 +227,7 @@ public class MdlDiagnostic {
             System.out.println();
             System.out.println("--- Flex Controllers (" + mdl.flexControllers.size() + ") ---");
             for (int i = 0; i < mdl.flexControllers.size(); i++) {
-                MdlDataTypes.StudioFlexController fc = mdl.flexControllers.get(i);
+                MdlDataTypes.FlexController fc = mdl.flexControllers.get(i);
                 System.out.println("  [" + i + "] name='" + fc.name + "' range=[" + fmt(fc.min[0]) + "," + fmt(fc.max[0]) + "]");
             }
         }
@@ -237,7 +237,7 @@ public class MdlDiagnostic {
             System.out.println();
             System.out.println("--- Flex Rules (" + mdl.flexRules.size() + ") ---");
             for (int i = 0; i < mdl.flexRules.size(); i++) {
-                MdlDataTypes.StudioFlexRule fr = mdl.flexRules.get(i);
+                MdlDataTypes.FlexRule fr = mdl.flexRules.get(i);
                 System.out.println("  [" + i + "] flex=" + fr.flex + " numOps=" + fr.numops);
             }
         }
@@ -246,7 +246,7 @@ public class MdlDiagnostic {
         System.out.println();
         System.out.println("--- Local Animations (" + mdl.localAnims.size() + ") ---");
         for (int i = 0; i < mdl.localAnims.size(); i++) {
-            MdlDataTypes.StudioLocalAnim anim = mdl.localAnims.get(i);
+            MdlDataTypes.LocalAnim anim = mdl.localAnims.get(i);
             System.out.println("  [" + i + "] name='" + anim.name + "' numFrames=" + anim.numFrames
                 + " fps=" + fmt(anim.fps) + " flags=0x" + Integer.toHexString(anim.flags)
                 + " numSegments=" + anim.numSegments + " animBlock=" + anim.animBlock
@@ -258,7 +258,7 @@ public class MdlDiagnostic {
             System.out.println();
             System.out.println("--- Bone Controllers (" + mdl.boneControllers.size() + ") ---");
             for (int i = 0; i < mdl.boneControllers.size(); i++) {
-                MdlDataTypes.StudioBoneController bc = mdl.boneControllers.get(i);
+                MdlDataTypes.BoneController bc = mdl.boneControllers.get(i);
                 System.out.println("  [" + i + "] bone=" + bc.bone + " channel=" + bc.channel
                     + " flags=0x" + Integer.toHexString(bc.flags));
             }
@@ -269,7 +269,7 @@ public class MdlDiagnostic {
             System.out.println();
             System.out.println("--- IK Chains (" + mdl.ikChains.size() + ") ---");
             for (int i = 0; i < mdl.ikChains.size(); i++) {
-                MdlDataTypes.StudioIKChain ik = mdl.ikChains.get(i);
+                MdlDataTypes.IKChain ik = mdl.ikChains.get(i);
                 System.out.println("  [" + i + "] name='" + ik.name + "' chain=" + ik.chain
                     + " numLinks=" + ik.numlinks);
             }
@@ -280,7 +280,7 @@ public class MdlDiagnostic {
             System.out.println();
             System.out.println("--- Pose Parameters (" + mdl.poseParams.size() + ") ---");
             for (int i = 0; i < mdl.poseParams.size(); i++) {
-                MdlDataTypes.StudioPoseParam pp = mdl.poseParams.get(i);
+                MdlDataTypes.PoseParam pp = mdl.poseParams.get(i);
                 System.out.println("  [" + i + "] name='" + pp.name + "' type=" + pp.type
                     + " range=[" + fmt(pp.start) + ", " + fmt(pp.end) + "] loop=" + pp.loop);
             }
@@ -291,7 +291,7 @@ public class MdlDiagnostic {
             System.out.println();
             System.out.println("--- Local Nodes (" + mdl.localNodes.size() + ") ---");
             for (int i = 0; i < mdl.localNodes.size(); i++) {
-                MdlDataTypes.StudioLocalNode n = mdl.localNodes.get(i);
+                MdlDataTypes.LocalNode n = mdl.localNodes.get(i);
                 System.out.println("  [" + i + "] name='" + n.name + "' parent=" + n.parent);
             }
         }
@@ -301,7 +301,7 @@ public class MdlDiagnostic {
             System.out.println();
             System.out.println("--- IK Autoplay Locks (" + mdl.ikAutoplayLocks.size() + ") ---");
             for (int i = 0; i < mdl.ikAutoplayLocks.size(); i++) {
-                MdlDataTypes.StudioIKAutoplayLock lock = mdl.ikAutoplayLocks.get(i);
+                MdlDataTypes.IKAutoplayLock lock = mdl.ikAutoplayLocks.get(i);
                 System.out.println("  [" + i + "] ikChain=" + lock.ikChainIndex
                     + " lockCount=" + lock.lockCount + " threshold=" + fmt(lock.threshold));
             }
@@ -312,7 +312,7 @@ public class MdlDiagnostic {
             System.out.println();
             System.out.println("--- Mouths (" + mdl.mouths.size() + ") ---");
             for (int i = 0; i < mdl.mouths.size(); i++) {
-                MdlDataTypes.StudioMouth m = mdl.mouths.get(i);
+                MdlDataTypes.Mouth m = mdl.mouths.get(i);
                 System.out.println("  [" + i + "] bone=" + m.bone);
             }
         }
@@ -345,7 +345,7 @@ public class MdlDiagnostic {
             System.out.println();
             System.out.println("--- Eyeballs (" + mdl.eyeballs.size() + ") ---");
             for (int i = 0; i < mdl.eyeballs.size(); i++) {
-                MdlDataTypes.StudioEyeball e = mdl.eyeballs.get(i);
+                MdlDataTypes.Eyeball e = mdl.eyeballs.get(i);
                 System.out.println("  [" + i + "] bone=" + e.bone + " radius=" + fmt(e.radius)
                     + " irisMaterial=" + e.irisMaterial);
             }
@@ -355,7 +355,7 @@ public class MdlDiagnostic {
         System.out.println("[OK] MDL parsed successfully.");
     }
 
-    private static void dumpHeader(MdlDataTypes.StudioHeader h) {
+    private static void dumpHeader(MdlDataTypes.Header h) {
         System.out.println();
         System.out.println("--- Header ---");
         System.out.println("  id=0x" + Integer.toHexString(h.id) + " (" + intToMagic(h.id) + ")");
@@ -416,7 +416,7 @@ public class MdlDiagnostic {
         System.out.println("  studioHdr2Index=0x" + Integer.toHexString(h.studiohdr2index));
     }
 
-    private static void dumpHdr2(MdlDataTypes.StudioHdr2 hdr2) {
+    private static void dumpHdr2(MdlDataTypes.Hdr2 hdr2) {
         if (hdr2 == null || !hdr2.hasData) {
             System.out.println();
             System.out.println("--- StudioHdr2: not present ---");

@@ -330,6 +330,16 @@ MdlParser::ParsedMdl MdlParser::parse(const std::vector<uint8_t>& data) {
         }
     }
 
+    // Build invBindPose and boneParent from parsed bones
+    int numBones = static_cast<int>(result.bones.size());
+    result.invBindPose.resize(numBones);
+    result.boneParent.resize(numBones);
+    for (int i = 0; i < numBones; i++) {
+        Matrix4x4 bindPose = Matrix4x4::from3x4(result.bones[i].poseToBone);
+        result.invBindPose[i] = bindPose.inverse();
+        result.boneParent[i] = result.bones[i].parent;
+    }
+
     // Parse StudioHDR2 (extended data)
     if (h.studiohdr2index > 0 && h.studiohdr2index < static_cast<int>(size) - 24) {
         int hdr2Off = h.studiohdr2index;

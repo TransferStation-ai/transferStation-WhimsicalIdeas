@@ -1,4 +1,5 @@
 #include "model_loader.h"
+#include "skinning.h"
 #include <fstream>
 #include <iostream>
 #include <filesystem>
@@ -439,6 +440,7 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromDirectory(
     model->fallbackTexture = 0;
     model->numSkinRef = 0;
     model->numSkinFamilies = 0;
+    model->cacheKey = baseDir + "|" + modelName;
 
     std::string pkgDir = baseDir + "/" + modelName;
 
@@ -995,6 +997,13 @@ std::vector<MeshData> ModelLoader::buildMeshes(
 
     const auto& vvdVerts = vvd.vertices;
 
+    // Build bind-pose bone transforms for skinning (Phase 1: no animation, use bind pose)
+    int numBones = static_cast<int>(mdl.invBindPose.size());
+    std::vector<Matrix4x4> boneTransforms(numBones);
+    for (int i = 0; i < numBones; i++) {
+        boneTransforms[i] = Matrix4x4::from3x4(mdl.bones[i].poseToBone);
+    }
+
     if (vvdVerts.empty()) {
         std::cerr << "[MeshBuilder] No VVD vertices available for LOD " << lodLevel << std::endl;
         return result;
@@ -1082,11 +1091,19 @@ std::vector<MeshData> ModelLoader::buildMeshes(
                     if (vvdIdx0 >= numVvdVerts || vvdIdx1 >= numVvdVerts || vvdIdx2 >= numVvdVerts) continue;
 
                     auto addVert = [&](const StudioVertexExt& sv) {
+                        SkinnedVertex sk;
+                        if (numBones > 0 && mdl.invBindPose.size() == static_cast<size_t>(numBones)) {
+                            skinVertex(sv, boneTransforms.data(), mdl.invBindPose.data(), numBones, sk);
+                        } else {
+                            sk.x = sv.x; sk.y = sv.y; sk.z = sv.z;
+                            sk.nx = sv.nx; sk.ny = sv.ny; sk.nz = sv.nz;
+                            sk.u = sv.u; sk.v = sv.v;
+                        }
                         MeshVertex mv;
-                        mv.x = -sv.y; mv.y = sv.z; mv.z = sv.x;
-                        mv.nx = -sv.ny; mv.ny = sv.nz; mv.nz = sv.nx;
-                        mv.u = sv.u;
-                        mv.v = 1.0f - sv.v;
+                        mv.x = -sk.y; mv.y = sk.z; mv.z = sk.x;
+                        mv.nx = -sk.ny; mv.ny = sk.nz; mv.nz = sk.nx;
+                        mv.u = sk.u;
+                        mv.v = 1.0f - sk.v;
                         mesh.vertices.push_back(mv);
                     };
 
@@ -1116,23 +1133,38 @@ std::vector<MeshData> ModelLoader::buildMeshes(
         fallback.indices.reserve(vvdCount / 3);
         int count = 0;
 
+        auto skinOrCopy = [&](const StudioVertexExt& sv, SkinnedVertex& sk) {
+            if (numBones > 0 && mdl.invBindPose.size() == static_cast<size_t>(numBones)) {
+                skinVertex(sv, boneTransforms.data(), mdl.invBindPose.data(), numBones, sk);
+            } else {
+                sk.x = sv.x; sk.y = sv.y; sk.z = sv.z;
+                sk.nx = sv.nx; sk.ny = sv.ny; sk.nz = sv.nz;
+                sk.u = sv.u; sk.v = sv.v;
+            }
+        };
+
         for (int i = 0; i + 2 < vvdCount; i++) {
             const auto& v0 = vvdVerts[i];
             const auto& v1 = vvdVerts[i + 1];
             const auto& v2 = vvdVerts[i + 2];
 
+            SkinnedVertex sk0, sk1, sk2;
+            skinOrCopy(v0, sk0);
+            skinOrCopy(v1, sk1);
+            skinOrCopy(v2, sk2);
+
             MeshVertex mv0, mv1, mv2;
-            mv0.x = -v0.y; mv0.y = v0.z; mv0.z = v0.x;
-            mv0.nx = -v0.ny; mv0.ny = v0.nz; mv0.nz = v0.nx;
-            mv0.u = v0.u; mv0.v = 1.0f - v0.v;
+            mv0.x = -sk0.y; mv0.y = sk0.z; mv0.z = sk0.x;
+            mv0.nx = -sk0.ny; mv0.ny = sk0.nz; mv0.nz = sk0.nx;
+            mv0.u = sk0.u; mv0.v = 1.0f - sk0.v;
 
-            mv1.x = -v1.y; mv1.y = v1.z; mv1.z = v1.x;
-            mv1.nx = -v1.ny; mv1.ny = v1.nz; mv1.nz = v1.nx;
-            mv1.u = v1.u; mv1.v = 1.0f - v1.v;
+            mv1.x = -sk1.y; mv1.y = sk1.z; mv1.z = sk1.x;
+            mv1.nx = -sk1.ny; mv1.ny = sk1.nz; mv1.nz = sk1.nx;
+            mv1.u = sk1.u; mv1.v = 1.0f - sk1.v;
 
-            mv2.x = -v2.y; mv2.y = v2.z; mv2.z = v2.x;
-            mv2.nx = -v2.ny; mv2.ny = v2.nz; mv2.nz = v2.nx;
-            mv2.u = v2.u; mv2.v = 1.0f - v2.v;
+            mv2.x = -sk2.y; mv2.y = sk2.z; mv2.z = sk2.x;
+            mv2.nx = -sk2.ny; mv2.ny = sk2.nz; mv2.nz = sk2.nx;
+            mv2.u = sk2.u; mv2.v = 1.0f - sk2.v;
 
             if (i % 2 == 0) {
                 fallback.vertices.push_back(mv0);

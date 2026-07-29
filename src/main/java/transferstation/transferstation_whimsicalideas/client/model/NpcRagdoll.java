@@ -140,7 +140,7 @@ public class NpcRagdoll extends Entity {
             PhysicsBridge.tryInitialize();
         }
 
-        List<MdlDataTypes.StudioBone> modelBones = loadModelBones();
+        List<MdlDataTypes.Bone> modelBones = loadModelBones();
         if (modelBones == null || modelBones.isEmpty()) {
             LOGGER.warn("[NpcRagdoll] No bone data available for ragdoll, using fallback");
             initPhysicsFallback();
@@ -256,7 +256,7 @@ public class NpcRagdoll extends Entity {
         }
     }
 
-    private List<MdlDataTypes.StudioBone> loadModelBones() {
+    private List<MdlDataTypes.Bone> loadModelBones() {
         String modelName = entityData.get(DATA_MODEL_NAME);
         if (modelName == null || modelName.isEmpty()) return null;
 
@@ -293,10 +293,10 @@ public class NpcRagdoll extends Entity {
         return null;
     }
 
-    private List<MdlDataTypes.StudioBone> convertBoneInfos(List<SourceModelData.BoneInfo> boneInfos) {
-        List<MdlDataTypes.StudioBone> bones = new ArrayList<>();
+    private List<MdlDataTypes.Bone> convertBoneInfos(List<SourceModelData.BoneInfo> boneInfos) {
+        List<MdlDataTypes.Bone> bones = new ArrayList<>();
         for (SourceModelData.BoneInfo info : boneInfos) {
-            MdlDataTypes.StudioBone b = new MdlDataTypes.StudioBone();
+            MdlDataTypes.Bone b = new MdlDataTypes.Bone();
             b.name = info.name;
             b.pos = info.pos;
             b.parent = info.parent;
@@ -305,7 +305,7 @@ public class NpcRagdoll extends Entity {
         return bones;
     }
 
-    private List<MdlDataTypes.StudioBone> parseBonesFromMdlFile(Path packageDir) throws IOException {
+    private List<MdlDataTypes.Bone> parseBonesFromMdlFile(Path packageDir) throws IOException {
         Path mdlFile = null;
         Path smdFile = null;
         try (Stream<Path> files = Files.walk(packageDir, 4)) {
@@ -323,9 +323,9 @@ public class NpcRagdoll extends Entity {
         if (smdFile != null) {
             SmdParser.ParsedSmd smd = SmdParser.parse(smdFile);
             if (!smd.bones.isEmpty()) {
-                List<MdlDataTypes.StudioBone> bones = new ArrayList<>();
+                List<MdlDataTypes.Bone> bones = new ArrayList<>();
                 for (SmdParser.SmdBone sb : smd.bones) {
-                    MdlDataTypes.StudioBone b = new MdlDataTypes.StudioBone();
+                    MdlDataTypes.Bone b = new MdlDataTypes.Bone();
                     b.name = sb.name;
                     b.pos = new float[]{0, 0, 0};
                     b.parent = sb.parent;

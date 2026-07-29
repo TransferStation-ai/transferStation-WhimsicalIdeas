@@ -59,6 +59,7 @@ public:
         bool hasSkinData;
         float minZ;
         uint32_t fallbackTexture;
+        std::string cacheKey;
         
         const std::vector<MeshData>& getMeshesForLod(int lod) const {
             if (lod <= 0 || lod > 3) return meshes;

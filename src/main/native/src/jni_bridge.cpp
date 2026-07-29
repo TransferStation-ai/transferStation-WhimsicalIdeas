@@ -51,12 +51,14 @@ struct ByteWriter {
 static std::unordered_map<int64_t, std::unique_ptr<ModelLoader::LoadedModel>> s_modelCache;
 static int64_t s_nextHandle = 1;
 
+// Path-based model dedup cache (maps cacheKey -> handle)
+static std::unordered_map<std::string, int64_t> s_modelPathCache;
+
 // GPU skinning mesh cache
 static std::unordered_map<int64_t, GpuSkinning::SkinnedMesh> s_skinnedMeshes;
 static int64_t s_skinNextHandle = 1;
 
-// Protects s_modelCache / s_skinnedMeshes / s_nextHandle / s_skinNextHandle
-// from concurrent access by multiple Java threads.
+// Protects all caches from concurrent access by multiple Java threads.
 static std::mutex s_cacheMutex;
 
 extern "C" {
@@ -84,6 +86,21 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBrid
     env->ReleaseStringUTFChars(modelName, nameChars);
 
     try {
+        std::string cacheKey = dirStr + "|" + nameStr;
+        {
+            std::lock_guard<std::mutex> lock(s_cacheMutex);
+            auto it = s_modelPathCache.find(cacheKey);
+            if (it != s_modelPathCache.end()) {
+                // Check if the cached handle is still alive
+                auto modelIt = s_modelCache.find(it->second);
+                if (modelIt != s_modelCache.end()) {
+                    return static_cast<jlong>(it->second);
+                }
+                // Stale entry, remove it
+                s_modelPathCache.erase(it);
+            }
+        }
+
         auto model = ModelLoader::loadFromDirectory(dirStr, nameStr);
         int64_t handle = 0;
         {
@@ -162,6 +179,7 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBrid
         {
             std::lock_guard<std::mutex> lock(s_cacheMutex);
             s_modelCache[handle] = std::move(model);
+            s_modelPathCache[cacheKey] = handle;
         }
         return static_cast<jlong>(handle);
     }
@@ -206,6 +224,13 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBrid
 
     {
         std::lock_guard<std::mutex> lock(s_cacheMutex);
+        for (auto pit = s_modelPathCache.begin(); pit != s_modelPathCache.end(); ) {
+            if (pit->second == handle) {
+                pit = s_modelPathCache.erase(pit);
+            } else {
+                ++pit;
+            }
+        }
         s_modelCache.erase(it);
     }
 }
