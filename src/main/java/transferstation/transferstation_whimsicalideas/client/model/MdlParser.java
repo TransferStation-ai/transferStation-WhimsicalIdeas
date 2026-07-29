@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+import static transferstation.transferstation_whimsicalideas.client.model.MdlDataTypes.*;
+
 public class MdlParser {
 
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -19,225 +21,18 @@ public class MdlParser {
     private static final int MAX_FILE_SIZE = 512 * 1024 * 1024;
     private static final int VERTEX_SIZE = 48;
     private static final int BODYPART_SIZE = 16;
-    private static final int MODEL_SIZE = 148;
-    private static final int MESH_SIZE = 116;
-    private static final int BONE_SIZE = 216;
+    private static final int MODEL_SIZE_V48 = 136;
+    private static final int MODEL_SIZE_V49 = 148;
+    private static final int MESH_SIZE_V48 = 108;
+    private static final int MESH_SIZE_V49 = 116;
+    private static final int BONE_SIZE_V47 = 200;
+    private static final int BONE_SIZE_V49 = 216;
+    private static final int BONE_SIZE_CSGO = 224;
     private static final int EYEBALL_SIZE = 324;
-    private static final int TEXTURE_ENTRY_SIZE_V44 = 64;
-    private static final int TEXTURE_ENTRY_SIZE_V48 = 52;
-
-    public static class StudioHeader {
-        public int id;
-        public int version;
-        public int checksum;
-        public String name;
-        public int dataLength;
-        public float[] eyeposition;
-        public float[] illumposition;
-        public float[] hull_min;
-        public float[] hull_max;
-        public float[] view_bbmin;
-        public float[] view_bbmax;
-        public int flags;
-        public int numbones;
-        public int boneindex;
-        public int numbonecontrollers;
-        public int bonecontrollerindex;
-        public int numhitboxsets;
-        public int hitboxsetindex;
-        public int numlocalanim;
-        public int localanimindex;
-        public int numlocalseq;
-        public int localseqindex;
-        public int activitylistversion;
-        public int eventsindexed;
-        public int numtextures;
-        public int textureindex;
-        public int numcdtextures;
-        public int cdtextureindex;
-        public int numskinref;
-        public int numskinfamilies;
-        public int skinindex;
-        public int numbodyparts;
-        public int bodypartindex;
-        public int numlocalattachments;
-        public int localattachmentindex;
-        public int numlocalnodes;
-        public int localnodeindex;
-        public int localnodenameindex;
-        public int numflexdesc;
-        public int flexdescindex;
-        public int numflexcontrollers;
-        public int flexcontrollerindex;
-        public int numflexrules;
-        public int flexruleindex;
-        public int numikchains;
-        public int ikchainindex;
-        public int nummouths;
-        public int mouthindex;
-        public int numlocalposeparameters;
-        public int localposeparamindex;
-        public int surfacepropindex;
-        public int keyvalueindex;
-        public int keyvaluesize;
-        public int numlocalikautoplaylocks;
-        public int localikautoplaylockindex;
-        public float mass;
-        public int contents;
-        public int numincludemodels;
-        public int includemodelindex;
-        public int virtualModel;
-        public int szanimblocknameindex;
-        public int numanimblocks;
-        public int animblockindex;
-        public int animblockModel;
-        public int bonetablenameindex;
-        public int vertexbase;
-        public int offsetbase;
-        public byte directionaldotproduct;
-        public byte rootLod;
-        public byte numAllowedRootLods;
-        public byte unused;
-        public int flexcontrolleruiindex;
-        public float vertAnimFixedPointScale;
-        public int unused3;
-        public int studiohdr2index;
-    }
-
-    public static class StudioBodyPart {
-        public int sznameindex;
-        public int nummodels;
-        public int baseIndex;
-        public int modelindex;
-        public int fileOffset;
-        public String name;
-    }
-
-    public static class StudioModel {
-        public String name;
-        public int type;
-        public float boundingradius;
-        public int nummeshes;
-        public int meshindex;
-        public int numvertices;
-        public int vertexindex;
-        public int tangentsindex;
-        public int numattachments;
-        public int attachmentindex;
-        public int numeyeballs;
-        public int eyeballindex;
-        public int[] unused;
-        public int fileOffset;
-        public int bodypartIndex;
-    }
-
-    public static class StudioMesh {
-        public int material;
-        public int modelindex;
-        public int numvertices;
-        public int vertexoffset;
-        public int numflexes;
-        public int flexindex;
-        public int materialtype;
-        public int materialparam;
-        public int meshid;
-        public float[] center;
-        public int[] unused;
-        public int[] extra;
-        public int globalModelIndex;
-        public int meshLocalIndex;
-    }
-
-    public static class StudioVertex {
-        public float x, y, z;
-        public float nx, ny, nz;
-        public float u, v;
-    }
-
-    public static class StudioBone {
-        public int sznameindex;
-        public String name;
-        public int parent;
-        public int[] bonecontroller;
-        public float[] pos;
-        public float[] quat;
-        public float[] rot;
-        public float[] posscale;
-        public float[] rotscale;
-        public float[] poseToBone;
-        public float[] qAlignment;
-        public int flags;
-        public int proctype;
-        public int procindex;
-        public int physicsbone;
-        public int surfacepropidx;
-        public int contents;
-        public int[] unused;
-
-        public float[] getWorldPos() {
-            return new float[]{pos[0], pos[1], pos[2]};
-        }
-    }
-
-    public static class StudioEyeball {
-        public int sznameindex;
-        public int bone;
-        public float[] org;
-        public float zoffset;
-        public float radius;
-        public float[] up;
-        public float[] forward;
-        public int irisMaterial;
-        public int upperFlexDesc;
-        public int lowerFlexDesc;
-        public int upperTarget;
-        public int lowerTarget;
-        public int upperLidFlexDesc;
-        public int lowerLidFlexDesc;
-        public int[] unused;
-        public byte[] eyelidFlexDesc;
-        public int[] unused2;
-    }
-
-    public static class StudioTexture {
-        public String name;
-        public int flags;
-        public int width;
-        public int height;
-    }
-
-    public static class StudioHdr2 {
-        public int numSkins;
-        public int skinReplacementIndex;
-        public int[] skinReplacementCounts;
-        public int numSrcBoneTransforms;
-        public int srcBoneTransformIndex;
-        public int numFlexControllerUI;
-        public int flexControllerUIOffset;
-        public int eyeControllerNumHistories;
-        public int eyeControllerHistoryOffset;
-
-        public boolean hasData;
-    }
-
-    public static class ParsedModel {
-        public StudioHeader header;
-        public StudioHdr2 hdr2;
-        public List<StudioBodyPart> bodyParts = new ArrayList<>();
-        public List<StudioModel> models = new ArrayList<>();
-        public List<StudioMesh> meshes = new ArrayList<>();
-        public List<StudioVertex> vertices = new ArrayList<>();
-        public List<Integer> indices = new ArrayList<>();
-        public List<StudioBone> bones = new ArrayList<>();
-        public List<StudioEyeball> eyeballs = new ArrayList<>();
-        public List<Integer> meshTrianglesOffset = new ArrayList<>();
-        public List<StudioTexture> textures = new ArrayList<>();
-        public List<String> cdTextures = new ArrayList<>();
-        public List<Integer> skinTable = new ArrayList<>();
-        public int vvdVertexCount;
-        public List<List<VtxParser.VtxTriangle>> vtxTriangles = new ArrayList<>();
-        public List<String> includeModels = new ArrayList<>();
-    }
+    private static final int TEXTURE_ENTRY_SIZE = 64;
+    private static final int SEQDESC_SIZE_V48 = 200;
+    private static final int SEQDESC_SIZE_V49 = 220;
+    private static final int SEQDESC_SIZE_L4D2 = 240;
 
     public static ParsedModel parse(byte[] data) {
         if (data.length > MAX_FILE_SIZE) {
@@ -256,7 +51,39 @@ public class MdlParser {
             throw new RuntimeException("Not a valid MDL file (bad magic IDTS)");
         }
 
-        result.hdr2 = parseStudioHdr2(buf, result.header, bufferLimit);
+        // Version-aware struct sizes for cross-engine compatibility
+        int ver = result.header.version;
+        if (ver <= 47) {
+            result.modelSize = MODEL_SIZE_V48;
+            result.meshSize = MESH_SIZE_V48;
+            result.boneSize = BONE_SIZE_V47;
+            result.seqdescSize = SEQDESC_SIZE_V48;
+            LOGGER.debug("[MdlParser] Using struct sizes for MDL v{} (legacy GoldSrc/early Source)", ver);
+        } else if (ver <= 49) {
+            result.modelSize = MODEL_SIZE_V49;
+            result.meshSize = MESH_SIZE_V49;
+            result.boneSize = BONE_SIZE_V49;
+            result.seqdescSize = SEQDESC_SIZE_V49;
+            LOGGER.debug("[MdlParser] Using struct sizes for MDL v{} (standard Source)", ver);
+        } else if (ver <= 53) {
+            result.modelSize = MODEL_SIZE_V49;
+            result.meshSize = MESH_SIZE_V49;
+            // GMod/SDK 2013 v51-v53 uses 216-byte bones (same as v49), not CS:GO's 224-byte bones.
+            // L4D2 v53 also uses 216-byte bones with 220-byte seqdesc (not 240).
+            // CS:GO v50+ uses 224-byte bones but has a different header signature.
+            // Since GMod is our primary target, use V49 struct sizes for all v50-v53.
+            result.boneSize = BONE_SIZE_V49;
+            result.seqdescSize = SEQDESC_SIZE_V49;
+            LOGGER.debug("[MdlParser] Using struct sizes for MDL v{} (SDK 2013/GMod v53 struct sizes)", ver);
+        } else {
+            result.modelSize = MODEL_SIZE_V49;
+            result.meshSize = MESH_SIZE_V49;
+            result.boneSize = BONE_SIZE_CSGO;
+            result.seqdescSize = SEQDESC_SIZE_L4D2;
+            LOGGER.warn("[MdlParser] Unknown MDL version {}. Using v53 struct sizes.", ver);
+        }
+
+        result.hdr2 = parseHdr2(buf, result.header, bufferLimit, result);
 
         safeRun(() -> parseBodyParts(buf, result, bufferLimit), "bodyparts");
         safeRun(() -> parseModels(buf, result, bufferLimit), "models");
@@ -265,7 +92,7 @@ public class MdlParser {
         // Skip MDL vertex parsing for VVD-based models (vertices come from .vvd files)
         boolean hasVvdVertexData = result.header.textureindex > 0 && result.header.numbones > 0;
         if (!hasVvdVertexData) {
-            for (StudioMesh mesh : result.meshes) {
+            for (Mesh mesh : result.meshes) {
                 try {
                     parseVerticesFromMesh(buf, mesh, result, bufferLimit);
                 } catch (Exception e) {
@@ -277,24 +104,48 @@ public class MdlParser {
         safeRun(() -> parseIndices(buf, result), "indices");
         safeRun(() -> parseBones(buf, result, bufferLimit), "bones");
         safeRun(() -> parseEyeballs(buf, result, bufferLimit), "eyeballs");
+        safeRun(() -> parseAttachments(buf, result, bufferLimit), "attachments");
+        safeRun(() -> parseBoneControllers(buf, result, bufferLimit), "bonecontrollers");
+        safeRun(() -> parseHitboxSets(buf, result, bufferLimit), "hitboxsets");
+        safeRun(() -> parseSequences(buf, result, bufferLimit), "sequences");
+        safeRun(() -> parseIKChains(buf, result, bufferLimit), "ikchains");
+        safeRun(() -> parseFlexDescriptors(buf, result, bufferLimit), "flexdescriptors");
+        safeRun(() -> parseFlexControllers(buf, result, bufferLimit), "flexcontrollers");
+        safeRun(() -> parseFlexRules(buf, result, bufferLimit), "flexrules");
         safeRun(() -> parseTextures(buf, result, bufferLimit), "textures");
         safeRun(() -> parseCdTextures(buf, result, bufferLimit), "cdtextures");
         safeRun(() -> parseSkinTable(buf, result, bufferLimit), "skintable");
         safeRun(() -> parseIncludeModels(buf, result, bufferLimit), "includemodels");
 
+        safeRun(() -> parseLocalAnimations(buf, result, bufferLimit), "localanims");
+        safeRun(() -> parseSequenceFrameData(buf, result, bufferLimit), "sequenceframedata");
+        safeRun(() -> parsePoseParameters(buf, result, bufferLimit), "poseparameters");
+        safeRun(() -> parseLocalNodes(buf, result, bufferLimit), "localnodes");
+        safeRun(() -> parseIKAutoplayLocks(buf, result, bufferLimit), "ikautoplaylocks");
+        safeRun(() -> parseMouths(buf, result, bufferLimit), "mouths");
+        safeRun(() -> parseKeyValues(buf, result, bufferLimit), "keyvalues");
+        safeRun(() -> parseSurfaceProp(buf, result, bufferLimit), "surfaceprop");
+        safeRun(() -> MdlProceduralBones.ProceduralBonesParser.parse(buf, result, bufferLimit), "proceduralbones");
+        safeRun(() -> MdlSequenceData.SequenceDataParser.parseIKRules(buf, result, bufferLimit), "seqikrules");
+        safeRun(() -> MdlSequenceData.SequenceDataParser.parseAutolayers(buf, result, bufferLimit), "seqautolayers");
+        safeRun(() -> MdlSequenceData.SequenceDataParser.parseActivityModifiers(buf, result, bufferLimit), "seqactivitymodifiers");
+        safeRun(() -> MdlSequenceData.SequenceDataParser.parseMovements(buf, result, bufferLimit), "seqmovements");
+        safeRun(() -> MdlSequenceData.SequenceDataParser.parseLocalHierarchies(buf, result, bufferLimit), "localhierarchies");
+        safeRun(() -> MdlFlexAnimation.parse(buf, result, bufferLimit), "flexanimations");
+
         return result;
     }
 
-    private static StudioHdr2 parseStudioHdr2(ByteBuffer buf, StudioHeader header, int bufferLimit) {
-        StudioHdr2 hdr2 = new StudioHdr2();
+    private static Hdr2 parseHdr2(ByteBuffer buf, Header header, int bufferLimit, ParsedModel result) {
+        Hdr2 hdr2 = new Hdr2();
         hdr2.hasData = false;
 
         if (header.studiohdr2index <= 0 || header.studiohdr2index >= bufferLimit - 48) {
             return hdr2;
         }
 
+        int savedPos = buf.position();
         try {
-            int savedPos = buf.position();
             buf.position(header.studiohdr2index);
 
             hdr2.numSkins = buf.getShort() & 0xFFFF;
@@ -308,9 +159,44 @@ public class MdlParser {
             skip(buf, 20);
             hdr2.hasData = true;
 
-            buf.position(savedPos);
+            if (hdr2.numSrcBoneTransforms > 0 && hdr2.srcBoneTransformIndex > 0) {
+                int srcBoneBase = header.studiohdr2index + hdr2.srcBoneTransformIndex;
+                int numSrcBones = Math.min(hdr2.numSrcBoneTransforms, 512);
+                int srcBoneSize = 40;
+                if (srcBoneBase + numSrcBones * srcBoneSize <= bufferLimit) {
+                    for (int s = 0; s < numSrcBones; s++) {
+                        int off = srcBoneBase + s * srcBoneSize;
+                        SrcBoneTransform bt = new SrcBoneTransform();
+                        bt.pos = new float[]{buf.getFloat(off), buf.getFloat(off + 4), buf.getFloat(off + 8)};
+                        bt.quat = new float[]{buf.getFloat(off + 12), buf.getFloat(off + 16), buf.getFloat(off + 20), buf.getFloat(off + 24)};
+                        bt.scale = new float[]{buf.getFloat(off + 28), buf.getFloat(off + 32), buf.getFloat(off + 36)};
+                        result.srcBoneTransforms.add(bt);
+                    }
+                }
+            }
+
+            if (hdr2.numSkins > 0 && hdr2.skinReplacementIndex > 0) {
+                int skIdx = header.studiohdr2index + hdr2.skinReplacementIndex;
+                int maxSkins = Math.min(hdr2.numSkins, 128);
+                hdr2.skinReplacementCounts = new int[maxSkins];
+                int totalReplacements = 0;
+                for (int s = 0; s < maxSkins; s++) {
+                    hdr2.skinReplacementCounts[s] = buf.getInt(skIdx + s * 4);
+                    totalReplacements += hdr2.skinReplacementCounts[s];
+                }
+                if (totalReplacements > 0 && totalReplacements <= 4096) {
+                    hdr2.skinReplacementTables = new int[totalReplacements * 2];
+                    int tblOff = skIdx + maxSkins * 4;
+                    for (int r = 0; r < totalReplacements; r++) {
+                        hdr2.skinReplacementTables[r * 2] = buf.getShort(tblOff + r * 4) & 0xFFFF;
+                        hdr2.skinReplacementTables[r * 2 + 1] = buf.getShort(tblOff + r * 4 + 2) & 0xFFFF;
+                    }
+                }
+            }
         } catch (Exception e) {
-            LOGGER.debug("[MdlParser] StudioHDR2 parse error (non-fatal): {}", e.getMessage());
+            LOGGER.debug("[MdlParser] HDR2 parse error (non-fatal): {}", e.getMessage());
+        } finally {
+            buf.position(savedPos);
         }
 
         return hdr2;
@@ -329,12 +215,24 @@ public class MdlParser {
         try {
             r.run();
         } catch (Exception e) {
+            if (transferstation.transferstation_whimsicalideas.DebugConfig.isStrictParsing()) {
+                throw new RuntimeException("[MdlParser] Strict mode: fatal error parsing " + section, e);
+            }
             LOGGER.debug("[MdlParser] Non-fatal error parsing {}: {}", section, e.getMessage());
         }
     }
 
     private static void assertInBounds(int offset, int size, int bufferLimit, String fieldName) {
-        if (offset < 0 || offset > bufferLimit - size) {
+        if (offset < 0 || size < 0 || (long) offset + size > bufferLimit) {
+            long endPos = (long) offset + size;
+            throw new RuntimeException(String.format(
+                    "MDL parse error: %s at offset %d (size %d) exceeds buffer limit %d (would end at %d)",
+                    fieldName, offset, size, bufferLimit, endPos));
+        }
+    }
+
+    private static void assertInBounds(int offset, long size, int bufferLimit, String fieldName) {
+        if (offset < 0 || size < 0 || (long) offset + size > bufferLimit) {
             long endPos = (long) offset + size;
             throw new RuntimeException(String.format(
                     "MDL parse error: %s at offset %d (size %d) exceeds buffer limit %d (would end at %d)",
@@ -354,10 +252,10 @@ public class MdlParser {
         return (long) a + (long) b * (long) c;
     }
 
-    private static StudioHeader parseHeader(ByteBuffer buf, int bufferLimit) {
+    private static Header parseHeader(ByteBuffer buf, int bufferLimit) {
         assertInBounds(buf.position(), 396, bufferLimit, "header");
 
-        StudioHeader h = new StudioHeader();
+        Header h = new Header();
         h.id = buf.getInt();
         h.version = buf.getInt();
         h.checksum = buf.getInt();
@@ -443,7 +341,7 @@ public class MdlParser {
         buf.position(offset);
 
         for (int i = 0; i < numBodyParts; i++) {
-            StudioBodyPart bp = new StudioBodyPart();
+            BodyPart bp = new BodyPart();
             bp.fileOffset = result.header.bodypartindex + i * BODYPART_SIZE;
             bp.sznameindex = buf.getInt();
             bp.nummodels = buf.getInt();
@@ -461,15 +359,16 @@ public class MdlParser {
 
     private static void parseModels(ByteBuffer buf, ParsedModel result, int bufferLimit) {
         int totalModels = 0;
+        int modelSize = result.modelSize;
         for (int bpIdx = 0; bpIdx < result.bodyParts.size(); bpIdx++) {
-            StudioBodyPart bp = result.bodyParts.get(bpIdx);
+            BodyPart bp = result.bodyParts.get(bpIdx);
             int numModels = sanitizeCount(bp.nummodels, MAX_MODELS - totalModels, "nummodels");
             int modelAddr = bp.fileOffset + bp.modelindex;
-            assertInBounds(modelAddr, numModels * MODEL_SIZE, bufferLimit, "modelindex");
+            assertInBounds(modelAddr, (long) numModels * modelSize, bufferLimit, "modelindex");
             for (int i = 0; i < numModels; i++) {
-                int currentAddr = modelAddr + i * MODEL_SIZE;
+                int currentAddr = modelAddr + i * modelSize;
                 buf.position(currentAddr);
-                StudioModel m = new StudioModel();
+                Model m = new Model();
                 m.fileOffset = currentAddr;
                 m.bodypartIndex = bpIdx;
                 m.name = readFixedString(buf, 64);
@@ -492,14 +391,15 @@ public class MdlParser {
     }
 
     private static void parseMeshes(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int meshSize = result.meshSize;
         for (int modelIdx = 0; modelIdx < result.models.size(); modelIdx++) {
-            StudioModel model = result.models.get(modelIdx);
+            Model model = result.models.get(modelIdx);
             int numMeshes = sanitizeCount(model.nummeshes, MAX_MESHES - result.meshes.size(), "nummeshes");
             int meshAddr = model.fileOffset + model.meshindex;
-            assertInBounds(meshAddr, numMeshes * MESH_SIZE, bufferLimit, "meshindex");
+            assertInBounds(meshAddr, (long) numMeshes * meshSize, bufferLimit, "meshindex");
             buf.position(meshAddr);
             for (int i = 0; i < numMeshes; i++) {
-                StudioMesh m = new StudioMesh();
+                Mesh m = new Mesh();
                 m.material = buf.getInt();
                 m.modelindex = buf.getInt();
                 m.numvertices = buf.getInt();
@@ -510,8 +410,13 @@ public class MdlParser {
                 m.materialparam = buf.getInt();
                 m.meshid = buf.getInt();
                 m.center = readFloat3(buf);
-                m.unused = new int[]{buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt()};
-                m.extra = new int[]{buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt()};
+                if (meshSize >= MESH_SIZE_V49) {
+                    m.unused = new int[]{buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt()};
+                    m.extra = new int[]{buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt()};
+                } else {
+                    m.unused = new int[]{buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt()};
+                    m.extra = new int[0];
+                }
                 m.globalModelIndex = modelIdx;
                 m.meshLocalIndex = i;
                 result.meshes.add(m);
@@ -519,19 +424,20 @@ public class MdlParser {
         }
     }
 
-    private static void parseVerticesFromMesh(ByteBuffer buf, StudioMesh mesh, ParsedModel result, int bufferLimit) {
-        StudioModel model = result.models.get(mesh.globalModelIndex);
+    private static void parseVerticesFromMesh(ByteBuffer buf, Mesh mesh, ParsedModel result, int bufferLimit) {
+        Model model = result.models.get(mesh.globalModelIndex);
         int baseVertexOffset = model.vertexindex;
+        int meshOffset = mesh.vertexoffset;
         int numVertices = sanitizeCount(mesh.numvertices, MAX_VERTICES - result.vertices.size(), "mesh.numvertices");
 
         for (int i = 0; i < numVertices; i++) {
-            long pos = mulAddSafe(baseVertexOffset, mesh.vertexoffset + i, VERTEX_SIZE);
-            if (pos < 0 || pos > bufferLimit - VERTEX_SIZE) {
+            long pos = (long) baseVertexOffset + (long) meshOffset + (long) i * VERTEX_SIZE;
+            if (pos < 0 || (long) pos + VERTEX_SIZE > bufferLimit) {
                 throw new RuntimeException(String.format(
                         "MDL parse error: vertex[%d] position %d exceeds buffer limit %d", i, pos, bufferLimit));
             }
             buf.position((int) pos);
-            StudioVertex v = new StudioVertex();
+            Vertex v = new Vertex();
             v.x = buf.getFloat();
             v.y = buf.getFloat();
             v.z = buf.getFloat();
@@ -564,40 +470,28 @@ public class MdlParser {
     }
 
     private static void parseIndices(ByteBuffer buf, ParsedModel result) {
+        // NOTE: mdl.vtxTriangles is only populated by linkVtxTriangles (unused path).
+        // Geometry is actually built from VtxParser.meshTriangles in ModelLoadManager.buildMeshes,
+        // so an empty mdl.vtxTriangles here is expected and NOT an error.
         if (!result.vtxTriangles.isEmpty()) {
             return;
         }
-        if (result.vertices.size() >= 3) {
-            for (int i = 0; i + 2 < result.vertices.size(); i += 3) {
-                result.indices.add(i);
-                result.indices.add(i + 1);
-                result.indices.add(i + 2);
-            }
-        } else {
-            for (StudioModel model : result.models) {
-                int numVertices = sanitizeCount(model.numvertices, MAX_VERTICES, "model.numvertices");
-                int vertexIndexStart = model.vertexindex / VERTEX_SIZE;
-                for (int i = 0; i < numVertices; i += 3) {
-                    if (i + 2 < numVertices) {
-                        result.indices.add(vertexIndexStart + i);
-                        result.indices.add(vertexIndexStart + i + 1);
-                        result.indices.add(vertexIndexStart + i + 2);
-                    }
-                }
-            }
-        }
+        LOGGER.debug("[MdlParser] mdl.vtxTriangles empty (expected; geometry uses VtxParser.meshTriangles)");
     }
 
     private static void parseBones(ByteBuffer buf, ParsedModel result, int bufferLimit) {
         int numBones = sanitizeCount(result.header.numbones, 512, "numbones");
         if (numBones == 0) return;
 
+        int boneSize = result.boneSize;
         int boneDataBase = result.header.boneindex;
-        assertInBounds(boneDataBase, numBones * BONE_SIZE, bufferLimit, "boneindex");
+        assertInBounds(boneDataBase, (long) numBones * boneSize, bufferLimit, "boneindex");
         buf.position(boneDataBase);
 
         for (int i = 0; i < numBones; i++) {
-            StudioBone b = new StudioBone();
+            int boneOff = boneDataBase + i * boneSize;
+            buf.position(boneOff);
+            Bone b = new Bone();
             b.sznameindex = buf.getInt();
             b.parent = buf.getInt();
             b.bonecontroller = new int[6];
@@ -615,11 +509,18 @@ public class MdlParser {
             b.physicsbone = buf.getInt();
             b.surfacepropidx = buf.getInt();
             b.contents = buf.getInt();
-            b.unused = new int[8];
-            for (int j = 0; j < 8; j++) b.unused[j] = buf.getInt();
+            if (boneSize >= BONE_SIZE_V49) {
+                b.unused = new int[8];
+                for (int j = 0; j < 8; j++) b.unused[j] = buf.getInt();
+            } else {
+                b.unused = new int[4];
+                for (int j = 0; j < 4; j++) b.unused[j] = buf.getInt();
+            }
 
             if (b.sznameindex > 0) {
-                int absNameOff = boneDataBase + b.sznameindex;
+                // CRITICAL FIX: sznameindex is relative to the BONE ENTRY, not the bone array base.
+                // Using boneDataBase would read the wrong name for all bones except bone 0.
+                int absNameOff = boneOff + b.sznameindex;
                 b.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
             } else {
                 b.name = "";
@@ -630,7 +531,7 @@ public class MdlParser {
     }
 
     private static void parseEyeballs(ByteBuffer buf, ParsedModel result, int bufferLimit) {
-        for (StudioModel model : result.models) {
+        for (Model model : result.models) {
             if (model.numeyeballs <= 0) continue;
 
             int offset = model.eyeballindex;
@@ -639,7 +540,7 @@ public class MdlParser {
             buf.position(offset);
 
             for (int i = 0; i < count; i++) {
-                StudioEyeball e = new StudioEyeball();
+                Eyeball e = new Eyeball();
                 e.sznameindex = buf.getInt();
                 e.bone = buf.getInt();
                 e.org = readFloat3(buf);
@@ -671,13 +572,13 @@ public class MdlParser {
         if (numTextures <= 0 || textureIndex <= 0) return;
         if (numTextures > 256) return;
 
-        int textureEntrySize = (result.header.version >= 48) ? TEXTURE_ENTRY_SIZE_V48 : TEXTURE_ENTRY_SIZE_V44;
+        int textureEntrySize = TEXTURE_ENTRY_SIZE;
         assertInBounds(textureIndex, numTextures * textureEntrySize, bufferLimit, "textureindex");
 
         for (int i = 0; i < numTextures; i++) {
             int entryOff = textureIndex + i * textureEntrySize;
             buf.position(entryOff);
-            StudioTexture tex = new StudioTexture();
+            Texture tex = new Texture();
             int nameOff = buf.getInt();
             tex.flags = buf.getInt();
             tex.width = buf.getInt();
@@ -706,7 +607,25 @@ public class MdlParser {
             if (entryOff + 3 >= bufferLimit) break;
             int nameOff = buf.getInt(entryOff);
             if (nameOff > 0) {
-                String path = readNullTerminatedString(buf, nameOff, bufferLimit);
+                // cdtexture nameOff convention varies by compiler:
+                // - studiomdl / standard SDK: absolute offset
+                // - Crowbar / some decompilers: relative offset from cdtexture array base
+                // - Some community tools: relative offset from entry itself
+                // Heuristic: small nameOff (< 256 or < cdIndex) is likely relative;
+                // large nameOff is likely absolute.
+                boolean likelyRelative = nameOff < 256 || nameOff < cdIndex;
+                String path = "";
+                if (likelyRelative) {
+                    path = readNullTerminatedString(buf, cdIndex + nameOff, bufferLimit);
+                    if (path.isEmpty()) {
+                        path = readNullTerminatedString(buf, nameOff, bufferLimit);
+                    }
+                } else {
+                    path = readNullTerminatedString(buf, nameOff, bufferLimit);
+                    if (path.isEmpty() && nameOff < bufferLimit) {
+                        path = readNullTerminatedString(buf, cdIndex + nameOff, bufferLimit);
+                    }
+                }
                 if (!path.isEmpty()) {
                     result.cdTextures.add(path);
                 }
@@ -725,10 +644,15 @@ public class MdlParser {
             if (entryOff + 3 >= bufferLimit) break;
             int nameOff = buf.getInt(entryOff);
             if (nameOff > 0) {
-                int absNameOff = includeIndex + nameOff;
-                String path = readNullTerminatedString(buf, absNameOff, bufferLimit);
-                if (!path.isEmpty()) {
+                // Try absolute offset first, then fall back to relative
+                String path = readNullTerminatedString(buf, nameOff, bufferLimit);
+                if (path.isEmpty() && nameOff < bufferLimit) {
+                    path = readNullTerminatedString(buf, includeIndex + nameOff, bufferLimit);
+                }
+                if (!path.isEmpty() && isValidPathString(path)) {
                     result.includeModels.add(path);
+                } else if (!path.isEmpty()) {
+                    LOGGER.warn("[MdlParser] Skipping include model with invalid path characters: {} (raw bytes)", path);
                 }
             }
         }
@@ -748,6 +672,595 @@ public class MdlParser {
             int entryOff = skinIndex + i * 2;
             int texIndex = buf.getShort(entryOff) & 0xFFFF;
             result.skinTable.add(texIndex);
+        }
+    }
+
+    private static void parseAttachments(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numAttachments = result.header.numlocalattachments;
+        int attachmentIndex = result.header.localattachmentindex;
+        if (numAttachments <= 0 || attachmentIndex <= 0) return;
+        if (numAttachments > 128) return;
+
+        int ATTACHMENT_SIZE = 120;
+        assertInBounds(attachmentIndex, numAttachments * ATTACHMENT_SIZE, bufferLimit, "attachmentindex");
+
+        for (int i = 0; i < numAttachments; i++) {
+            int entryOff = attachmentIndex + i * ATTACHMENT_SIZE;
+            buf.position(entryOff);
+            Attachment a = new Attachment();
+            a.fileOffset = entryOff;
+            a.sznameindex = buf.getInt();
+            a.flags = buf.getInt();
+            a.attachmentbone = buf.getInt();
+            a.org = readFloat3(buf);
+            a.vectors = new float[9];
+            for (int j = 0; j < 9; j++) a.vectors[j] = buf.getFloat();
+            a.quat = readFloat4(buf);
+            a.rot = readFloat3(buf);
+            skip(buf, 4);
+            if (a.sznameindex > 0) {
+                int absNameOff = entryOff + a.sznameindex;
+                a.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
+            } else {
+                a.name = "";
+            }
+            result.attachments.add(a);
+        }
+    }
+
+    private static void parseBoneControllers(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numBoneControllers = result.header.numbonecontrollers;
+        int boneControllerIndex = result.header.bonecontrollerindex;
+        if (numBoneControllers <= 0 || boneControllerIndex <= 0) return;
+        if (numBoneControllers > 64) return;
+
+        int BONECONTROLLER_SIZE = 28;
+        assertInBounds(boneControllerIndex, numBoneControllers * BONECONTROLLER_SIZE, bufferLimit, "bonecontrollerindex");
+        buf.position(boneControllerIndex);
+
+        for (int i = 0; i < numBoneControllers; i++) {
+            BoneController bc = new BoneController();
+            bc.bone = buf.getInt();
+            bc.channel = buf.getInt();
+            bc.flags = buf.getInt();
+            bc.start = readFloat3(buf);
+            bc.end = readFloat3(buf);
+            bc.rest = buf.getInt();
+            bc.inputField = buf.getInt();
+            result.boneControllers.add(bc);
+        }
+    }
+
+    private static void parseHitboxSets(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numHitboxSets = result.header.numhitboxsets;
+        int hitboxSetIndex = result.header.hitboxsetindex;
+        if (numHitboxSets <= 0 || hitboxSetIndex <= 0) return;
+        if (numHitboxSets > 64) return;
+
+        int HITBOXSET_SIZE = 12;
+        int HITBOX_SIZE = 44;
+        assertInBounds(hitboxSetIndex, numHitboxSets * HITBOXSET_SIZE, bufferLimit, "hitboxsetindex");
+
+        for (int i = 0; i < numHitboxSets; i++) {
+            int entryOff = hitboxSetIndex + i * HITBOXSET_SIZE;
+            buf.position(entryOff);
+            HitboxSet hs = new HitboxSet();
+            hs.sznameindex = buf.getInt();
+            hs.numhitboxes = buf.getInt();
+            hs.hitboxindex = buf.getInt();
+            if (hs.sznameindex > 0) {
+                // CRITICAL FIX: sznameindex is relative to the HITBOXSET ENTRY, not the array base.
+                int absNameOff = entryOff + hs.sznameindex;
+                hs.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
+            } else {
+                hs.name = "";
+            }
+            int hitboxDataAddr = entryOff + hs.hitboxindex;
+            if (hs.numhitboxes > 0 && hs.numhitboxes <= 256) {
+                assertInBounds(hitboxDataAddr, hs.numhitboxes * HITBOX_SIZE, bufferLimit, "hitbox");
+                for (int h = 0; h < hs.numhitboxes; h++) {
+                    int hOff = hitboxDataAddr + h * HITBOX_SIZE;
+                    buf.position(hOff);
+                    Bbox bbox = new Bbox();
+                    bbox.bone = buf.getInt();
+                    bbox.group = buf.getInt();
+                    bbox.bbmin = readFloat3(buf);
+                    bbox.bbmax = readFloat3(buf);
+                    bbox.sznameindex = buf.getInt();
+                    int total = 0;
+                    for (int j = 0; j < 8; j++) total += buf.getInt();
+                    if (bbox.sznameindex > 0) {
+                        int absNameOff = hOff + bbox.sznameindex;
+                        bbox.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
+                    } else {
+                        bbox.name = "";
+                    }
+                    hs.hitboxes.add(bbox);
+                }
+            }
+            result.hitboxSets.add(hs);
+        }
+    }
+
+    private static void parseSequences(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numLocalSeq = result.header.numlocalseq;
+        int localSeqIndex = result.header.localseqindex;
+        if (numLocalSeq <= 0 || localSeqIndex <= 0) return;
+        if (numLocalSeq > 1024) return;
+
+        int seqdescSize = result.seqdescSize;
+        int ANIMEVENT_SIZE = 76;
+        assertInBounds(localSeqIndex, (long) numLocalSeq * seqdescSize, bufferLimit, "localseqindex");
+
+        for (int i = 0; i < numLocalSeq; i++) {
+            int entryOff = localSeqIndex + i * seqdescSize;
+            buf.position(entryOff);
+            SeqDesc seq = new SeqDesc();
+            seq.baseptr = buf.getInt();
+            seq.sznameindex = buf.getInt();
+            if (seq.sznameindex > 0) {
+                int absNameOff = entryOff + seq.sznameindex;
+                seq.label = readNullTerminatedString(buf, absNameOff, bufferLimit);
+            } else {
+                seq.label = "";
+            }
+            seq.activity = buf.getInt();
+            seq.actweight = buf.getInt();
+            seq.events = new int[]{buf.getInt(), buf.getInt()};
+            seq.numevents = buf.getInt();
+            seq.eventindex = buf.getInt();
+            seq.numframes = buf.getInt();
+            seq.numpivots = buf.getInt();
+            seq.pivotindex = buf.getInt();
+            seq.motiontype = buf.getInt();
+            seq.motionbone = buf.getInt();
+            seq.linearmovement = readFloat3(buf);
+            seq.automoveposindex = buf.getInt();
+            seq.bbmin = readFloat3(buf);
+            seq.bbmax = readFloat3(buf);
+            seq.numblends = buf.getInt();
+            seq.animindex = buf.getInt();
+            seq.blend = new int[]{buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt()};
+            seq.blendpos = readFloat3(buf);
+            seq.numlocalhints = buf.getInt();
+            seq.localhintindex = buf.getInt();
+            seq.groupSize = buf.getInt();
+            seq.numIK = buf.getInt();
+            seq.IKIndex = buf.getInt();
+            seq.flags = buf.getInt();
+            seq.fadeInTime = new float[]{buf.getFloat(), buf.getFloat()};
+            seq.fadeOutTime = new float[]{buf.getFloat(), buf.getFloat()};
+            seq.localEntryNode = buf.getInt();
+            seq.localExitNode = buf.getInt();
+            seq.nodeFlags = buf.getInt();
+            seq.entryPhase = buf.getFloat();
+            seq.exitPhase = buf.getFloat();
+            seq.lastFrame = buf.getFloat();
+            seq.nextSeq = buf.getInt();
+            seq.pose = buf.getInt();
+            seq.poseKey = new float[]{buf.getFloat(), buf.getFloat()};
+            seq.keyValueIndex = new float[]{buf.getFloat(), buf.getFloat()};
+            seq.keyValueSize = buf.getInt();
+            seq.paramValue = buf.getInt();
+            result.sequences.add(seq);
+
+            // Classify sequence
+            SequenceType stype = classifySequence(seq);
+            if (stype == SequenceType.REFERENCE) {
+                result.referenceSequenceIndices.add(i);
+            } else if (stype == SequenceType.A_POSE) {
+                result.aPoseSequenceIndices.add(i);
+            }
+        }
+    }
+
+    private static void parseIKChains(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numIKChains = result.header.numikchains;
+        int ikChainIndex = result.header.ikchainindex;
+        if (numIKChains <= 0 || ikChainIndex <= 0) return;
+        if (numIKChains > 32) return;
+
+        int IKCHAIN_SIZE = 20;
+        int IKLINK_SIZE = 24;
+        assertInBounds(ikChainIndex, numIKChains * IKCHAIN_SIZE, bufferLimit, "ikchainindex");
+
+        for (int i = 0; i < numIKChains; i++) {
+            int entryOff = ikChainIndex + i * IKCHAIN_SIZE;
+            buf.position(entryOff);
+            IKChain ik = new IKChain();
+            ik.fileOffset = entryOff;
+            ik.sznameindex = buf.getInt();
+            ik.chain = buf.getInt();
+            ik.numlinks = buf.getInt();
+            ik.linkindex = buf.getInt();
+            int linkDataAddr = entryOff + ik.linkindex;
+            int numLinks = Math.min(ik.numlinks, 16);
+            for (int l = 0; l < numLinks; l++) {
+                int lOff = linkDataAddr + l * IKLINK_SIZE;
+                buf.position(lOff);
+                IKLink link = new IKLink();
+                link.bone = buf.getInt();
+                link.kneeDir = readFloat3(buf);
+                link.limits = readFloat3(buf);
+                link.unused = buf.getInt();
+                ik.links.add(link);
+            }
+            if (ik.sznameindex > 0) {
+                int absNameOff = entryOff + ik.sznameindex;
+                ik.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
+            } else {
+                ik.name = "";
+            }
+            result.ikChains.add(ik);
+        }
+    }
+
+    private static void parseFlexDescriptors(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numFlexDesc = result.header.numflexdesc;
+        int flexDescIndex = result.header.flexdescindex;
+        if (numFlexDesc <= 0 || flexDescIndex <= 0) return;
+        if (numFlexDesc > 256) return;
+
+        int FLEXDESC_SIZE = 8;
+        assertInBounds(flexDescIndex, numFlexDesc * FLEXDESC_SIZE, bufferLimit, "flexdescindex");
+
+        for (int i = 0; i < numFlexDesc; i++) {
+            int entryOff = flexDescIndex + i * FLEXDESC_SIZE;
+            buf.position(entryOff);
+            FlexDesc fd = new FlexDesc();
+            fd.sznameindex = buf.getInt();
+            fd.name = "";
+            if (fd.sznameindex > 0) {
+                int absNameOff = entryOff + fd.sznameindex;
+                fd.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
+            }
+            result.flexDescs.add(fd);
+        }
+    }
+
+    private static void parseFlexControllers(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numFlexControllers = result.header.numflexcontrollers;
+        int flexControllerIndex = result.header.flexcontrollerindex;
+        if (numFlexControllers <= 0 || flexControllerIndex <= 0) return;
+        if (numFlexControllers > 64) return;
+
+        int FLEXCONTROLLER_SIZE = 32;
+        assertInBounds(flexControllerIndex, numFlexControllers * FLEXCONTROLLER_SIZE, bufferLimit, "flexcontrollerindex");
+        buf.position(flexControllerIndex);
+
+        for (int i = 0; i < numFlexControllers; i++) {
+            int entryOff = flexControllerIndex + i * FLEXCONTROLLER_SIZE;
+            buf.position(entryOff);
+            FlexController fc = new FlexController();
+            fc.sznameindex = buf.getInt();
+            fc.name = "";
+            fc.localToGlobal = new int[]{buf.getInt(), buf.getInt()};
+            fc.min = readFloat3(buf);
+            fc.max = readFloat3(buf);
+            if (fc.sznameindex > 0) {
+                int absNameOff = entryOff + fc.sznameindex;
+                fc.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
+            }
+            result.flexControllers.add(fc);
+        }
+    }
+
+    private static void parseFlexRules(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numFlexRules = result.header.numflexrules;
+        int flexRuleIndex = result.header.flexruleindex;
+        if (numFlexRules <= 0 || flexRuleIndex <= 0) return;
+        if (numFlexRules > 256) return;
+
+        int FLEXRULE_SIZE = 12;
+        assertInBounds(flexRuleIndex, numFlexRules * FLEXRULE_SIZE, bufferLimit, "flexruleindex");
+
+        for (int i = 0; i < numFlexRules; i++) {
+            int entryOff = flexRuleIndex + i * FLEXRULE_SIZE;
+            buf.position(entryOff);
+            FlexRule fr = new FlexRule();
+            fr.flex = buf.getInt();
+            fr.numops = buf.getInt();
+            fr.opindex = buf.getInt();
+            int opDataAddr = entryOff + fr.opindex;
+            int numOps = Math.min(fr.numops, 1024);
+            fr.ops = new int[numOps];
+            for (int o = 0; o < numOps; o++) {
+                fr.ops[o] = buf.getInt(opDataAddr + o * 4);
+            }
+            result.flexRules.add(fr);
+        }
+    }
+
+    private static void parseLocalAnimations(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numAnims = result.header.numlocalanim;
+        int animIndex = result.header.localanimindex;
+        if (numAnims <= 0 || animIndex <= 0) return;
+        if (numAnims > 256) return;
+
+        int LOCALANIM_SIZE = 64;
+        assertInBounds(animIndex, numAnims * LOCALANIM_SIZE, bufferLimit, "localanimindex");
+
+        for (int i = 0; i < numAnims; i++) {
+            int entryOff = animIndex + i * LOCALANIM_SIZE;
+            buf.position(entryOff);
+
+            LocalAnim anim = new LocalAnim();
+            int nameOff = buf.getInt();
+            anim.animBlock = buf.getInt();
+            anim.animOffset = buf.getInt();
+            anim.numFrames = buf.getInt();
+            anim.numSegments = buf.getInt();
+            anim.segmentIndex = buf.getInt();
+            anim.flags = buf.getInt();
+            anim.fps = buf.getFloat();
+            anim.animBlocks = new int[]{buf.getInt(), buf.getInt(), buf.getInt(), buf.getInt()};
+            skip(buf, 12);
+
+            if (nameOff > 0) {
+                int absNameOff = entryOff + nameOff;
+                anim.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
+            } else {
+                anim.name = "";
+            }
+            result.localAnims.add(anim);
+        }
+    }
+
+    private static void parsePoseParameters(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numParams = result.header.numlocalposeparameters;
+        int paramIndex = result.header.localposeparamindex;
+        if (numParams <= 0 || paramIndex <= 0) return;
+        if (numParams > 64) return;
+
+        int POSEPARAM_SIZE = 24;
+        assertInBounds(paramIndex, numParams * POSEPARAM_SIZE, bufferLimit, "localposeparamindex");
+        buf.position(paramIndex);
+
+        for (int i = 0; i < numParams; i++) {
+            int entryOff = paramIndex + i * POSEPARAM_SIZE;
+            buf.position(entryOff);
+            PoseParam pp = new PoseParam();
+            int nameOff = buf.getInt();
+            pp.type = buf.getInt();
+            pp.start = buf.getFloat();
+            pp.end = buf.getFloat();
+            pp.loop = buf.getInt();
+            skip(buf, 4);
+
+            if (nameOff > 0) {
+                int absNameOff = entryOff + nameOff;
+                pp.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
+            } else {
+                pp.name = "";
+            }
+            result.poseParams.add(pp);
+        }
+    }
+
+    private static void parseLocalNodes(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numNodes = result.header.numlocalnodes;
+        int nodeIndex = result.header.localnodeindex;
+        int nodeNameIndex = result.header.localnodenameindex;
+        if (numNodes <= 0 || nodeIndex <= 0) return;
+        if (numNodes > 256) return;
+
+        int LOCALNODE_SIZE = 8;
+        assertInBounds(nodeIndex, numNodes * LOCALNODE_SIZE, bufferLimit, "localnodeindex");
+
+        for (int i = 0; i < numNodes; i++) {
+            int entryOff = nodeIndex + i * LOCALNODE_SIZE;
+            buf.position(entryOff);
+
+            LocalNode node = new LocalNode();
+            int nameOff = buf.getInt();
+            node.parent = buf.getInt();
+
+            if (nameOff > 0 && nodeNameIndex > 0) {
+                int absNameOff = nodeNameIndex + nameOff;
+                node.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
+            } else {
+                node.name = "";
+            }
+            result.localNodes.add(node);
+        }
+    }
+
+    private static void parseIKAutoplayLocks(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numLocks = result.header.numlocalikautoplaylocks;
+        int lockIndex = result.header.localikautoplaylockindex;
+        if (numLocks <= 0 || lockIndex <= 0) return;
+        if (numLocks > 32) return;
+
+        int IKAUTOPLAYLOCK_SIZE = 12;
+        assertInBounds(lockIndex, numLocks * IKAUTOPLAYLOCK_SIZE, bufferLimit, "localikautoplaylockindex");
+        buf.position(lockIndex);
+
+        for (int i = 0; i < numLocks; i++) {
+            IKAutoplayLock lock = new IKAutoplayLock();
+            lock.ikChainIndex = buf.getInt();
+            lock.lockCount = buf.getInt();
+            lock.threshold = buf.getFloat();
+            result.ikAutoplayLocks.add(lock);
+        }
+    }
+
+    private static void parseMouths(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numMouths = result.header.nummouths;
+        int mouthIndex = result.header.mouthindex;
+        if (numMouths <= 0 || mouthIndex <= 0) return;
+        if (numMouths > 64) return;
+
+        int MOUTH_SIZE = 16;
+        assertInBounds(mouthIndex, numMouths * MOUTH_SIZE, bufferLimit, "mouthindex");
+        buf.position(mouthIndex);
+
+        for (int i = 0; i < numMouths; i++) {
+            Mouth mouth = new Mouth();
+            mouth.bone = buf.getInt();
+            mouth.flexibleOffsets = new float[]{buf.getFloat(), buf.getFloat(), buf.getFloat()};
+            result.mouths.add(mouth);
+        }
+    }
+
+    private static void parseKeyValues(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int kvIndex = result.header.keyvalueindex;
+        int kvSize = result.header.keyvaluesize;
+        if (kvIndex <= 0 || kvSize <= 0) return;
+        if (kvSize > 65536) return;
+
+        assertInBounds(kvIndex, kvSize, bufferLimit, "keyvalueindex");
+        result.keyValues = readFixedLengthString(buf, kvIndex, kvSize, bufferLimit);
+    }
+
+    private static String readFixedLengthString(ByteBuffer buf, int offset, int length, int bufferLimit) {
+        if (offset < 0 || length <= 0 || offset > bufferLimit - length) return "";
+        int savedPos = buf.position();
+        try {
+            buf.position(offset);
+            byte[] bytes = new byte[Math.min(length, bufferLimit - offset)];
+            buf.get(bytes);
+            int nullTerm = 0;
+            while (nullTerm < bytes.length && bytes[nullTerm] != 0) nullTerm++;
+            return decodeString(bytes, nullTerm);
+        } finally {
+            buf.position(savedPos);
+        }
+    }
+
+    private static void parseSurfaceProp(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int spIndex = result.header.surfacepropindex;
+        if (spIndex <= 0) return;
+        result.surfaceProp = readNullTerminatedString(buf, spIndex, bufferLimit);
+    }
+
+    private static void parseSequenceFrameData(ByteBuffer buf, ParsedModel result, int bufferLimit) {
+        int numAnims = result.localAnims.size();
+        int numSeqs = result.sequences.size();
+        if (numAnims == 0 && numSeqs == 0) return;
+
+        // Build mapping: for each sequence, try to find the corresponding local animation
+        // and extract frame 0 bone transforms
+        int localAnimBase = result.header.localanimindex;
+        if (localAnimBase <= 0) return;
+
+        result.sequenceAnimData.clear();
+        int localAnimSize = 64; // mstudioanimdesc_t size
+        for (int si = 0; si < numSeqs; si++) {
+            SeqDesc seq = result.sequences.get(si);
+            SequenceAnimData animData = new SequenceAnimData();
+
+            // Determine which local anim this sequence references
+            int animIdx = -1;
+            if (seq.numblends > 0 && seq.animindex > 0) {
+                // CRITICAL FIX: seq.animindex is an offset from the SEQUENCE ENTRY to mstudioanimdesc_t,
+                // not an index or offset from localAnimBase.
+                // The mstudioanimdesc_t at that address should correspond to one of the entries
+                // in the local anim table (at localanimindex).
+                int seqEntryOff = result.header.localseqindex + si * result.seqdescSize;
+                int animDescOff = seqEntryOff + seq.animindex;
+                if (animDescOff >= localAnimBase && animDescOff < localAnimBase + numAnims * localAnimSize) {
+                    // The animdesc is within the local anim table — compute its index
+                    if ((animDescOff - localAnimBase) % localAnimSize == 0) {
+                        animIdx = (animDescOff - localAnimBase) / localAnimSize;
+                    }
+                }
+                // If animIdx is still < 0, try reading baseptr from mstudioanimdesc_t
+                if (animIdx < 0 && animDescOff + 8 <= bufferLimit) {
+                    int baseptr = buf.getInt(animDescOff);
+                    // baseptr might be an index into the local anim table
+                    if (baseptr >= 0 && baseptr < numAnims) {
+                        animIdx = baseptr;
+                    }
+                }
+            }
+            if (animIdx < 0 || animIdx >= numAnims) {
+                result.sequenceAnimData.add(animData);
+                continue;
+            }
+
+            LocalAnim localAnim = result.localAnims.get(animIdx);
+            int segmentOff = localAnimBase + localAnim.segmentIndex;
+            if (segmentOff <= 0 || segmentOff >= bufferLimit) {
+                result.sequenceAnimData.add(animData);
+                continue;
+            }
+
+            // Parse frame 0 bone transforms from segment data
+            AnimFrameData frame0 = new AnimFrameData();
+            frame0.frame = 0;
+
+            int savedPos = buf.position();
+            try {
+                // Read bone entries from segment data
+                // Format: series of mstudioanim_t structs
+                // short bone, short flags, int nextoffset, then data
+                int entryOff = segmentOff;
+                int maxIter = Math.min(result.bones.size(), 256);
+                for (int iter = 0; iter < maxIter; iter++) {
+                    if (entryOff + 8 > bufferLimit) break;
+
+                    short boneIdx = buf.getShort(entryOff);
+                    short flags = buf.getShort(entryOff + 2);
+                    int nextoffset = buf.getInt(entryOff + 4);
+
+                    if (boneIdx < 0) break;
+                    if (boneIdx >= result.bones.size()) {
+                        if (nextoffset > 0) {
+                            entryOff = segmentOff + nextoffset;
+                        } else {
+                            entryOff += 8 + 12; // skip header + 6 shorts
+                        }
+                        continue;
+                    }
+
+                    AnimFrameBone fb = new AnimFrameBone();
+                    fb.boneIndex = boneIdx;
+                    fb.boneName = result.bones.get(boneIdx).name;
+
+                    int dataOff = entryOff + 8;
+
+                    // Read 6 shorts: pos[3] + quat[3] (raw format)
+                    if (dataOff + 12 <= bufferLimit) {
+                        short px = buf.getShort(dataOff);
+                        short py = buf.getShort(dataOff + 2);
+                        short pz = buf.getShort(dataOff + 4);
+                        short qx = buf.getShort(dataOff + 6);
+                        short qy = buf.getShort(dataOff + 8);
+                        short qz = buf.getShort(dataOff + 10);
+
+                        // Decode shorts to floats (normalized)
+                        float invScale = 1.0f / 32767.0f;
+                        fb.pos[0] = px * invScale;
+                        fb.pos[1] = py * invScale;
+                        fb.pos[2] = pz * invScale;
+                        fb.quat[0] = qx * invScale;
+                        fb.quat[1] = qy * invScale;
+                        fb.quat[2] = qz * invScale;
+                        // Compute quat w
+                        float qlen = fb.quat[0] * fb.quat[0] + fb.quat[1] * fb.quat[1] + fb.quat[2] * fb.quat[2];
+                        fb.quat[3] = (qlen < 1.0f) ? (float) Math.sqrt(1.0f - qlen) : 0;
+                    }
+
+                    frame0.boneTransforms.add(fb);
+
+                    if (nextoffset > 0) {
+                        entryOff = segmentOff + nextoffset;
+                    } else {
+                        entryOff = dataOff + 12;
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.debug("[MdlParser] Failed to parse segment data for sequence '{}': {}", seq.label, e.getMessage());
+            }
+
+            if (!frame0.boneTransforms.isEmpty()) {
+                animData.frames.add(frame0);
+                animData.isReference = result.referenceSequenceIndices.contains(si);
+                animData.isAPose = result.aPoseSequenceIndices.contains(si);
+            }
+
+            buf.position(savedPos);
+            result.sequenceAnimData.add(animData);
         }
     }
 
@@ -773,21 +1286,38 @@ public class MdlParser {
         return decodeString(bytes, nullTerm);
     }
 
+    private static boolean isValidPathString(String s) {
+        if (s == null || s.isEmpty()) return false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            // Reject only control characters and Windows-prohibited filename characters.
+            // Allow extended ASCII (128-255) and Unicode for non-English mod paths.
+            if (c < 32) return false;
+            if (c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*') return false;
+            if (c == '\ufffd') return false;
+        }
+        return true;
+    }
+
     private static String readNullTerminatedString(ByteBuffer buf, int offset, int bufferLimit) {
         if (offset < 0 || offset >= bufferLimit) {
             return "";
         }
         int savedPos = buf.position();
-        buf.position(offset);
-        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-        byte b;
-        int count = 0;
-        while (count < 256 && buf.position() < bufferLimit && (b = buf.get()) != 0) {
-            baos.write(b);
-            count++;
+        try {
+            buf.position(offset);
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            int count = 0;
+            while (count < 256 && buf.position() < bufferLimit) {
+                byte b = buf.get();
+                if (b == 0) break;
+                baos.write(b);
+                count++;
+            }
+            return decodeString(baos.toByteArray(), baos.size());
+        } finally {
+            buf.position(savedPos);
         }
-        buf.position(savedPos);
-        return decodeString(baos.toByteArray(), baos.size());
     }
 
     private static final java.nio.charset.Charset CP932 = java.nio.charset.Charset.forName("Shift_JIS");
@@ -807,34 +1337,70 @@ public class MdlParser {
             return new String(bytes, 0, len, StandardCharsets.US_ASCII);
         }
 
+        // Score-based encoding detection: try UTF-8, CP932 (Japanese), CP1252 (Western European).
+        // UTF-8 is tried first because it's the modern standard and increasingly common in mods.
+        // The scoring heuristic naturally prefers the encoding that produces the fewest
+        // replacement characters and the most valid alphanumeric characters.
+        int utf8Score = 0;
+        int cp932Score = 0;
+        int cp1252Score = 0;
+        String utf8Result = null;
+        String cp932Result = null;
+        String cp1252Result = null;
+
         try {
-            String cp932 = new String(bytes, 0, len, CP932);
-            int readable = 0;
-            for (int i = 0; i < cp932.length(); i++) {
-                char c = cp932.charAt(i);
-                if (Character.isLetterOrDigit(c) || Character.isSpaceChar(c) || c == '/' || c == '_' || c == '-' || c == '.') {
-                    readable++;
-                }
-            }
-            if (readable > cp932.length() / 2) {
-                return cp932;
-            }
+            utf8Result = new String(bytes, 0, len, StandardCharsets.UTF_8);
+            utf8Score = calculateStringScore(utf8Result);
         } catch (Exception ignored) {}
 
         try {
-            String cp1252 = new String(bytes, 0, len, CP1252);
-            int readable = 0;
-            for (int i = 0; i < cp1252.length(); i++) {
-                char c = cp1252.charAt(i);
-                if (Character.isLetterOrDigit(c) || Character.isSpaceChar(c) || c == '/' || c == '_' || c == '-' || c == '.') {
-                    readable++;
-                }
-            }
-            if (readable > cp1252.length() / 2) {
-                return cp1252;
-            }
+            cp932Result = new String(bytes, 0, len, CP932);
+            cp932Score = calculateStringScore(cp932Result);
         } catch (Exception ignored) {}
 
-        return new String(bytes, 0, len, CP932);
+        try {
+            cp1252Result = new String(bytes, 0, len, CP1252);
+            cp1252Score = calculateStringScore(cp1252Result);
+        } catch (Exception ignored) {}
+
+        int bestScore = Math.max(utf8Score, Math.max(cp932Score, cp1252Score));
+        if (bestScore > 0) {
+            if (utf8Result != null && utf8Score == bestScore) return utf8Result;
+            if (cp932Result != null && cp932Score == bestScore) return cp932Result;
+            if (cp1252Result != null && cp1252Score == bestScore) return cp1252Result;
+        }
+
+        String fallback = pickBestFallback(utf8Result, cp1252Result, cp932Result);
+        if (fallback != null) return fallback;
+
+        return new String(bytes, 0, len, StandardCharsets.US_ASCII).replace('?', '_');
+    }
+
+    private static String pickBestFallback(String... candidates) {
+        String best = null;
+        for (String s : candidates) {
+            if (s == null) continue;
+            if (s.indexOf('\ufffd') >= 0) continue;
+            best = s;
+            break;
+        }
+        return best;
+    }
+
+    private static int calculateStringScore(String s) {
+        int score = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                score += 2;
+            } else if (Character.isSpaceChar(c) || c == '/' || c == '_' || c == '-' || c == '.') {
+                score += 1;
+            } else if (c == '?' || c == '\ufffd') {
+                score -= 10; // Strong penalty for replacement characters
+            } else if (c < 32 || (c > 126 && c < 160)) {
+                score -= 5; // Penalty for control characters
+            }
+        }
+        return score;
     }
 }

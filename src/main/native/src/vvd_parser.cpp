@@ -16,8 +16,20 @@ VvdParser::ParsedVvd VvdParser::parse(const std::vector<uint8_t>& data) {
         throw std::runtime_error("Not a valid VVD file (bad magic)");
     }
 
+    // Validate version (Source Engine VVD versions are typically 1-4)
+    if (result.header.version < 1 || result.header.version > 4) {
+        throw std::runtime_error("Invalid VVD version: " + std::to_string(result.header.version));
+    }
+
+    // Validate minimum file size based on vertex count
+    size_t minExpectedSize = VVD_HEADER_SIZE + 
+        static_cast<size_t>(result.header.numLODVertices[0]) * VVD_VERTEX_SIZE;
+    if (data.size() < minExpectedSize) {
+        throw std::runtime_error("VVD file too small for vertex data");
+    }
+
     auto readAt = [&](int offset, void* dest, size_t size) {
-        if (offset < 0 || offset + size > data.size())
+        if (offset < 0 || static_cast<size_t>(offset) + size > data.size())
             throw std::runtime_error("VVD read out of bounds");
         memcpy(dest, data.data() + offset, size);
     };
@@ -53,6 +65,8 @@ VvdParser::ParsedVvd VvdParser::parse(const std::vector<uint8_t>& data) {
             std::vector<StudioVertexExt> out;
             for (auto& fixup : result.fixups) {
                 if (fixup.lodIndex != targetLod) continue;
+                if (fixup.sourceVertexID < 0 || fixup.numVertexes <= 0) continue;
+                if (fixup.sourceVertexID >= numVerts) continue;
                 int end = std::min(fixup.sourceVertexID + fixup.numVertexes, numVerts);
                 for (int i = fixup.sourceVertexID; i < end; i++) {
                     out.push_back(rawVertices[i]);

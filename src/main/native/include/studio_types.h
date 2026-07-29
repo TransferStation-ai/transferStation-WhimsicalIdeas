@@ -15,8 +15,7 @@ constexpr int MODEL_SIZE = 148;
 constexpr int MESH_SIZE = 116;
 constexpr int BONE_SIZE = 216;
 constexpr int EYEBALL_SIZE = 324;
-constexpr int TEXTURE_ENTRY_SIZE_V44 = 64;
-constexpr int TEXTURE_ENTRY_SIZE_V48 = 52;
+constexpr int TEXTURE_ENTRY_SIZE = 64;
 constexpr uint32_t MDL_MAGIC = 0x54534449; // "IDST" (little-endian)
 
 struct StudioHeader {
@@ -118,6 +117,7 @@ struct StudioModel {
     int32_t numeyeballs;
     int32_t eyeballindex;
     int32_t unused[2];
+    int32_t _pad[8];
 };
 
 struct StudioMesh {
@@ -173,6 +173,7 @@ struct StudioEyeball {
     int32_t unused[4];
     int8_t  eyelidFlexDesc[4];
     int32_t unused2[28];
+    int32_t _pad[28];
 };
 
 struct StudioTexture {
@@ -222,12 +223,14 @@ struct StudioVertexExt {
 
 constexpr int VTX_VERTEX_SIZE = 9;
 
+#pragma pack(push, 1)
 struct VtxVertex {
     uint8_t boneWeightIndex[3];
     uint8_t numBones;
     uint16_t origMeshVertID;
     uint8_t boneId[3];
 };
+#pragma pack(pop)
 
 // ===================== Mesh Data (built from MDL+VVD+VTX) =====================
 
@@ -247,6 +250,9 @@ struct MeshData {
     uint32_t textureId = 0;
     std::string textureName;
     float colorTint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    bool translucent = false;
+    bool alphaTest = false;
+    bool noCull = false;
 };
 
 #pragma pack(pop)

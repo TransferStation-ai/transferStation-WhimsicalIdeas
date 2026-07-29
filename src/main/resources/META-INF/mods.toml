@@ -10,7 +10,7 @@ displayName = "${mod_name}" #mandatory
 # A URL for the "homepage" for this mod, displayed in the mod UI
 #logoFile="transferstation_whimsicalideas.png" #optional
 #credits="Thanks for this example mod goes to Java" #optional
-authors = "transferstation_whimsicalideas" #optional
+authors = "TransferStation" #optional
 # The description text for the mod (multi line!) (#mandatory)
 description = '''${mod_description}'''
 # A dependency - use the . to indicate dependency for a specific modid. Dependencies are optional.
@@ -22,7 +22,7 @@ mandatory = true #mandatory
 # The version range of the dependency
 versionRange = "${forge_version_range}" #mandatory
 ordering = "NONE"
-side = "BOTH"# Here's another dependency
+side = "BOTH" # Here's another dependency
 [[dependencies."transferstation_whimsicalideas"]]
 modId = "minecraft"
 mandatory = true

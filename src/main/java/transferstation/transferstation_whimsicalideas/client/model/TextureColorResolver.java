@@ -1,47 +1,61 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.logging.LogUtils;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.ColorUtils;
 
 import java.awt.image.BufferedImage;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * 线程安全的纹理解析状态跟踪器和颜色解析器。
- * <p>
- * 用于确保在纹理尚未被完全解析时不会产生无效的颜色/纹理引用。
- * 每个纹理路径都关联一个 {@link ColorUtils.TextureParseState}，解析器会根据状态决定：
- * <ul>
- *   <li>COMPLETE - 可以安全使用该纹理的颜色</li>
- *   <li>PARTIAL - 可以使用但需要降级处理</li>
- *   <li>FAILED/UNPARSED - 必须使用回退颜色或跳过</li>
- * </ul>
- */
 public class TextureColorResolver {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    /** 纹理路径 -> 解析状态 */
-    private final Map<String, TextureEntry> entries = new ConcurrentHashMap<>();
-
-    /** 线程安全的纹理注册表（替代 ModelLoadManager 的 HashMap） */
-    private final Map<String, ResourceLocation> textureRegistry = new ConcurrentHashMap<>();
+    /**
+     * 世代计数器，每次资源重载后递增�?     * 用于替代 boolean texturesNeedRefresh，避免竞态条件�?     * TextureEntry 记录自己最后注册的世代，ensureTextureRegistered 比较
+     * 世代而不清除 flag，确保所有条目都能在下一帧正确重新注册�?     */
+    private static volatile long textureGeneration = 0;
 
     /**
-     * 单个纹理条目，记录解析状态和关联数据
-     */
+     * 递增全局纹理世代计数器�?     * �?ModelLoadManager.markTexturesStale() 在资源重载时调用�?     */
+    public static void incrementGeneration() {
+        textureGeneration++;
+    }
+
+    /**
+     * 返回当前纹理世代号�?     */
+    public static long getTextureGeneration() {
+        return textureGeneration;
+    }
+
+    private final Map<String, TextureEntry> entries = new ConcurrentHashMap<>();
+
+    private final Map<String, ResourceLocation> textureRegistry = new ConcurrentHashMap<>();
+
     public static class TextureEntry {
         private volatile ColorUtils.TextureParseState state;
         private volatile ResourceLocation resourceLocation;
         private volatile BufferedImage image;
+        private volatile NativeImage cachedNativeImage;
         private volatile int cachedColor;
         private volatile boolean translucent;
         private volatile boolean alphaTest;
         private volatile boolean noCull;
+        /**
+         * 此条目持有的、已注册�?TextureManager �?DynamicTexture 实例�?         * 整个生命周期内保持同一个实例，避免重新注册时关闭旧实例导致
+         * RenderSystem 上传队列中残留对已关�?NativeImage �?null)纹理的引用，
+         * 从而在 flipFrame �?replayQueue 中触�?NullPointerException�?         */
+        private volatile DynamicTexture dynamicTexture;
+        /** 此条目的纹理最后被注册时所在世代。与 TextureColorResolver.textureGeneration 比较�?*/
+        private volatile long lastRegisteredGeneration = -1;
 
         public TextureEntry(String path) {
             this.state = ColorUtils.TextureParseState.UNPARSED;
@@ -59,6 +73,9 @@ public class TextureColorResolver {
         public BufferedImage getImage() { return image; }
         public void setImage(BufferedImage img) { this.image = img; }
 
+        public NativeImage getCachedNativeImage() { return cachedNativeImage; }
+        public void setCachedNativeImage(NativeImage img) { this.cachedNativeImage = img; }
+
         public int getCachedColor() { return cachedColor; }
         public void setCachedColor(int color) { this.cachedColor = color; }
 
@@ -72,37 +89,35 @@ public class TextureColorResolver {
         public void setNoCull(boolean v) { this.noCull = v; }
 
         public boolean isUsable() { return state.isUsable(); }
+
+        public long getLastRegisteredGeneration() { return lastRegisteredGeneration; }
+        public void setLastRegisteredGeneration(long gen) { this.lastRegisteredGeneration = gen; }
+
+        public DynamicTexture getDynamicTexture() { return dynamicTexture; }
+        public void setDynamicTexture(DynamicTexture tex) { this.dynamicTexture = tex; }
     }
 
-    // ==================== 状态管理 ====================
-
-    /**
-     * 注册一个新的纹理路径，初始状态为 UNPARSED
-     */
     public TextureEntry register(String texturePath) {
         return entries.computeIfAbsent(texturePath, TextureEntry::new);
     }
 
-    /**
-     * 获取纹理条目，不存在则返回 null
-     */
     public TextureEntry getEntry(String texturePath) {
         return entries.get(texturePath);
     }
 
-    /**
-     * 获取纹理的解析状态
-     */
     public ColorUtils.TextureParseState getState(String texturePath) {
         TextureEntry entry = entries.get(texturePath);
         return entry != null ? entry.getState() : ColorUtils.TextureParseState.UNPARSED;
     }
 
-    /**
-     * 标记纹理解析完成
-     */
     public void markComplete(String texturePath, ResourceLocation loc, int color,
-                             boolean translucent, boolean alphaTest, boolean noCull) {
+                              boolean translucent, boolean alphaTest, boolean noCull) {
+        markComplete(texturePath, loc, color, translucent, alphaTest, noCull, null);
+    }
+
+    public void markComplete(String texturePath, ResourceLocation loc, int color,
+                              boolean translucent, boolean alphaTest, boolean noCull,
+                              NativeImage nativeImage) {
         TextureEntry entry = register(texturePath);
         entry.setState(ColorUtils.TextureParseState.COMPLETE);
         entry.setResourceLocation(loc);
@@ -110,21 +125,24 @@ public class TextureColorResolver {
         entry.setTranslucent(translucent);
         entry.setAlphaTest(alphaTest);
         entry.setNoCull(noCull);
+        entry.setImage(null);
+        if (nativeImage != null) {
+            NativeImage old = entry.getCachedNativeImage();
+            if (old != null && old != nativeImage) old.close();
+            // Store a copy so the cache survives DynamicTexture.close()
+            NativeImage cacheCopy = new NativeImage(nativeImage.getWidth(), nativeImage.getHeight(), false);
+            cacheCopy.copyFrom(nativeImage);
+            entry.setCachedNativeImage(cacheCopy);
+        }
         if (loc != null) {
             textureRegistry.put(texturePath, loc);
         }
     }
 
-    /**
-     * 标记纹理解析完成（仅位置和颜色，无材质属性）
-     */
     public void markComplete(String texturePath, ResourceLocation loc, int color) {
         markComplete(texturePath, loc, color, false, false, false);
     }
 
-    /**
-     * 标记纹理部分解析成功（有图像但可能缺少材质属性）
-     */
     public void markPartial(String texturePath, ResourceLocation loc, BufferedImage image) {
         TextureEntry entry = register(texturePath);
         int color = extractAverageColor(image);
@@ -134,36 +152,25 @@ public class TextureColorResolver {
         entry.setTranslucent(false);
         entry.setAlphaTest(false);
         entry.setNoCull(false);
+        entry.setImage(null);
         if (loc != null) {
             textureRegistry.put(texturePath, loc);
         }
-        entry.setImage(null);
     }
 
-    /**
-     * 标记纹理解析失败
-     */
     public void markFailed(String texturePath, String reason) {
         TextureEntry entry = register(texturePath);
         entry.setState(ColorUtils.TextureParseState.FAILED);
         entry.setCachedColor(ColorUtils.FALLBACK_TEXTURE);
+        entry.setImage(null);
         LOGGER.warn("[TextureColorResolver] Texture parse FAILED for '{}': {}", texturePath, reason);
     }
 
-    /**
-     * 标记纹理为未解析
-     */
     public void markUnparsed(String texturePath) {
         TextureEntry entry = register(texturePath);
         entry.setState(ColorUtils.TextureParseState.UNPARSED);
     }
 
-    // ==================== 安全解析方法 ====================
-
-    /**
-     * 安全地从 VTF 图像数据创建纹理并记录状态。
-     * 如果解析过程中的任何步骤失败，会记录失败状态并返回空结果。
-     */
     public Optional<TextureEntry> safeResolveTexture(
             String texturePath,
             VtfParser.VtfImageData vtfData,
@@ -197,18 +204,18 @@ public class TextureColorResolver {
             color = ColorUtils.FALLBACK_TEXTURE;
         }
 
-        TextureEntry entry = register(texturePath);
-        markComplete(texturePath, null, color, translucent, alphaTest, noCull);
-        entry.setImage(null);
-
-        if (parseTracker != null) parseTracker.incrementResolved();
-        return Optional.of(entry);
+        try {
+            ResourceLocation loc = registerToManager(texturePath, image);
+            markComplete(texturePath, loc, color, translucent, alphaTest, noCull);
+            if (parseTracker != null) parseTracker.incrementResolved();
+            return Optional.of(register(texturePath));
+        } catch (Exception e) {
+            markFailed(texturePath, e.getMessage());
+            if (parseTracker != null) parseTracker.incrementFailed();
+            return Optional.empty();
+        }
     }
 
-    /**
-     * 安全地获取纹理的 ResourceLocation。
-     * 如果纹理未完全解析，返回 Optional.empty()。
-     */
     public Optional<ResourceLocation> safeGetTextureLocation(String texturePath) {
         TextureEntry entry = entries.get(texturePath);
         if (entry == null || !entry.isUsable()) {
@@ -217,9 +224,6 @@ public class TextureColorResolver {
         return Optional.ofNullable(entry.getResourceLocation());
     }
 
-    /**
-     * 获取纹理颜色，如果未解析则返回默认颜色
-     */
     public int getColorOrDefault(String texturePath, int defaultColor) {
         TextureEntry entry = entries.get(texturePath);
         if (entry == null || !entry.isUsable()) {
@@ -229,9 +233,6 @@ public class TextureColorResolver {
         return ColorUtils.isValidColor(color) ? color : defaultColor;
     }
 
-    /**
-     * 获取纹理的渲染属性（translucent/alphaTest/noCull），带安全检查
-     */
     public TextureRenderProps getRenderProps(String texturePath) {
         TextureEntry entry = entries.get(texturePath);
         if (entry == null || !entry.isUsable()) {
@@ -244,32 +245,24 @@ public class TextureColorResolver {
         );
     }
 
-    // ==================== 纹理注册表操作 ====================
-
-    /**
-     * 注册纹理到 Minecraft 纹理管理器（线程安全）
-     */
     public ResourceLocation registerToManager(String key, BufferedImage image) {
-        String regKey = "gmod_" + key.replace('/', '_').replace('\\', '_')
-            .replace('.', '_').toLowerCase(java.util.Locale.ROOT);
+        String regKey = normalizeKey(key);
         ResourceLocation existing = textureRegistry.get(regKey);
         if (existing != null) return existing;
 
         ResourceLocation loc = ResourceLocation.parse(
             "transferstation_whimsicalideas:textures/generated/" + regKey);
         try {
-            com.mojang.blaze3d.platform.NativeImage nativeImage = bufferedImageToNativeImage(image);
-            net.minecraft.client.renderer.texture.DynamicTexture dynamicTex =
-                new net.minecraft.client.renderer.texture.DynamicTexture(nativeImage);
-            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            Minecraft mc = Minecraft.getInstance();
             if (mc.isSameThread()) {
-                mc.getTextureManager().register(loc, dynamicTex);
+                // On the render thread: build, cache, register atomically inline.
+                buildAndRegister(regKey, loc, image);
             } else {
-                mc.execute(() -> mc.getTextureManager().register(loc, dynamicTex));
+                // Off the render thread: defer the ENTIRE operation (build, cache,
+                // register) to the render thread so the NativeImage is never closed
+                // by another thread before the DynamicTexture is registered.
+                mc.execute(() -> buildAndRegister(regKey, loc, image));
             }
-            textureRegistry.put(regKey, loc);
-            LOGGER.debug("[TextureColorResolver] Registered texture: {} ({}x{})",
-                loc, image.getWidth(), image.getHeight());
         } catch (Exception e) {
             LOGGER.warn("[TextureColorResolver] Failed to register texture {}: {}", regKey, e.getMessage());
         }
@@ -277,49 +270,315 @@ public class TextureColorResolver {
     }
 
     /**
-     * 检查纹理是否已注册
+     * Build the NativeImage, DynamicTexture, cache copy, and register with the
+     * TextureManager. MUST run on the render thread (or be wrapped in mc.execute)
+     * so that the NativeImage is created, used, and registered atomically and is
+     * never closed by another thread before registration completes.
+     *
+     * 关键修复：每�?loc 在整个生命周期内只持有一�?DynamicTexture 实例�?     * 重新构建时复用已有实例（setImage + upload），而不是新建并重新注册�?     * 否则 TextureManager.register 会关闭旧实例，而旧实例�?upload 任务仍留�?     * RenderSystem 的上传队列中，在 flipFrame �?replayQueue 中因 NativeImage
+     * �?null 而抛�?NullPointerException（crash-2026-07-19）�?     */
+    private void buildAndRegister(String regKey, ResourceLocation loc, BufferedImage image) {
+        try {
+            NativeImage nativeImage = bufferedImageToNativeImage(image);
+            Minecraft mc = Minecraft.getInstance();
+            TextureEntry entry = entries.get(regKey);
+            DynamicTexture dynamicTex = (entry != null) ? entry.getDynamicTexture() : null;
+            // If the existing instance was closed by a resource reload (NativeImage
+            // released), its getPixels() returns null �?create a fresh instance.
+            if (dynamicTex == null || dynamicTex.getPixels() == null) {
+                dynamicTex = new DynamicTexture(nativeImage);
+                mc.getTextureManager().register(loc, dynamicTex);
+                if (entry != null) entry.setDynamicTexture(dynamicTex);
+            } else {
+                // Reuse the existing instance: update pixels and re-upload in place.
+                // This never closes the instance, so no stale upload lambda can hit a
+                // null NativeImage.
+                dynamicTex.setPixels(nativeImage);
+                dynamicTex.upload();
+            }
+            textureRegistry.put(regKey, loc);
+            if (entry != null) {
+                // Store a copy so the cache survives DynamicTexture.close()
+                NativeImage cacheCopy = new NativeImage(nativeImage.getWidth(), nativeImage.getHeight(), false);
+                cacheCopy.copyFrom(nativeImage);
+                NativeImage old = entry.getCachedNativeImage();
+                if (old != null && old != cacheCopy) old.close();
+                entry.setCachedNativeImage(cacheCopy);
+                entry.setLastRegisteredGeneration(textureGeneration);
+            }
+            LOGGER.debug("[TextureColorResolver] Registered texture: {} ({}x{})",
+                loc, image.getWidth(), image.getHeight());
+        } catch (Exception e) {
+            LOGGER.warn("[TextureColorResolver] Failed to register texture {}: {}", regKey, e.getMessage());
+        }
+    }
+
+    /**
+     * 将一张 NativeImage 应用到指定 loc 的 DynamicTexture 上。
+     * 复用已有的 DynamicTexture 实例（setPixels + upload），若实例不存在或已被
+     * 资源重载关闭（getPixels 为 null）则新建并注册一次。
+     * 必须在渲染线程调用。返回最终使用的 DynamicTexture（可能为 null 表示失败）。
+     *
+     * 这是修复 flipFrame NPE 的核心：永不通过重新注册来关闭仍可能残留上传任务的旧实例。
      */
+    public DynamicTexture applyNativeImage(ResourceLocation loc, NativeImage nativeImage) {
+        if (loc == null || nativeImage == null) return null;
+        String path = loc.getPath();
+        if (!path.startsWith("textures/generated/")) return null;
+        String regKey = path.substring("textures/generated/".length());
+        Minecraft mc = Minecraft.getInstance();
+        TextureEntry entry = entries.get(regKey);
+        DynamicTexture dynamicTex = (entry != null) ? entry.getDynamicTexture() : null;
+        if (dynamicTex == null || dynamicTex.getPixels() == null) {
+            dynamicTex = new DynamicTexture(nativeImage);
+            mc.getTextureManager().register(loc, dynamicTex);
+            if (entry != null) entry.setDynamicTexture(dynamicTex);
+        } else {
+            dynamicTex.setPixels(nativeImage);
+            dynamicTex.upload();
+        }
+        textureRegistry.put(regKey, loc);
+        return dynamicTex;
+    }
+
+    /**
+     * 确保纹理已注册到 TextureManager�?     * 使用世代计数器比较：如果该条目已在当前世代注册过，则跳过�?     * 这样每帧仅做一�?long 比较，极大减少无意义�?DynamicTexture 重建�?     */
+    public boolean ensureTextureRegistered(ResourceLocation loc) {
+        if (loc == null) return false;
+        String path = loc.getPath();
+        if (!path.startsWith("textures/generated/")) return true;
+        String regKey = path.substring("textures/generated/".length());
+        TextureEntry entry = entries.get(regKey);
+        if (entry == null) return false;
+        long currentGen = textureGeneration;
+        if (entry.getLastRegisteredGeneration() == currentGen) return true;
+        // Only re-register entries that actually have a usable texture.
+        if (entry.getState() != ColorUtils.TextureParseState.COMPLETE
+                && entry.getState() != ColorUtils.TextureParseState.PARTIAL) {
+            return false;
+        }
+        // Do NOT read the cached NativeImage here and pass it across the thread
+        // boundary (it could be closed before the deferred register runs). Let
+        // reRegisterTexture re-read it inside the render-thread block and bail if null.
+        // The generation stamp is set INSIDE the render-thread block (see
+        // reRegisterOnRenderThread) so a render between this call and the actual
+        // re-register cannot sample an unregistered/closed texture.
+        reRegisterTexture(regKey, loc);
+        return true;
+    }
+
+    private void reRegisterTexture(String regKey, ResourceLocation loc) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.isSameThread()) {
+            // On the render thread: re-read the cache and register atomically inline.
+            reRegisterOnRenderThread(regKey, loc);
+        } else {
+            // Off the render thread: defer the ENTIRE operation to the render thread.
+            // The cached NativeImage is re-read inside the block so it cannot be
+            // closed by another thread between reading it and building the texture.
+            mc.execute(() -> reRegisterOnRenderThread(regKey, loc));
+        }
+    }
+
+    /**
+     * Re-read the cached NativeImage and rebuild/register the DynamicTexture.
+     * MUST run on the render thread. Bails early if the cached image became null
+     * (e.g. cleared/trimmed before this deferred task ran).
+     *
+     * 关键修复：复用已有的 DynamicTexture 实例（setImage + upload），
+     * 而不是新建并重新注册。重新注册会关闭旧实例，而旧实例�?upload 任务
+     * 仍留�?RenderSystem 上传队列中，�?flipFrame �?replayQueue 中因
+     * NativeImage �?null 而抛�?NullPointerException�?     */
+    private void reRegisterOnRenderThread(String regKey, ResourceLocation loc) {
+        try {
+            TextureEntry entry = entries.get(regKey);
+            if (entry == null) return;
+            NativeImage cached = entry.getCachedNativeImage();
+            if (cached == null) return;
+            NativeImage copy = new NativeImage(cached.getWidth(), cached.getHeight(), false);
+            copy.copyFrom(cached);
+            Minecraft mc = Minecraft.getInstance();
+            DynamicTexture dynamicTex = entry.getDynamicTexture();
+            // If the existing instance was closed by a resource reload, create a fresh one.
+            if (dynamicTex == null || dynamicTex.getPixels() == null) {
+                dynamicTex = new DynamicTexture(copy);
+                mc.getTextureManager().register(loc, dynamicTex);
+                entry.setDynamicTexture(dynamicTex);
+            } else {
+                dynamicTex.setPixels(copy);
+                dynamicTex.upload();
+            }
+            textureRegistry.put(regKey, loc);
+            // Stamp the generation only after the texture is truly registered on the
+            // render thread. ensureTextureRegistered() compares against this stamp, so
+            // stamping earlier (before the deferred register ran) let a render sample a
+            // still-unregistered/closed texture and crash or show black.
+            entry.setLastRegisteredGeneration(textureGeneration);
+            LOGGER.debug("[TextureColorResolver] Re-registered texture: {}", loc);
+        } catch (Exception e) {
+            LOGGER.warn("[TextureColorResolver] Failed to re-register texture {}: {}", loc, e.getMessage());
+        }
+    }
+
+    /**
+     * 重新注册所有已生成的纹理到 TextureManager�?     * 先递增世代计数器（使所有现有条目标记为过期），
+     * 再用缓存�?NativeImage 副本重建 DynamicTexture�?     * 每次成功注册后更新条目的世代，使 ensureTextureRegistered 跳过�?     */
+    public void reRegisterAllTextures() {
+        long newGen = ++textureGeneration;
+        int reRegistered = 0;
+        int skipped = 0;
+        for (Map.Entry<String, TextureEntry> entry : entries.entrySet()) {
+            TextureEntry texEntry = entry.getValue();
+            if (texEntry.getState() != ColorUtils.TextureParseState.COMPLETE && texEntry.getState() != ColorUtils.TextureParseState.PARTIAL) {
+                texEntry.setLastRegisteredGeneration(newGen); // skip unparseable this round
+                skipped++;
+                continue;
+            }
+            NativeImage cached = texEntry.getCachedNativeImage();
+            if (cached == null) {
+                skipped++;
+                continue;
+            }
+            ResourceLocation loc = texEntry.getResourceLocation();
+            if (loc == null) {
+                skipped++;
+                continue;
+            }
+            reRegisterTexture(entry.getKey(), loc);
+            texEntry.setLastRegisteredGeneration(newGen);
+            reRegistered++;
+        }
+        LOGGER.info("[TextureColorResolver] Re-registered {} textures after resource reload ({} skipped, generation={})", reRegistered, skipped, newGen);
+    }
+
     public boolean isRegistered(String key) {
-        String regKey = "gmod_" + key.replace('/', '_').replace('\\', '_')
-            .replace('.', '_').toLowerCase(java.util.Locale.ROOT);
-        return textureRegistry.containsKey(regKey);
+        return textureRegistry.containsKey(normalizeKey(key));
     }
 
-    /**
-     * 获取已注册的 ResourceLocation
-     */
     public ResourceLocation getRegistered(String key) {
-        String regKey = "gmod_" + key.replace('/', '_').replace('\\', '_')
-            .replace('.', '_').toLowerCase(java.util.Locale.ROOT);
-        return textureRegistry.get(regKey);
+        return textureRegistry.get(normalizeKey(key));
     }
 
-    // ==================== 缓存管理 ====================
+    public void unregisterTexture(String texturePath) {
+        String regKey = normalizeKey(texturePath);
+        ResourceLocation loc = textureRegistry.remove(regKey);
+        TextureEntry entry = entries.remove(texturePath);
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.isSameThread()) {
+            // Release and close the cached image together on the render thread so a
+            // pending deferred register cannot build a DynamicTexture from a closed image.
+            if (loc != null) {
+                mc.getTextureManager().release(loc);
+            }
+            if (entry != null) {
+                entry.setImage(null);
+                entry.setDynamicTexture(null);
+                NativeImage cached = entry.getCachedNativeImage();
+                if (cached != null) {
+                    cached.close();
+                    entry.setCachedNativeImage(null);
+                }
+            }
+        } else {
+            mc.execute(() -> {
+                if (loc != null) {
+                    mc.getTextureManager().release(loc);
+                }
+                if (entry != null) {
+                    entry.setImage(null);
+                    entry.setDynamicTexture(null);
+                    NativeImage cached = entry.getCachedNativeImage();
+                    if (cached != null) {
+                        cached.close();
+                        entry.setCachedNativeImage(null);
+                    }
+                }
+            });
+        }
+    }
 
-    /**
-     * 清除所有缓存
-     */
+    private static String normalizeKey(String key) {
+        return "gmod_" + key.replace('/', '_').replace('\\', '_')
+            .replace('.', '_').toLowerCase(java.util.Locale.ROOT);
+    }
+
     public void clearAll() {
-        for (TextureEntry entry : entries.values()) {
-            entry.setImage(null);
+        // Snapshot the data to release/close on the render thread atomically.
+        java.util.List<TextureEntry> entrySnapshot = new java.util.ArrayList<>(entries.values());
+        java.util.List<ResourceLocation> locSnapshot = new java.util.ArrayList<>(textureRegistry.values());
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.isSameThread()) {
+            for (TextureEntry entry : entrySnapshot) {
+                entry.setImage(null);
+                entry.setDynamicTexture(null);
+                NativeImage cached = entry.getCachedNativeImage();
+                if (cached != null) {
+                    cached.close();
+                    entry.setCachedNativeImage(null);
+                }
+            }
+            for (ResourceLocation loc : locSnapshot) {
+                mc.getTextureManager().release(loc);
+            }
+        } else {
+            mc.execute(() -> {
+                for (TextureEntry entry : entrySnapshot) {
+                    entry.setImage(null);
+                    entry.setDynamicTexture(null);
+                    NativeImage cached = entry.getCachedNativeImage();
+                    if (cached != null) {
+                        cached.close();
+                        entry.setCachedNativeImage(null);
+                    }
+                }
+                for (ResourceLocation loc : locSnapshot) {
+                    mc.getTextureManager().release(loc);
+                }
+            });
         }
         entries.clear();
         textureRegistry.clear();
         LOGGER.info("[TextureColorResolver] Cleared all entries and texture registry");
     }
 
-    /**
-     * 清除无用的条目（FAILED 和 UNPARSED 状态），释放内存
-     */
     public int trimStale() {
         int removed = 0;
-        var iter = entries.entrySet().iterator();
+        Iterator<Map.Entry<String, TextureEntry>> iter = entries.entrySet().iterator();
+        Minecraft mc = Minecraft.getInstance();
         while (iter.hasNext()) {
             var e = iter.next();
             TextureEntry entry = e.getValue();
             ColorUtils.TextureParseState state = entry.getState();
             if (state == ColorUtils.TextureParseState.FAILED || state == ColorUtils.TextureParseState.UNPARSED) {
-                entry.setImage(null);
+                String regKey = normalizeKey(e.getKey());
+                ResourceLocation loc = textureRegistry.remove(regKey);
+                // Release and close the cached image together on the render thread so a
+                // pending deferred register cannot build a DynamicTexture from a closed image.
+                if (mc.isSameThread()) {
+                    if (loc != null) {
+                        mc.getTextureManager().release(loc);
+                    }
+                    entry.setImage(null);
+                    entry.setDynamicTexture(null);
+                    NativeImage cached = entry.getCachedNativeImage();
+                    if (cached != null) {
+                        cached.close();
+                        entry.setCachedNativeImage(null);
+                    }
+                } else {
+                    mc.execute(() -> {
+                        if (loc != null) {
+                            mc.getTextureManager().release(loc);
+                        }
+                        entry.setImage(null);
+                        entry.setDynamicTexture(null);
+                        NativeImage cached = entry.getCachedNativeImage();
+                        if (cached != null) {
+                            cached.close();
+                            entry.setCachedNativeImage(null);
+                        }
+                    });
+                }
                 iter.remove();
                 removed++;
             }
@@ -330,9 +589,6 @@ public class TextureColorResolver {
         return removed;
     }
 
-    /**
-     * 获取统计信息
-     */
     public ParseStatistics getStatistics() {
         int unparsed = 0, partial = 0, complete = 0, failed = 0;
         for (TextureEntry entry : entries.values()) {
@@ -346,49 +602,43 @@ public class TextureColorResolver {
         return new ParseStatistics(unparsed, partial, complete, failed, textureRegistry.size());
     }
 
-    /**
-     * 获取所有纹理条目的不可变视图
-     */
     public Map<String, TextureEntry> getAllEntries() {
         return java.util.Collections.unmodifiableMap(entries);
     }
 
-    // ==================== 内部辅助方法 ====================
-
-    /**
-     * 从 BufferedImage 提取平均颜色作为代表色
-     */
     private static int extractAverageColor(BufferedImage image) {
         if (image == null) return 0;
         int w = image.getWidth();
         int h = image.getHeight();
         if (w <= 0 || h <= 0) return 0;
 
-        long totalR = 0, totalG = 0, totalB = 0, totalA = 0;
-        int count = 0;
+        long totalR = 0, totalG = 0, totalB = 0;
+        long totalWeight = 0;
         int step = Math.max(1, Math.min(w, h) / 16);
 
         for (int y = 0; y < h; y += step) {
             for (int x = 0; x < w; x += step) {
                 int argb = image.getRGB(x, y);
                 int a = (argb >> 24) & 0xFF;
+                if (a < 10) continue;
+
                 int r = (argb >> 16) & 0xFF;
                 int g = (argb >> 8) & 0xFF;
                 int b = argb & 0xFF;
-                totalA += a;
-                totalR += r;
-                totalG += g;
-                totalB += b;
-                count++;
+
+                long weight = a;
+                totalR += r * weight;
+                totalG += g * weight;
+                totalB += b * weight;
+                totalWeight += weight;
             }
         }
 
-        if (count == 0) return 0;
-        int a = (int) (totalA / count);
-        int r = (int) (totalR / count);
-        int g = (int) (totalG / count);
-        int b = (int) (totalB / count);
-        return ColorUtils.argb(a, r, g, b);
+        if (totalWeight == 0) return 0;
+        int r = (int) (totalR / totalWeight);
+        int g = (int) (totalG / totalWeight);
+        int b = (int) (totalB / totalWeight);
+        return ColorUtils.argb(255, r, g, b);
     }
 
     static com.mojang.blaze3d.platform.NativeImage bufferedImageToNativeImage(BufferedImage image) {
@@ -412,11 +662,6 @@ public class TextureColorResolver {
         return nativeImage;
     }
 
-    // ==================== 内部类型 ====================
-
-    /**
-     * 纹理渲染属性的不可变快照
-     */
     public static class TextureRenderProps {
         public static final TextureRenderProps DEFAULT = new TextureRenderProps(false, false, false);
         public final boolean translucent;
@@ -430,9 +675,6 @@ public class TextureColorResolver {
         }
     }
 
-    /**
-     * 纹理解析统计信息
-     */
     public static class ParseStatistics {
         public final int unparsed;
         public final int partial;
@@ -462,9 +704,6 @@ public class TextureColorResolver {
         }
     }
 
-    /**
-     * 纹理解析过程中的计数器，用于跟踪批量解析的进度
-     */
     public static class TextureParseStateTracker {
         private int totalToResolve;
         private int resolved;

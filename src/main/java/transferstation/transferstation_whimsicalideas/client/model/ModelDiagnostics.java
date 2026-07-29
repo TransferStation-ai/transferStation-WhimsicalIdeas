@@ -68,6 +68,7 @@ public class ModelDiagnostics {
             else if (lower.endsWith(".vvd")) g.vvd = f;
             else if (lower.endsWith(".dx90.vtx")) g.vtx = f;
             else if (lower.endsWith(".phy")) g.phy = f;
+            else if (lower.endsWith(".smd")) g.mdl = f;
         }
 
         return new ArrayList<>(groups.values());
@@ -81,6 +82,8 @@ public class ModelDiagnostics {
         } else if (lower.endsWith(".dx90.vtx")) {
             return lower.substring(0, lower.length() - 9);
         } else if (lower.endsWith(".phy")) {
+            return lower.substring(0, lower.length() - 4);
+        } else if (lower.endsWith(".smd")) {
             return lower.substring(0, lower.length() - 4);
         }
         return null;
@@ -135,8 +138,9 @@ public class ModelDiagnostics {
 
     private static void diagnoseMdl(byte[] data, DiagnosticResult result) {
         try {
-            MdlParser.ParsedModel mdl = MdlParser.parse(data);
-            MdlParser.StudioHeader h = mdl.header;
+            ModelParserStrategy strategy = ModelParserProvider.getStrategy();
+            MdlDataTypes.ParsedModel mdl = strategy.parseMdl(data);
+            MdlDataTypes.Header h = mdl.header;
 
             result.checksums.put("MDL", h.checksum);
 
@@ -167,7 +171,7 @@ public class ModelDiagnostics {
                 int totalModels = mdl.models.size();
                 int totalMeshes = mdl.meshes.size();
                 int totalVerticesFromMdl = 0;
-                for (MdlParser.StudioModel m : mdl.models) {
+                for (MdlDataTypes.Model m : mdl.models) {
                     totalVerticesFromMdl += m.numvertices;
                 }
                 result.infoFields.add("Total Models: " + totalModels);
@@ -175,10 +179,10 @@ public class ModelDiagnostics {
                 result.infoFields.add("Total Vertices (MDL): " + totalVerticesFromMdl);
 
                 for (int i = 0; i < mdl.bodyParts.size(); i++) {
-                    MdlParser.StudioBodyPart bp = mdl.bodyParts.get(i);
+                    MdlDataTypes.BodyPart bp = mdl.bodyParts.get(i);
                     String bpName = (bp.name != null && !bp.name.isEmpty()) ? bp.name : "(unnamed)";
                     result.infoFields.add("  BodyPart[" + i + "]: '" + bpName + "' " + bp.nummodels + " models, baseIndex=" + bp.baseIndex);
-                    for (MdlParser.StudioModel m : mdl.models) {
+                    for (MdlDataTypes.Model m : mdl.models) {
                         if (m.bodypartIndex == i) {
                             result.infoFields.add("    Model: '" + m.name + "' " + m.nummeshes + " meshes, " + m.numvertices + " vertices");
                         }
@@ -197,7 +201,8 @@ public class ModelDiagnostics {
 
     private static void diagnoseVvd(byte[] data, DiagnosticResult result) {
         try {
-            VvdParser.ParsedVvd vvd = VvdParser.parse(data);
+            ModelParserStrategy strategy = ModelParserProvider.getStrategy();
+            VvdParser.ParsedVvd vvd = strategy.parseVvd(data);
             VvdParser.VvdHeader h = vvd.header;
 
             result.checksums.put("VVD", h.checksum);
@@ -244,7 +249,8 @@ public class ModelDiagnostics {
 
     private static void diagnoseVtx(byte[] data, DiagnosticResult result) {
         try {
-            VtxParser.ParsedVtx vtx = VtxParser.parse(data);
+            ModelParserStrategy strategy = ModelParserProvider.getStrategy();
+            VtxParser.ParsedVtx vtx = strategy.parseVtx(data);
 
             result.checksums.put("VTX", vtx.checksum);
 
@@ -270,7 +276,12 @@ public class ModelDiagnostics {
 
     private static void diagnosePhy(byte[] data, DiagnosticResult result) {
         try {
-            PhyParser.ParsedPhy phy = PhyParser.parse(data);
+            PhyParser.ParsedPhy phy;
+            if (GmodNativeBridge.isAvailable()) {
+                phy = new WindowsNativeModelParserStrategy().parsePhy(data);
+            } else {
+                phy = PhyParser.parse(data);
+            }
 
             result.checksums.put("PHY", phy.checksum);
 
@@ -308,10 +319,118 @@ public class ModelDiagnostics {
         }
     }
 
+    // ==================== TEXTURE DIAGNOSTICS ====================
+
+    /**
+     * Check if a model's textures can be resolved by scanning VMT/VTF files
+     * in the associated materials directories.
+     *
+     * @param packageDir The model package directory
+     * @return A diagnostic message describing the texture resolution status
+     */
+    public static String diagnoseTextures(Path packageDir) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n  TEXTURE DIAGNOSTICS for ").append(packageDir.getFileName()).append("\n");
+
+        try {
+            List<Path> materialsDirs = ModelLoadManager.findAllMaterialsDirs(packageDir);
+            if (materialsDirs.isEmpty()) {
+                sb.append("  WARNING: No materials directories found!\n");
+                sb.append("  Expected a 'materials/' folder near the model package.\n");
+                return sb.toString();
+            }
+
+            sb.append("  Materials directories (").append(materialsDirs.size()).append(" found):\n");
+            for (Path md : materialsDirs) {
+                sb.append("    - ").append(md).append("\n");
+            }
+
+            int vmtCount = 0;
+            int vtfCount = 0;
+            int otherCount = 0;
+            long totalVtfSize = 0;
+
+            for (Path matDir : materialsDirs) {
+                if (!Files.exists(matDir)) continue;
+                try (Stream<Path> walk = Files.walk(matDir, 8)) {
+                    List<Path> files = walk.filter(Files::isRegularFile).toList();
+                    for (Path f : files) {
+                        String name = f.getFileName().toString().toLowerCase();
+                        if (name.endsWith(".vmt")) vmtCount++;
+                        else if (name.endsWith(".vtf")) {
+                            vtfCount++;
+                            try { totalVtfSize += Files.size(f); } catch (IOException ignored) {}
+                        } else if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg")) {
+                            otherCount++;
+                        }
+                    }
+                }
+            }
+
+            sb.append("  Material files: ").append(vmtCount).append(" VMT, ")
+                .append(vtfCount).append(" VTF (")
+                .append(String.format("%.1f", totalVtfSize / (1024.0 * 1024.0)))
+                .append(" MB), ").append(otherCount).append(" PNG/JPG\n");
+
+            // Try to find the MDL and check its texture references
+            Path mdlFile = findMdlFile(packageDir);
+            if (mdlFile != null && vmtCount > 0) {
+                try {
+                    byte[] mdlData = Files.readAllBytes(mdlFile);
+                    MdlDataTypes.ParsedModel mdl = MdlParser.parse(mdlData);
+                    sb.append("  MDL texture references: ").append(mdl.textures.size()).append("\n");
+                    for (int i = 0; i < mdl.textures.size(); i++) {
+                        String texName = mdl.textures.get(i).name;
+                        boolean found = false;
+                        for (Path matDir : materialsDirs) {
+                            Path candidateVmt = matDir.resolve(texName + ".vmt");
+                            Path candidateVtf = matDir.resolve(texName + ".vtf");
+                            if (Files.exists(candidateVmt) || Files.exists(candidateVtf)) {
+                                found = true;
+                                break;
+                            }
+                            // Also check with cdtexture prefixes
+                            for (String cdTex : mdl.cdTextures) {
+                                String cdPrefix = cdTex.replace('\\', '/');
+                                if (!cdPrefix.endsWith("/")) cdPrefix += "/";
+                                candidateVmt = matDir.resolve(cdPrefix + texName + ".vmt");
+                                candidateVtf = matDir.resolve(cdPrefix + texName + ".vtf");
+                                if (Files.exists(candidateVmt) || Files.exists(candidateVtf)) {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (found) break;
+                        }
+                        sb.append("    Texture[").append(i).append("]: '").append(texName)
+                            .append("' -> ").append(found ? "FOUND" : "MISSING").append("\n");
+                    }
+                } catch (Exception e) {
+                    sb.append("  MDL parse error for texture check: ").append(e.getMessage()).append("\n");
+                }
+            }
+        } catch (Exception e) {
+            sb.append("  Error during texture diagnostics: ").append(e.getMessage()).append("\n");
+        }
+
+        return sb.toString();
+    }
+
+    private static Path findMdlFile(Path packageDir) {
+        try (Stream<Path> files = Files.walk(packageDir, 4)) {
+            return files.filter(Files::isRegularFile)
+                .filter(f -> f.getFileName().toString().toLowerCase().endsWith(".mdl"))
+                .findFirst().orElse(null);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
     public static String formatResults(List<DiagnosticResult> results) {
         StringBuilder sb = new StringBuilder();
         sb.append("\n").append("=".repeat(70)).append("\n");
-        sb.append("  MODEL DIAGNOSTICS").append("\n");
+        sb.append("  MODEL DIAGNOSTICS (").append(java.time.LocalDateTime.now().format(
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))).append(")\n");
         sb.append("=".repeat(70)).append("\n\n");
 
         sb.append("  Found ").append(results.size()).append(" model groups:\n\n");

@@ -2,7 +2,7 @@
   "required": true,
   "minVersion": "0.8",
   "package": "transferstation.transferstation_whimsicalideas.mixin",
-  "compatibilityLevel": "JAVA_8",
+  "compatibilityLevel": "JAVA_17",
   "refmap": "transferstation_whimsicalideas.refmap.json",
   "mixins": [
   ],

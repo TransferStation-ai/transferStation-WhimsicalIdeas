@@ -12,6 +12,8 @@ public class AnimationData {
     public boolean loop;
 
     public AnimationData() {
+        this.fps = 20.0f;
+        this.tracks = new java.util.ArrayList<>();
     }
 
     public AnimationData(String name, float fps, int frameCount, boolean loop) {
@@ -27,6 +29,7 @@ public class AnimationData {
     }
 
     public float getDuration() {
+        if (fps <= 0) return 0;
         return frameCount / fps;
     }
 

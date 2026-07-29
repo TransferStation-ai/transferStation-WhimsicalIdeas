@@ -86,7 +86,10 @@ public class PhyParser {
             boolean tryParse = result.id.equals("VPHY") || result.id.equals("PHYS") ||
                 (result.solidCount > 0 && result.solidCount <= MAX_SOLIDS);
             if (!tryParse || result.solidCount < 0 || result.solidCount > MAX_SOLIDS) {
-                result.valid = true;
+                // An unrecognized/garbage PHY must NOT be reported as valid.
+                LOGGER.warn("[PhyParser] Unrecognized or invalid PHY (id='{}', solidCount={}); marking invalid",
+                    result.id, result.solidCount);
+                result.valid = false;
                 return result;
             }
 
@@ -142,10 +145,18 @@ public class PhyParser {
     }
 
     private static int findKvStart(byte[] data) {
+        // Strategy 1: Search the last 35% of the file for "solid {" (most reliable)
         int searchStart = Math.max(0, data.length - (int)(data.length * 0.35));
-        for (int i = searchStart; i < data.length - 5; i++) {
+        for (int i = searchStart; i < data.length - 7; i++) {
             if (data[i] == 's' && data[i+1] == 'o' && data[i+2] == 'l' &&
-                data[i+3] == 'i' && data[i+4] == 'd' && data[i+5] == ' ') {
+                data[i+3] == 'i' && data[i+4] == 'd' && (data[i+5] == ' ' || data[i+5] == '\t')) {
+                return i;
+            }
+        }
+        // Strategy 2: Search the full file for "solid {"
+        for (int i = 0; i < data.length - 8; i++) {
+            if (data[i] == 's' && data[i+1] == 'o' && data[i+2] == 'l' &&
+                data[i+3] == 'i' && data[i+4] == 'd' && (data[i+5] == ' ' || data[i+5] == '\t')) {
                 return i;
             }
         }
@@ -238,42 +249,37 @@ public class PhyParser {
     }
 
     private static void parseConvexHullsHeuristic(byte[] data, int absoluteStart, int size, PhySolid solid) {
-        // Scan for convex hull data beyond the IVPS tree section.
-        // The IVPS tree typically ends with a leaf node at relative offset 0x30 + treeSize.
-        // After the tree, convex hull headers (each 16 bytes) start.
-        // We scan backward from the vertex pool area to find header candidates.
         int end = absoluteStart + size;
 
-        // The IVPS tree is typically at relative offset 0x30 to ~0x130.
-        // Skip to an offset where convex headers might start.
-        int startScan = absoluteStart + 0x130;
+        // Scan for convex hull headers (16 bytes each: vertexOffset, boneIdx, flags, triCount)
+        // starting from a reasonable offset after the IVPS tree section.
+        // The IVPS tree is typically < 256 bytes, so start scanning after that.
+        int startScan = absoluteStart + Math.min(size / 4, 512);
         if (startScan >= end - 16) return;
 
         List<ConvexHdr> headers = new ArrayList<>();
         int pos = startScan;
+        int maxHeaders = Math.min(128, size / 16);
 
-        while (pos + 16 <= end) {
+        while (pos + 16 <= end && headers.size() < maxHeaders) {
             int relVertOffset = readIntLE(data, pos);
             int boneIdx = readIntLE(data, pos + 4);
             int flags = readIntLE(data, pos + 8);
             int triCount = readIntLE(data, pos + 12);
 
-            if (relVertOffset <= 0 || relVertOffset >= size) { pos += 16; continue; }
-            if (triCount <= 0 || triCount > 2048) { pos += 16; continue; }
-            if (relVertOffset <= (pos - absoluteStart)) { pos += 16; continue; }
+            if (relVertOffset <= 0 || relVertOffset >= size) { pos += 4; continue; }
+            if (triCount <= 0 || triCount > 2048) { pos += 4; continue; }
+            if (relVertOffset <= (pos - absoluteStart)) { pos += 4; continue; }
 
-            // Found a candidate - check if vertex region looks valid
             int vertCheck = absoluteStart + relVertOffset;
-            if (vertCheck + 12 > end) { pos += 16; continue; }
+            if (vertCheck + 12 > end) { pos += 4; continue; }
 
-            // Vertex data should contain reasonable floats (positions)
             float vx = Float.intBitsToFloat(readIntLE(data, vertCheck));
             float vy = Float.intBitsToFloat(readIntLE(data, vertCheck + 4));
             float vz = Float.intBitsToFloat(readIntLE(data, vertCheck + 8));
 
-            // Source Engine coordinates: typically within a few hundred units
             if (Math.abs(vx) > 10000 || Math.abs(vy) > 10000 || Math.abs(vz) > 10000) {
-                pos += 16;
+                pos += 4;
                 continue;
             }
 
@@ -288,6 +294,7 @@ public class PhyParser {
         }
 
         if (!headers.isEmpty()) {
+            LOGGER.debug("[PhyParser] Heuristically found {} convex hull headers for solid '{}'", headers.size(), solid.name);
             buildConvexHulls(data, absoluteStart, size, solid, headers);
         }
     }

@@ -334,6 +334,23 @@ public final class ColorUtils {
         }
 
         switch (cleaned.length()) {
+            case 3: {
+                // RGB -> AARRGGBB (each char doubled, alpha=FF)
+                int r = Character.digit(cleaned.charAt(0), 16);
+                int g = Character.digit(cleaned.charAt(1), 16);
+                int b = Character.digit(cleaned.charAt(2), 16);
+                int argb = (0xFF << 24) | ((r * 17) << 16) | ((g * 17) << 8) | (b * 17);
+                return argb;
+            }
+            case 4: {
+                // RGBA -> AARRGGBB (each char doubled)
+                int r = Character.digit(cleaned.charAt(0), 16);
+                int g = Character.digit(cleaned.charAt(1), 16);
+                int b = Character.digit(cleaned.charAt(2), 16);
+                int a = Character.digit(cleaned.charAt(3), 16);
+                int argb = ((a * 17) << 24) | ((r * 17) << 16) | ((g * 17) << 8) | (b * 17);
+                return argb;
+            }
             case 6:
                 // RRGGBB -> ARGB (alpha=255)
                 return (int) (value | 0xFF000000);
@@ -865,7 +882,7 @@ public final class ColorUtils {
         private final int severity;
         TextureParseState(int severity) { this.severity = severity; }
         public int severity() { return severity; }
-        public boolean isUsable() { return severity >= COMPLETE.severity; }
+        public boolean isUsable() { return this == COMPLETE; }
         public boolean isBetterThan(TextureParseState other) {
             return this.severity > other.severity;
         }

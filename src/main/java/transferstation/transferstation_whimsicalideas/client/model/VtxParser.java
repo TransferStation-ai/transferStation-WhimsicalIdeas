@@ -11,18 +11,27 @@ import java.util.List;
 public class VtxParser {
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final boolean LOG_VERBOSE = true;
+    private static final boolean LOG_VERBOSE = false;
 
     private static final int MAX_COUNT = 1_000_000;
     private static final long MAX_FILE_SIZE = 512L * 1024 * 1024;
 
-    private static final int VERTEX_SIZE = 9;
-    private static final int MESH_HEADER_SIZE = 9;
+    // GMOD / SDK2013 VTX (version 7) uses the 8-byte Vertex_t layout, identical to v2.
+    // (A 9-byte Vertex_t exists in some Valve v7+ tools, but GMOD does NOT use it.)
+    // This is NOT a compile-time constant: the stride depends on the file version
+    // parsed in parse(), so it is computed per-call there.
+    private static final int MESH_HEADER_SIZE_V2 = 8;
+    private static final int MESH_HEADER_SIZE_V7 = 9;
     private static final int STRIP_GROUP_HEADER_SIZE = 25;
     private static final int STRIP_HEADER_SIZE = 27;
     private static final int STRIP_FLAGS_OFFSET = 18;
+    // D3D strip restart marker: when an index in a triangle strip equals this value,
+    // it ends the current strip and starts a new one. Without handling this marker,
+    // vertices from disconnected parts of the mesh get connected into giant triangles
+    // that appear as "random diagonal lines" across the model surface.
+    private static final int STRIP_RESTART_INDEX = 0xFFFF;
 
-    // Vertex_t layout (9 bytes):
+    // Vertex_t layout (8 bytes for GMOD / SDK2013 v2 and v7):
     //   byte[3] boneWeightIndex
     //   byte numBones
     //   ushort origMeshVertID
@@ -45,13 +54,25 @@ public class VtxParser {
     }
 
     public static List<List<VtxTriangle>> getTrianglesForLod(ParsedVtx vtx, int lodLevel) {
-        if (lodLevel <= 0 || lodLevel >= vtx.lodMeshTriangles.size()) {
+        if (lodLevel <= 0) {
             return vtx.meshTriangles;
         }
-        return vtx.lodMeshTriangles.get(lodLevel);
+        if (vtx.lodMeshTriangles.isEmpty()) {
+            return vtx.meshTriangles;
+        }
+        // lodMeshTriangles.get(l) holds LOD l's meshes (l >= 1). Clamp to the
+        // highest available LOD instead of silently falling back to LOD 0.
+        int clamped = Math.min(lodLevel, vtx.lodMeshTriangles.size() - 1);
+        return vtx.lodMeshTriangles.get(clamped);
     }
 
     public static ParsedVtx parse(byte[] data) {
+        // When the VVD vertex count is unknown, fall back to the strip-group local count
+        // (numVerts) by using a sentinel that never rejects.
+        return parse(data, Integer.MAX_VALUE);
+    }
+
+    public static ParsedVtx parse(byte[] data, int vvdVertexCount) {
         if (data.length > MAX_FILE_SIZE) {
             throw new RuntimeException("VTX file too large: " + data.length + " bytes");
         }
@@ -76,7 +97,26 @@ public class VtxParser {
         int numBodyParts = buf.getInt();
         int bodyPartOffset = buf.getInt();
 
-        LOGGER.info("[VtxParser] Starting parse: version={} numLODs={} numBodyParts={} bodyPartOffset=0x{}", version, numLODs, numBodyParts, Integer.toHexString(bodyPartOffset));
+        // Mesh header size vs vertex stride are TWO SEPARATE concerns:
+        //
+        // 1. Mesh header size: VTX v7 uses a 9-byte mesh header (the extra byte is
+        //    a flags field after sgOffset). VTX v2 uses 8-byte headers. Using the
+        //    wrong header size causes shifted reads for Mesh[1+] in LODs with >1 mesh
+        //    per LOD, producing garbage numStripGroups/sgOffset values that appear
+        //    as "StripGroup invalid" warnings when the code reads into vertex data.
+        //
+        // 2. Vertex stride: VTX v7 has variable-size Vertex_t determined by
+        //    maxBonesPerVert from the header (offset 12). The struct layout is:
+        //        boneWeight[maxBonesPerVert]  — maxBonesPerVert bytes
+        //        numBones                     — 1 byte
+        //        origMeshVertID               — 2 bytes
+        //        boneID[maxBonesPerVert]      — maxBonesPerVert bytes
+        //        total: maxBonesPerVert * 2 + 3
+        //    For maxBonesPerVert=3 (most common v7): stride = 9.
+        //    VTX v2 always uses 8-byte vertices (boneID[2], boneWeight[3]).
+        int meshHeaderSize = (version >= 7) ? MESH_HEADER_SIZE_V7 : MESH_HEADER_SIZE_V2;
+        int vertexStride = (version >= 7) ? maxBonesPerVert * 2 + 3 : 8;
+        LOGGER.info("[VtxParser] Starting parse: version={} meshHeaderSize={} vertexStride={} numLODs={} numBodyParts={} bodyPartOffset=0x{}", version, meshHeaderSize, vertexStride, numLODs, numBodyParts, Integer.toHexString(bodyPartOffset));
         LOGGER.info("[VtxParser] BodyPart header at file offset 0x{}", Integer.toHexString(fileBaseAddr + bodyPartOffset));
 
         ParsedVtx result = new ParsedVtx();
@@ -126,8 +166,8 @@ public class VtxParser {
 
                 int numLODsToProcess = Math.min(Math.max(numLOD, 1), 4);
                 for (int l = 0; l < numLODsToProcess; l++) {
-                    int lAddr = lodAddr + l * 8;
-                    if (lAddr + 8 > data.length) {
+                    int lAddr = lodAddr + l * 12;
+                    if (lAddr + 12 > data.length) {
                         LOGGER.warn("[VtxParser] LOD[{}] address 0x{} exceeds file size", l, Integer.toHexString(lAddr));
                         break;
                     }
@@ -146,10 +186,24 @@ public class VtxParser {
                     }
 
                     for (int meshIdx = 0; meshIdx < numMeshes; meshIdx++) {
-                        int meshHdrAddr = meshAddr + meshIdx * MESH_HEADER_SIZE;
-                        if (meshHdrAddr + MESH_HEADER_SIZE > data.length) break;
+                        int meshHdrAddr = meshAddr + meshIdx * meshHeaderSize;
+                        if (meshHdrAddr + meshHeaderSize > data.length) break;
                         int numStripGroups = buf.getInt(meshHdrAddr);
                         int sgOffset = buf.getInt(meshHdrAddr + 4);
+
+                        // Validate numStripGroups to detect garbage from mesh header misalignment.
+                        // Most real meshes have 1-20 strip groups; values >= 64 or <= 0 indicate
+                        // a corrupted read (typically from using the wrong mesh header size).
+                        if (numStripGroups <= 0 || numStripGroups > 64) {
+                            LOGGER.warn("[VtxParser] Mesh[{}] invalid numStripGroups={} (sgOffset=0x{}); treating as empty",
+                                meshIdx, numStripGroups, Integer.toHexString(sgOffset));
+                            if (l == 0) {
+                                result.meshTriangles.add(new ArrayList<>());
+                                totalMeshes++;
+                            }
+                            continue;
+                        }
+
                         if (sgOffset == 0) {
                             if (l == 0) {
                                 if (LOG_VERBOSE) {
@@ -192,10 +246,9 @@ public class VtxParser {
                                 LOGGER.warn("[VtxParser] StripGroup[{}] invalid numStrips={}", sg, numStrips);
                                 continue;
                             }
-                            if (numVerts > MAX_COUNT || numIndices > MAX_COUNT * 3) continue;
 
                             // Try both relative-to-sgHdrAddr and absolute file addressing
-                            int vertDataAddr = resolveOffset(sgHdrAddr, vertOff, (long) numVerts * VERTEX_SIZE, data.length);
+                            int vertDataAddr = resolveOffset(sgHdrAddr, vertOff, (long) numVerts * vertexStride, data.length);
                             if (vertDataAddr < 0) {
                                 continue;
                             }
@@ -205,7 +258,7 @@ public class VtxParser {
                             }
 
                             // Validate buffer access boundaries
-                            if (vertDataAddr + (long) numVerts * VERTEX_SIZE > data.length ||
+                            if (vertDataAddr + (long) numVerts * vertexStride > data.length ||
                                 vertDataAddr + 4 > data.length) {
                                 LOGGER.warn("[VtxParser] StripGroup vertex buffer access out of bounds at 0x{}", Integer.toHexString(vertDataAddr));
                                 continue;
@@ -213,7 +266,7 @@ public class VtxParser {
 
                             int[] origMeshVertIDs = new int[numVerts];
                             for (int vi = 0; vi < numVerts; vi++) {
-                                int vertexOffset = vertDataAddr + vi * VERTEX_SIZE + 4;
+                                int vertexOffset = vertDataAddr + vi * vertexStride + 4;
                                 if (vertexOffset + 2 > data.length) {
                                     LOGGER.warn("[VtxParser] Vertex {} at offset 0x{} exceeds buffer", vi, Integer.toHexString(vertexOffset));
                                     break;
@@ -250,35 +303,111 @@ public class VtxParser {
                                 }
 
                                 boolean isTriList = (sFlags & 0x01) != 0;
-                                int triEnd = isTriList ? sNumIndices : sNumIndices - 2;
                                 int step = isTriList ? 3 : 1;
-                                for (int i = 0; i + 2 < sNumIndices; i += step) {
-                                    int ci0, ci1, ci2;
-                                    if (isTriList || (i & 1) == 0) {
-                                        ci0 = cacheIndices[sIndexOffset + i];
-                                        ci1 = cacheIndices[sIndexOffset + i + 1];
-                                        ci2 = cacheIndices[sIndexOffset + i + 2];
-                                    } else {
-                                        ci0 = cacheIndices[sIndexOffset + i + 1];
-                                        ci1 = cacheIndices[sIndexOffset + i];
-                                        ci2 = cacheIndices[sIndexOffset + i + 2];
+
+                                if (isTriList) {
+                                    // ---------- TRIANGLE LIST ----------
+                                    for (int i = 0; i + 2 < sNumIndices; i += 3) {
+                                        int ci0 = cacheIndices[sIndexOffset + i];
+                                        int ci1 = cacheIndices[sIndexOffset + i + 1];
+                                        int ci2 = cacheIndices[sIndexOffset + i + 2];
+                                        // Skip restart markers and degenerate triangles
+                                        if (ci0 == STRIP_RESTART_INDEX || ci1 == STRIP_RESTART_INDEX || ci2 == STRIP_RESTART_INDEX) continue;
+                                        if (ci0 == ci1 || ci1 == ci2 || ci0 == ci2) continue;
+                                        if (ci0 >= vvdVertexCount || ci1 >= vvdVertexCount || ci2 >= vvdVertexCount) continue;
+                                        // Guard against malformed index buffers: ci is an index into
+                                        // origMeshVertIDs (sized numVerts), not the VVD vertex count.
+                                        if (ci0 < 0 || ci0 >= numVerts || ci1 < 0 || ci1 >= numVerts || ci2 < 0 || ci2 >= numVerts) continue;
+                                        meshTris.add(new VtxTriangle(
+                                            origMeshVertIDs[ci0], origMeshVertIDs[ci1], origMeshVertIDs[ci2]));
                                     }
-                                    if (ci0 >= numVerts || ci1 >= numVerts || ci2 >= numVerts) continue;
-                                    meshTris.add(new VtxTriangle(
-                                        origMeshVertIDs[ci0], origMeshVertIDs[ci1], origMeshVertIDs[ci2]));
+                                } else {
+                                    // ---------- TRIANGLE STRIP ----------
+                                    // Triangle strips require careful handling:
+                                    //   1. Indices are a sliding window of 3, advancing by 1 each step
+                                    //   2. Winding order alternates every triangle (preserve front-facing)
+                                    //   3. 0xFFFF is a D3D strip restart marker — ends current strip, starts new one
+                                    //   4. Skip degenerate triangles (two equal indices) which are sometimes
+                                    //      used as "connector" triangles between strip segments
+                                    // Without steps 3 and 4, the renderer produces "random diagonal lines"
+                                    // across the model surface from impossibly-large triangles spanning
+                                    // the restart boundary.
+                                    //
+                                    // Winding convention: the swap is keyed on a strip-relative
+                                    // counter (stripRel) that resets to 0 after a restart marker, NOT on
+                                    // the absolute index i. Using absolute i is correct within a single
+                                    // continuous strip, but after a strip restart (0xFFFF) the absolute
+                                    // index may land on the wrong parity — the new strip's first triangle
+                                    // always needs even winding, regardless of where the restart was.
+                                    //
+                                    // stripRel increments every iteration (including degenerate skips,
+                                    // since they are part of the strip's vertex stream), and resets to -1
+                                    // on restart (loop increment makes it 0 = even for the new strip).
+                                    // This avoids both the desync-from-degenerate-skip bug of a running
+                                    // parity and the wrong-parity-after-restart bug of absolute-index.
+                                    for (int i = 0, stripRel = 0; i + 2 < sNumIndices; i++, stripRel++) {
+                                        int ci0 = cacheIndices[sIndexOffset + i];
+                                        int ci1 = cacheIndices[sIndexOffset + i + 1];
+                                        int ci2 = cacheIndices[sIndexOffset + i + 2];
+
+                                        // Handle strip restart marker: advance past it and reset the
+                                        // strip-relative counter so the new strip starts with even winding.
+                                        if (ci0 == STRIP_RESTART_INDEX || ci1 == STRIP_RESTART_INDEX || ci2 == STRIP_RESTART_INDEX) {
+                                            int advance = (ci0 == STRIP_RESTART_INDEX) ? 1
+                                                        : (ci1 == STRIP_RESTART_INDEX) ? 2 : 3;
+                                            i += advance - 1; // -1 because loop increments
+                                            stripRel = -1;    // loop increments to 0 → even for new strip
+                                            continue;
+                                        }
+
+                                        // Skip degenerate triangles (zero-area connectors). stripRel still
+                                        // increments (they are part of the strip's vertex stream), preserving
+                                        // the alternating parity for subsequent non-degenerate triangles.
+                                        if (ci0 == ci1 || ci1 == ci2 || ci0 == ci2) {
+                                            continue;
+                                        }
+
+                                        // Alternating winding keyed on strip-relative counter:
+                                        // even stripRel -> (ci0, ci1, ci2), odd stripRel -> (ci1, ci0, ci2).
+                                        int tri0, tri1, tri2;
+                                        if ((stripRel & 1) == 0) {
+                                            tri0 = ci0; tri1 = ci1; tri2 = ci2;
+                                        } else {
+                                            tri0 = ci1; tri1 = ci0; tri2 = ci2;
+                                        }
+
+                                        if (tri0 >= vvdVertexCount || tri1 >= vvdVertexCount || tri2 >= vvdVertexCount) continue;
+                                        // Guard against malformed index buffers: triN is an index into
+                                        // origMeshVertIDs (sized numVerts), not the VVD vertex count.
+                                        if (tri0 < 0 || tri0 >= numVerts || tri1 < 0 || tri1 >= numVerts || tri2 < 0 || tri2 >= numVerts) continue;
+                                        meshTris.add(new VtxTriangle(
+                                            origMeshVertIDs[tri0], origMeshVertIDs[tri1], origMeshVertIDs[tri2]));
+                                    }
                                 }
                                 if (isTriList) triListCount++;
                                 else triStripCount++;
                             }
 
-                            if (triListCount == 0 && triStripCount == 0 && maxIndices >= 3) {
-                                for (int i = 0; i + 2 < maxIndices; i += 3) {
-                                    int ci0 = cacheIndices[i];
-                                    int ci1 = cacheIndices[i + 1];
-                                    int ci2 = cacheIndices[i + 2];
-                                    if (ci0 >= numVerts || ci1 >= numVerts || ci2 >= numVerts) continue;
-                                    meshTris.add(new VtxTriangle(
-                                        origMeshVertIDs[ci0], origMeshVertIDs[ci1], origMeshVertIDs[ci2]));
+                            if (triListCount == 0 && triStripCount == 0) {
+                                if (numStrips == 0 && maxIndices >= 3) {
+                                    // No strip headers defined: treat the entire index buffer as a raw triangle list.
+                                    for (int i = 0; i + 2 < maxIndices; i += 3) {
+                                        int ci0 = cacheIndices[i];
+                                        int ci1 = cacheIndices[i + 1];
+                                        int ci2 = cacheIndices[i + 2];
+                                        // Skip restart markers and degenerate triangles in raw triangle list fallback too
+                                        if (ci0 == STRIP_RESTART_INDEX || ci1 == STRIP_RESTART_INDEX || ci2 == STRIP_RESTART_INDEX) continue;
+                                        if (ci0 == ci1 || ci1 == ci2 || ci0 == ci2) continue;
+                                        if (ci0 >= vvdVertexCount || ci1 >= vvdVertexCount || ci2 >= vvdVertexCount) continue;
+                                        // Guard against malformed index buffers: ci is an index into
+                                        // origMeshVertIDs (sized numVerts), not the VVD vertex count.
+                                        if (ci0 < 0 || ci0 >= numVerts || ci1 < 0 || ci1 >= numVerts || ci2 < 0 || ci2 >= numVerts) continue;
+                                        meshTris.add(new VtxTriangle(
+                                            origMeshVertIDs[ci0], origMeshVertIDs[ci1], origMeshVertIDs[ci2]));
+                                    }
+                                } else if (numStrips > 0) {
+                                    LOGGER.warn("[VtxParser] StripGroup[{}] has {} strips but none produced triangles; skipping fallback to avoid garbage geometry",
+                                        sg, numStrips);
                                 }
                             }
                         }
@@ -309,7 +438,7 @@ public class VtxParser {
         return result;
     }
 
-    public static List<List<VtxTriangle>> buildTrianglesPerMdlMesh(ParsedVtx vtx, MdlParser.ParsedModel mdl, int vvdVertexCount) {
+    public static List<List<VtxTriangle>> buildTrianglesPerMdlMesh(ParsedVtx vtx, MdlDataTypes.ParsedModel mdl, int vvdVertexCount) {
         List<List<VtxTriangle>> result = new ArrayList<>();
 
         int vtxMeshCount = vtx.meshTriangles.size();
@@ -362,7 +491,7 @@ public class VtxParser {
     }
 
     private static void checkBounds(int offset, long size, int bufferLimit, String fieldName) {
-        if (offset < 0 || offset > bufferLimit - size) {
+        if (offset < 0 || (long) offset + size > bufferLimit) {
             long endPos = (long) offset + size;
             throw new RuntimeException(String.format(
                     "VTX parse error: %s at offset %d (size %d) exceeds buffer limit %d",

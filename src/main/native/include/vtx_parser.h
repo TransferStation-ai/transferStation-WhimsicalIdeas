@@ -23,9 +23,7 @@ public:
         int32_t numLODs;
         int32_t numBodyParts;
         std::vector<std::vector<StripGroupInfo>> meshStripGroups;
-        std::vector<std::vector<StripGroupInfo>> lodMeshStripGroups1;
-        std::vector<std::vector<StripGroupInfo>> lodMeshStripGroups2;
-        std::vector<std::vector<StripGroupInfo>> lodMeshStripGroups3;
+        std::vector<std::vector<std::vector<StripGroupInfo>>> lodMeshStripGroups;
     };
 
     static const std::vector<std::vector<StripGroupInfo>>& getStripGroupsForLod(

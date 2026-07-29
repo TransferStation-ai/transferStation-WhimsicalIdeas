@@ -1,4 +1,5 @@
 #include "model_diagnostics.h"
+#include "phy_parser.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -75,14 +76,14 @@ ModelDiagnostics::DiagnosticResult ModelDiagnostics::diagnoseFile(const fs::path
 
         if (ext == ".mdl") {
             diagnoseMdl(data, result);
-            result.complete = (result.warnings.empty() || result.warnings.size() == 1);
+            result.complete = result.warnings.empty();
         } else if (ext == ".vvd") {
             diagnoseVvd(data, result);
-            result.complete = (result.warnings.empty() || result.warnings.size() == 1);
+            result.complete = result.warnings.empty();
         } else if (filePath.string().size() >= 9 &&
                    toLower(filePath.string().substr(filePath.string().size() - 9)) == ".dx90.vtx") {
             diagnoseVtx(data, result);
-            result.complete = (result.warnings.empty() || result.warnings.size() == 1);
+            result.complete = result.warnings.empty();
         } else if (ext == ".phy") {
             result.hasPhy = true;
             diagnosePhy(data, result);
@@ -284,33 +285,46 @@ void ModelDiagnostics::diagnoseVtx(const std::vector<uint8_t>& data, DiagnosticR
 
 void ModelDiagnostics::diagnosePhy(const std::vector<uint8_t>& data, DiagnosticResult& result) {
     try {
-        if (data.size() < 16) {
-            result.warnings.push_back("[PHY] File too small for header");
+        auto parsed = PhyParser::parse(data);
+
+        if (!parsed.valid) {
+            result.warnings.push_back("[PHY] File is invalid or unparseable");
             return;
         }
 
-        const uint8_t* raw = data.data();
+        result.checksums["PHY"] = parsed.checksum;
 
-        auto readInt = [&](int off) -> uint32_t {
-            return raw[off] | (raw[off+1] << 8) | (raw[off+2] << 16) | (raw[off+3] << 24);
-        };
+        result.infoFields.push_back("PHY size: " + std::to_string(parsed.size));
+        result.infoFields.push_back("PHY ID: " + parsed.id);
+        result.infoFields.push_back("PHY solids: " + std::to_string(parsed.solidCount));
+        result.infoFields.push_back("PHY checksum: 0x" + std::to_string(parsed.checksum));
 
-        uint32_t size = readInt(0);
-        std::string id(reinterpret_cast<const char*>(raw + 4), 4);
-        uint32_t solidCount = readInt(8);
-        uint32_t checksum = readInt(12);
-
-        result.checksums["PHY"] = checksum;
-
-        result.infoFields.push_back("PHY size: " + std::to_string(size));
-        result.infoFields.push_back("PHY ID: " + id);
-        result.infoFields.push_back("PHY solids: " + std::to_string(solidCount));
-
-        if (id != "VPHY" && id != "PHYS" && id != std::string(4, '\0')) {
-            result.warnings.push_back("Unusual PHY ID: " + id);
+        if (parsed.id != "VPHY" && parsed.id != "PHYS") {
+            result.warnings.push_back("Unusual PHY ID: " + parsed.id);
         }
-        if (solidCount > 100) {
-            result.warnings.push_back("Large solid count: " + std::to_string(solidCount));
+        if (parsed.solidCount > 100) {
+            result.warnings.push_back("Large solid count: " + std::to_string(parsed.solidCount));
+        }
+
+        int totalHulls = 0;
+        int totalVertices = 0;
+        int totalTriangles = 0;
+        for (const auto& solid : parsed.solids) {
+            totalHulls += static_cast<int>(solid.convexHulls.size());
+            for (const auto& hull : solid.convexHulls) {
+                totalVertices += static_cast<int>(hull.vertices.size());
+                totalTriangles += static_cast<int>(hull.triangles.size());
+            }
+        }
+
+        result.infoFields.push_back("PHY total convex hulls: " + std::to_string(totalHulls));
+        result.infoFields.push_back("PHY total vertices: " + std::to_string(totalVertices));
+        result.infoFields.push_back("PHY total triangles: " + std::to_string(totalTriangles));
+
+        for (size_t i = 0; i < parsed.solids.size(); i++) {
+            const auto& solid = parsed.solids[i];
+            result.infoFields.push_back("  Solid[" + std::to_string(i) + "]: \"" + solid.name +
+                "\" hulls=" + std::to_string(solid.convexHulls.size()));
         }
 
     } catch (const std::exception& e) {

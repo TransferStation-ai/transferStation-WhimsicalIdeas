@@ -1,18 +1,33 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
+
+import java.io.IOException;
+import java.io.Reader;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ModelPackage {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private String name;
     private Path packageDir;
     private String displayName;
     private String author;
     private float modelScale = 1.0f;
-    private java.util.List<String> tags = new java.util.ArrayList<>();
-    private java.util.List<String> modelPaths = new java.util.ArrayList<>();
-    private java.util.List<String> materialPaths = new java.util.ArrayList<>();
-    private java.util.List<String> cdMaterialsHints = new java.util.ArrayList<>();
+    private List<String> tags = new ArrayList<>();
+    private List<String> modelPaths = new ArrayList<>();
+    private List<String> materialPaths = new ArrayList<>();
+    private List<String> cdMaterialsHints = new ArrayList<>();
+    private String addonDescription;
+    private String addonVersion;
+    private boolean hasAddonJson;
 
     public ModelPackage(String name, Path packageDir) {
         this.name = name;
@@ -20,14 +35,92 @@ public class ModelPackage {
     }
 
     public void discover() {
-        // Scan for .lua metadata files for display info
-        try (java.util.stream.Stream<Path> walk = java.nio.file.Files.walk(packageDir)) {
+        Path addonJsonPath = findAddonJson();
+        if (addonJsonPath == null) {
+            addonJsonPath = findAddonJsonInChildren();
+        }
+        if (addonJsonPath != null) {
+            parseAddonJson(addonJsonPath);
+            hasAddonJson = true;
+        }
+
+        try (java.util.stream.Stream<Path> walk = Files.walk(packageDir)) {
             walk.filter(f -> f.getFileName().toString().toLowerCase().endsWith(".lua"))
                 .findFirst().ifPresent(this::parseLuaMetadata);
-        } catch (java.io.IOException ignored) {}
+        } catch (IOException ignored) {}
 
         if (displayName == null || displayName.isEmpty()) {
             displayName = name;
+        }
+    }
+
+    private Path findAddonJson() {
+        Path current = packageDir;
+        int depth = 0;
+        while (current != null && depth < 10) {
+            Path candidate = current.resolve("addon.json");
+            if (Files.exists(candidate) && Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+            current = current.getParent();
+            depth++;
+        }
+        return null;
+    }
+
+    private Path findAddonJsonInChildren() {
+        try (java.util.stream.Stream<Path> walk = Files.walk(packageDir, 3)) {
+            return walk.filter(Files::isRegularFile)
+                .filter(f -> f.getFileName().toString().equalsIgnoreCase("addon.json"))
+                .findFirst()
+                .orElse(null);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private void parseAddonJson(Path addonJsonPath) {
+        try (Reader reader = Files.newBufferedReader(addonJsonPath)) {
+            JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
+
+            if (json.has("title")) {
+                displayName = json.get("title").getAsString();
+            }
+            if (json.has("type")) {
+                String type = json.get("type").getAsString();
+                if (!tags.contains(type)) {
+                    tags.add(type);
+                }
+            }
+            if (json.has("tags")) {
+                var tagsArray = json.getAsJsonArray("tags");
+                for (var element : tagsArray) {
+                    String tag = element.getAsString();
+                    if (!tags.contains(tag)) {
+                        tags.add(tag);
+                    }
+                }
+            }
+            if (json.has("ignore")) {
+                // Skip ignored patterns - not needed for model loading
+            }
+            if (json.has("addons")) {
+                var addonsArray = json.getAsJsonArray("addons");
+                for (var element : addonsArray) {
+                    JsonObject addon = element.getAsJsonObject();
+                    if (addon.has("file")) {
+                        String file = addon.get("file").getAsString();
+                    String lowerFile = file.toLowerCase();
+                    if (lowerFile.endsWith(".mdl") || lowerFile.endsWith(".smd")) {
+                        modelPaths.add(file);
+                    }
+                    }
+                }
+            }
+
+            LOGGER.debug("[ModelPackage] Parsed addon.json from {}: title={}", addonJsonPath, displayName);
+        } catch (Exception e) {
+            LOGGER.debug("[ModelPackage] Failed to parse addon.json: {}", e.getMessage());
         }
     }
 
@@ -35,11 +128,14 @@ public class ModelPackage {
     public String getDisplayName() { return displayName != null ? displayName : name; }
     public String getAuthor() { return author; }
     public float getModelScale() { return modelScale; }
-    public java.util.List<String> getTags() { return tags; }
-    public java.util.List<String> getModelPaths() { return modelPaths; }
-    public java.util.List<String> getMaterialPaths() { return materialPaths; }
-    public java.util.List<String> getCdMaterialsHints() { return cdMaterialsHints; }
+    public List<String> getTags() { return tags; }
+    public List<String> getModelPaths() { return modelPaths; }
+    public List<String> getMaterialPaths() { return materialPaths; }
+    public List<String> getCdMaterialsHints() { return cdMaterialsHints; }
     public Path getPackageDir() { return packageDir; }
+    public boolean hasAddonJson() { return hasAddonJson; }
+    public String getAddonDescription() { return addonDescription; }
+    public String getAddonVersion() { return addonVersion; }
 
     private void parseLuaMetadata(Path luaFile) {
         try {
@@ -102,10 +198,10 @@ public class ModelPackage {
             String value = stripQuotes(rest.split("[,)]", 2)[0].trim());
             if (value.isEmpty()) continue;
             String lower = value.toLowerCase();
-            if (lower.endsWith(".mdl")) {
+            if (lower.endsWith(".mdl") || lower.endsWith(".smd")) {
                 return value;
             }
-            else if (lower.startsWith("models/") && (lower.contains(".mdl") || lower.contains("/"))) {
+            else if (lower.startsWith("models/") && (lower.contains(".mdl") || lower.contains(".smd") || lower.contains("/"))) {
                 return value;
             }
         }
@@ -123,7 +219,8 @@ public class ModelPackage {
                 int endIdx = findClosingQuote(rest, 0);
                 if (endIdx > 0) {
                     String modelPath = rest.substring(1, endIdx).trim();
-                    if (!modelPath.isEmpty() && modelPath.toLowerCase().endsWith(".mdl")) {
+                    String mpLower = modelPath.toLowerCase();
+                    if (!modelPath.isEmpty() && (mpLower.endsWith(".mdl") || mpLower.endsWith(".smd"))) {
                         return modelPath;
                     }
                 }
@@ -155,7 +252,7 @@ public class ModelPackage {
             String val = extractQuotedString(rest);
             if (val != null && !val.isEmpty()) {
                 String cleaned = stripQuotes(val).replace('\\', '/');
-                if (!cleaned.isEmpty() && !cleaned.endsWith(".mdl")) {
+                if (!cleaned.isEmpty() && !cleaned.endsWith(".mdl") && !cleaned.endsWith(".smd")) {
                     materialPaths.add(cleaned);
                 }
             }

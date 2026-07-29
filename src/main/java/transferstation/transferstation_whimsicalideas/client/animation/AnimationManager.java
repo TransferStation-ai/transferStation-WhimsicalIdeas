@@ -13,45 +13,39 @@ public class AnimationManager {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    private static final Map<String, AnimationData> animations = new HashMap<>();
+    // Animations are stored in AnimationProcessor's single registry so that config-loaded
+    // animations are actually reachable by the renderer (which only queries AnimationProcessor).
+    // Keeping a separate map here made loadAnimationFromConfig() load into a dead registry.
 
     public static void registerAnimation(AnimationData animation) {
-        animations.put(animation.name, animation);
-        LOGGER.info("[AnimationManager] Registered animation: {} ({} fps, {} frames)", 
+        AnimationProcessor.registerAnimation(animation);
+        LOGGER.info("[AnimationManager] Registered animation: {} ({} fps, {} frames)",
             animation.name, animation.fps, animation.frameCount);
     }
 
     public static AnimationData getAnimation(String name) {
-        return animations.get(name);
+        return AnimationProcessor.getAnimation(name);
     }
 
     public static boolean hasAnimation(String name) {
-        return animations.containsKey(name);
+        return AnimationProcessor.getAnimation(name) != null;
     }
 
-    public static void loadAnimationFromConfig(Path configDir, String modelName) {
-        Path modelConfigDir = configDir.resolve("transferstation_whimsicalideas");
-        if (!Files.exists(modelConfigDir)) {
-            LOGGER.warn("[AnimationManager] Config directory not found: {}", modelConfigDir);
-            return;
-        }
-
-        Path animationFolder = modelConfigDir.resolve("animation");
+    public static void loadAnimationFromConfig(Path configDir) throws IOException {
+        Path animationFolder = configDir.resolve("CustomAnim");
         if (!Files.exists(animationFolder)) {
-            LOGGER.warn("[AnimationManager] Animation folder not found: {}", animationFolder);
-            return;
+            LOGGER.warn("[AnimationManager] CustomAnim folder not found: {}", animationFolder);
+            Files.createDirectories(animationFolder);
         }
 
-        boolean[] loadedAny = {false};
+        int[] loadedCount = {0};
         try (var files = Files.list(animationFolder)) {
-            files.filter(p -> p.getFileName().toString().endsWith(".json"))
+            files.filter(p -> p.getFileName().toString().endsWith(".vmd"))
                 .forEach(p -> {
                     try {
-                        String jsonContent = Files.readString(p);
-                        AnimationData animation = JsonAnimationLoader.loadFromJson(jsonContent);
-                        animations.put(animation.name, animation);
-                        LOGGER.info("[AnimationManager] Loaded animation from config: {}", p);
-                        loadedAny[0] = true;
+                        AnimationData animation = VmdAnimationLoader.loadFromVMD(p);
+                        AnimationProcessor.registerAnimation(animation);
+                        loadedCount[0]++;
                     } catch (IOException e) {
                         LOGGER.error("[AnimationManager] Failed to load animation from config: {}", p, e);
                     }
@@ -60,8 +54,8 @@ public class AnimationManager {
             LOGGER.error("[AnimationManager] Error scanning animation folder: {}", animationFolder, e);
         }
 
-        if (loadedAny[0]) {
-            LOGGER.info("[AnimationManager] Loaded {} animations for model: {}", animations.size(), modelName);
+        if (loadedCount[0] > 0) {
+            LOGGER.info("[AnimationManager] Loaded {} animation(s) from config", loadedCount[0]);
         }
     }
 
@@ -71,11 +65,11 @@ public class AnimationManager {
     }
 
     public static void clearAllAnimations() {
-        animations.clear();
+        AnimationProcessor.clearMorph();
         LOGGER.info("[AnimationManager] Cleared all animations");
     }
 
     public static java.util.Collection<AnimationData> getAllAnimations() {
-        return animations.values();
+        return AnimationProcessor.getAllRegisteredAnimations();
     }
 }

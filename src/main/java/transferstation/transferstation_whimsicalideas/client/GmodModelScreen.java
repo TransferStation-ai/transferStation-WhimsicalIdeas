@@ -10,8 +10,10 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.FormattedCharSequence;
+import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.ModelPackage;
 
 import java.util.*;
@@ -21,7 +23,6 @@ import java.util.Objects;
 
 public class GmodModelScreen extends Screen {
 
-    private static final Component TITLE = Component.literal("GMOD Model Selection");
     private static final int MODELS_PER_PAGE = 10;
     private static final int COLS = 5;
     private static final int ROWS = 2;
@@ -37,11 +38,12 @@ public class GmodModelScreen extends Screen {
     private boolean playerEnabled;
     private boolean mobEnabled;
 
+
     private List<ModelPackage> allPackages;
     private List<ModelPackage> filteredPackages;
 
     protected GmodModelScreen() {
-        super(TITLE);
+        super(Component.translatable("gui.transferstation_whimsicalideas.model_selection"));
         this.playerEnabled = GmodModelConfig.isPlayerModelEnabled();
         this.mobEnabled = GmodModelConfig.isMobModelEnabled();
         this.page = 0;
@@ -79,7 +81,7 @@ public class GmodModelScreen extends Screen {
 
         String prevText = searchField != null ? searchField.getValue() : currentSearch;
         boolean focused = searchField != null && searchField.isFocused();
-        searchField = new EditBox(font, x + 144, y + 6, 140, 16, Component.literal("Search"));
+        searchField = new EditBox(font, x + 144, y + 6, 140, 16, Component.translatable("gui.transferstation_whimsicalideas.search"));
         searchField.setValue(prevText);
         searchField.setTextColor(0xF3EFE0);
         searchField.setFocused(focused);
@@ -87,25 +89,40 @@ public class GmodModelScreen extends Screen {
         addWidget(searchField);
 
         addRenderableWidget(Button.builder(
-                Component.literal(playerEnabled ? "Player: ON" : "Player: OFF"),
+                Component.translatable(playerEnabled ? "gui.transferstation_whimsicalideas.player_on" : "gui.transferstation_whimsicalideas.player_off"),
                 btn -> {
                     GmodModelConfig.togglePlayerModel();
                     playerEnabled = GmodModelConfig.isPlayerModelEnabled();
-                    btn.setMessage(Component.literal(playerEnabled ? "Player: ON" : "Player: OFF"));
+                    btn.setMessage(Component.translatable(playerEnabled ? "gui.transferstation_whimsicalideas.player_on" : "gui.transferstation_whimsicalideas.player_off"));
                 }
-        ).pos(x + 288, y + 5).size(70, 16).build());
+        ).pos(x + 4, y + 210).size(62, 14).build());
 
         addRenderableWidget(Button.builder(
-                Component.literal(mobEnabled ? "Mob: ON" : "Mob: OFF"),
+                Component.translatable(mobEnabled ? "gui.transferstation_whimsicalideas.mob_on" : "gui.transferstation_whimsicalideas.mob_off"),
                 btn -> {
                     GmodModelConfig.toggleMobModel();
                     mobEnabled = GmodModelConfig.isMobModelEnabled();
-                    btn.setMessage(Component.literal(mobEnabled ? "Mob: ON" : "Mob: OFF"));
+                    btn.setMessage(Component.translatable(mobEnabled ? "gui.transferstation_whimsicalideas.mob_on" : "gui.transferstation_whimsicalideas.mob_off"));
                 }
-        ).pos(x + 361, y + 5).size(55, 16).build());
+        ).pos(x + 68, y + 210).size(62, 14).build());
 
         addRenderableWidget(Button.builder(
-                Component.literal("<"),
+                Component.translatable("gui.transferstation_whimsicalideas.ai_config"),
+                btn -> minecraft.setScreen(new AiConfigScreen())
+        ).pos(x + 4, y + 226).size(126, 14).build());
+
+        addRenderableWidget(Button.builder(
+                Component.translatable("gui.transferstation_whimsicalideas.model_editor"),
+                btn -> minecraft.setScreen(new transferstation.transferstation_whimsicalideas.client.editor.ModelEditorScreen(this))
+        ).pos(x + 134, y + 226).size(126, 14).build());
+
+        addRenderableWidget(Button.builder(
+                Component.translatable("gui.transferstation_whimsicalideas.anim_editor"),
+                btn -> minecraft.setScreen(new transferstation.transferstation_whimsicalideas.client.editor.AnimationEditorScreen(this))
+        ).pos(x + 264, y + 226).size(126, 14).build());
+
+        addRenderableWidget(Button.builder(
+                Component.translatable("gui.transferstation_whimsicalideas.prev_page"),
                 btn -> {
                     if (page > 0) {
                         page--;
@@ -115,7 +132,7 @@ public class GmodModelScreen extends Screen {
         ).pos(x + 198, y + 215).size(52, 14).build());
 
         addRenderableWidget(Button.builder(
-                Component.literal(">"),
+                Component.translatable("gui.transferstation_whimsicalideas.next_page"),
                 btn -> {
                     if (page < maxPage) {
                         page++;
@@ -155,9 +172,12 @@ public class GmodModelScreen extends Screen {
             int scissorW = (int) (125 * scale);
             int scissorH = (int) (171 * scale);
             RenderSystem.enableScissor(scissorX, scissorY, scissorW, scissorH);
-            InventoryScreen.renderEntityInInventoryFollowsMouse(graphics, x + 67, y + 190, 70,
-                    x + 67 - mouseX, y + 180 - 95 - mouseY, minecraft.player);
-            RenderSystem.disableScissor();
+            try {
+                InventoryScreen.renderEntityInInventoryFollowsMouse(graphics, x + 67, y + 190, 70,
+                        x + 67 - mouseX, y + 180 - 95 - mouseY, minecraft.player);
+            } finally {
+                RenderSystem.disableScissor();
+            }
         }
 
         String currentModel = GmodModelConfig.getSelectedModelName();
@@ -170,11 +190,11 @@ public class GmodModelScreen extends Screen {
                 lineY += 10;
             }
         } else {
-            graphics.drawCenteredString(font, Component.literal("No model"), x + 67, y + 205, 0x777777);
+            graphics.drawCenteredString(font, Component.translatable("gui.transferstation_whimsicalideas.no_model"), x + 67, y + 205, 0x777777);
         }
 
         if (searchField.getValue().isEmpty() && !searchField.isFocused()) {
-            graphics.drawString(font, Component.literal("Search models..."), x + 148, y + 10, 0x777777);
+            graphics.drawString(font, Component.translatable("gui.transferstation_whimsicalideas.search_hint"), x + 148, y + 10, 0x777777);
         }
 
         String pageInfo = String.format("%d/%d", page + 1, maxPage + 1);
@@ -185,9 +205,11 @@ public class GmodModelScreen extends Screen {
 
     @Override
     public void resize(Minecraft minecraft, int width, int height) {
-        String value = searchField.getValue();
+        String value = searchField != null ? searchField.getValue() : "";
         super.resize(minecraft, width, height);
-        searchField.setValue(value);
+        if (searchField != null) {
+            searchField.setValue(value);
+        }
     }
 
     @Override
@@ -206,7 +228,7 @@ public class GmodModelScreen extends Screen {
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        if (searchField == null) return false;
+        if (searchField == null || !searchField.isFocused()) return false;
         String prev = searchField.getValue();
         if (searchField.charTyped(codePoint, modifiers)) {
             if (!Objects.equals(prev, searchField.getValue())) {
@@ -221,11 +243,10 @@ public class GmodModelScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        com.mojang.blaze3d.platform.InputConstants.Key key = com.mojang.blaze3d.platform.InputConstants.getKey(keyCode, scanCode);
-        if (key.getNumericKeyValue().isPresent()) return true;
+        if (searchField == null) return super.keyPressed(keyCode, scanCode, modifiers);
 
         String prev = searchField.getValue();
-        if (searchField.keyPressed(keyCode, scanCode, modifiers)) {
+        if (searchField.isFocused() && searchField.keyPressed(keyCode, scanCode, modifiers)) {
             if (!Objects.equals(prev, searchField.getValue())) {
                 currentSearch = searchField.getValue();
                 page = 0;
@@ -233,13 +254,17 @@ public class GmodModelScreen extends Screen {
             }
             return true;
         }
-        return searchField.isFocused() && searchField.isVisible() && keyCode != 256 || super.keyPressed(keyCode, scanCode, modifiers);
+
+        if (searchField.isFocused() && searchField.isVisible() && keyCode != 256) {
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         if (minecraft == null) return false;
-        if (delta != 0 && mouseX >= (x + 143) && mouseX <= (x + 430) && mouseY >= (y + 25) && mouseY <= (y + 235)) {
+        if (delta != 0 && mouseX >= (x + 143) && mouseX <= (x + 420) && mouseY >= (y + 25) && mouseY <= (y + 235)) {
             if (delta > 0 && page > 0) {
                 page--;
                 minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
@@ -262,11 +287,13 @@ public class GmodModelScreen extends Screen {
     static class ModelSelectButton extends Button {
         private final ModelPackage pkg;
         private final GmodModelScreen parent;
+        private ResourceLocation iconLoc;
 
         ModelSelectButton(int x, int y, int w, int h, ModelPackage pkg, GmodModelScreen parent) {
             super(x, y, w, h, Component.literal(pkg.getDisplayName()), btn -> {}, DEFAULT_NARRATION);
             this.pkg = pkg;
             this.parent = parent;
+            this.iconLoc = ModelLoadManager.loadEntityIcon(pkg.getPackageDir(), pkg.getName());
         }
 
         @Override
@@ -281,13 +308,32 @@ public class GmodModelScreen extends Screen {
             graphics.fillGradient(getX(), getY(), getX() + width, getY() + height, bgColor, bgColor);
 
             Font mcFont = Minecraft.getInstance().font;
-            Component displayName = Component.literal(pkg.getDisplayName());
-            List<FormattedCharSequence> split = mcFont.split(displayName, width - 4);
-            if (split.size() > 1) {
-                graphics.drawCenteredString(mcFont, split.get(0), getX() + width / 2, getY() + height - 19, 0xF3EFE0);
-                graphics.drawCenteredString(mcFont, split.get(1), getX() + width / 2, getY() + height - 10, 0xF3EFE0);
+
+            if (iconLoc != null) {
+                // Draw the icon in the upper area, leaving room for the name below.
+                int iconSize = Math.min(width - 8, 56);
+                int iconX = getX() + (width - iconSize) / 2;
+                int iconY = getY() + 4;
+                graphics.blit(iconLoc, iconX, iconY, iconSize, iconSize, 0, 0, 64, 64, 64, 64);
+
+                Component displayName = Component.literal(pkg.getDisplayName());
+                List<FormattedCharSequence> split = mcFont.split(displayName, width - 4);
+                int nameY = getY() + height - 10 - (split.size() > 1 ? 9 : 0);
+                if (split.size() > 1) {
+                    graphics.drawCenteredString(mcFont, split.get(0), getX() + width / 2, nameY, 0xF3EFE0);
+                    graphics.drawCenteredString(mcFont, split.get(1), getX() + width / 2, nameY + 9, 0xF3EFE0);
+                } else {
+                    graphics.drawCenteredString(mcFont, displayName, getX() + width / 2, nameY, 0xF3EFE0);
+                }
             } else {
-                graphics.drawCenteredString(mcFont, displayName, getX() + width / 2, getY() + height - 15, 0xF3EFE0);
+                Component displayName = Component.literal(pkg.getDisplayName());
+                List<FormattedCharSequence> split = mcFont.split(displayName, width - 4);
+                if (split.size() > 1) {
+                    graphics.drawCenteredString(mcFont, split.get(0), getX() + width / 2, getY() + height - 19, 0xF3EFE0);
+                    graphics.drawCenteredString(mcFont, split.get(1), getX() + width / 2, getY() + height - 10, 0xF3EFE0);
+                } else {
+                    graphics.drawCenteredString(mcFont, displayName, getX() + width / 2, getY() + height - 15, 0xF3EFE0);
+                }
             }
 
             if (isHoveredOrFocused()) {

@@ -36,14 +36,12 @@ public class GmodModelRenderer {
     private static final float[] COLOR_MOUTH_RGB = ColorUtils.argbToFloatRgb(COLOR_MOUTH);
     private static final float[] COLOR_EYEBROW_RGB = ColorUtils.argbToFloatRgb(COLOR_EYEBROW);
 
-    private static final ResourceLocation FACE_TEXTURE =
-            ResourceLocation.parse("transferstation_whimsicalideas:textures/model/fallback_face.png");
-
     public static void renderGmodModel(LivingEntity entity, PoseStack poseStack, MultiBufferSource bufferSource,
                                         int packedLight, float partialTicks) {
         poseStack.pushPose();
 
-        float scale = entity.getBbHeight() / 1.8f;
+        float bbHeight = entity.getBbHeight();
+        float scale = (bbHeight > 0.0f) ? bbHeight / 1.8f : 1.0f;
         poseStack.scale(scale, scale, scale);
 
         float bob = 0f;

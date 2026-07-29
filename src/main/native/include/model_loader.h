@@ -7,9 +7,12 @@
 #include "vtx_parser.h"
 #include "vtf_decoder.h"
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <mutex>
+#include <future>
 
 class ModelLoader {
 public:
@@ -56,6 +59,7 @@ public:
         bool hasSkinData;
         float minZ;
         uint32_t fallbackTexture;
+        std::string cacheKey;
         
         const std::vector<MeshData>& getMeshesForLod(int lod) const {
             if (lod <= 0 || lod > 3) return meshes;
@@ -73,6 +77,13 @@ public:
         const std::string& modelName
     );
 
+    // SMD fallback loader
+    static std::unique_ptr<LoadedModel> loadFromSmd(
+        const std::string& pkgDir,
+        const std::string& smdPath,
+        const std::string& materialsDir
+    );
+
     static std::vector<MeshData> buildMeshes(
         const MdlParser::ParsedMdl& mdl,
         const VvdParser::ParsedVvd& vvd,
@@ -80,8 +91,37 @@ public:
         int lodLevel = 0
     );
 
+    static void clearTextureCache();
+
+    // Parallel file loading
+    struct FileData {
+        std::string path;
+        std::vector<uint8_t> data;
+    };
+
 private:
     static float computeMinZ(const std::vector<MeshData>& meshes);
+    static std::vector<FileData> loadFilesParallel(const std::vector<std::string>& paths);
+
+    // Optimized string utilities
+    static std::string toLower(std::string_view s);
+    static void toLowerInPlace(std::string& s);
+
+public:
+    // Memory-mapped file reading
+    static std::vector<uint8_t> readFileMapped(const std::string& path);
+
+    // Static texture cache shared across model loads
+    struct CachedTexture {
+        std::vector<uint8_t> rgbaData;
+        int width;
+        int height;
+    };
+    static std::unordered_map<std::string, CachedTexture> s_textureCache;
+    static std::mutex s_cacheMutex;
 };
+
+// ----- ModelManager静态接口 -----
+#include "model_manager.h"
 
 #endif // MODEL_LOADER_H

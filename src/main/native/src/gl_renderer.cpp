@@ -2,11 +2,14 @@
 #include <iostream>
 #include <cstring>
 #include <cstdio>
+#include <cmath>
 #include <unordered_map>
 #include <utility>
 
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 
 // OpenGL function pointer types
@@ -49,6 +52,7 @@ typedef void (APIENTRY* GL_GENTEXTURES)(int, uint32_t*);
 typedef void (APIENTRY* GL_DELETETEXTURES)(int, const uint32_t*);
 typedef void (APIENTRY* GL_TEXIMAGE2D)(uint32_t, int, int, int, int, int, uint32_t, uint32_t, const void*);
 typedef void (APIENTRY* GL_TEXPARAMETERI)(uint32_t, uint32_t, int);
+typedef void (APIENTRY* GL_GENERATEMIPMAP)(uint32_t);
 typedef void (APIENTRY* GL_GETINTEGERV)(uint32_t, int*);
 
 // Global function pointers (loaded once during initialize)
@@ -91,7 +95,10 @@ static GL_GENTEXTURES         glGenTextures = nullptr;
 static GL_DELETETEXTURES      glDeleteTextures = nullptr;
 static GL_TEXIMAGE2D          glTexImage2D = nullptr;
 static GL_TEXPARAMETERI       glTexParameteri = nullptr;
+static GL_GENERATEMIPMAP      glGenerateMipmap = nullptr;
 static GL_GETINTEGERV         glGetIntegerv = nullptr;
+typedef int (APIENTRY* GL_ISENABLED)(uint32_t);
+static GL_ISENABLED           glIsEnabled = nullptr;
 
 #define LOAD_GL_FUNC(name, var) \
     do { \
@@ -126,7 +133,11 @@ constexpr uint32_t GL_RGBA = 0x1908;
 constexpr uint32_t GL_UNSIGNED_BYTE = 0x1401;
 constexpr uint32_t GL_TEXTURE_MIN_FILTER = 0x2801;
 constexpr uint32_t GL_TEXTURE_MAG_FILTER = 0x2800;
+constexpr uint32_t GL_TEXTURE_BASE_LEVEL = 0x813C;
+constexpr uint32_t GL_TEXTURE_MAX_LEVEL = 0x813D;
 constexpr uint32_t GL_LINEAR = 0x2601;
+constexpr uint32_t GL_LINEAR_MIPMAP_LINEAR = 0x2703;
+constexpr uint32_t GL_GENERATE_MIPMAP = 0x8191;
 constexpr uint32_t GL_DEPTH_TEST = 0x0B71;
 constexpr uint32_t GL_LEQUAL = 0x0203;
 constexpr uint32_t GL_BLEND = 0x0BE2;
@@ -135,6 +146,13 @@ constexpr uint32_t GL_ONE_MINUS_SRC_ALPHA = 0x0303;
 constexpr int GL_CURRENT_PROGRAM = 0x8B8D;
 constexpr int GL_ACTIVE_TEXTURE = 0x84E0;
 constexpr int GL_TEXTURE_BINDING_2D = 0x8069;
+
+// Missing constants used in renderMesh state save/restore
+constexpr uint32_t GL_DEPTH_FUNC = 0x0B66;
+constexpr uint32_t GL_BLEND_SRC = 0x0BE1;
+constexpr uint32_t GL_BLEND_DST = 0x0BE0;
+
+typedef unsigned int GLenum;
 
 const char* GlRenderer::VERTEX_SHADER_SOURCE = R"(
 #version 150 core
@@ -225,7 +243,9 @@ bool GlRenderer::initialize() {
     LOAD_GL_FUNC(glDeleteTextures, glDeleteTextures);
     LOAD_GL_FUNC(glTexImage2D, glTexImage2D);
     LOAD_GL_FUNC(glTexParameteri, glTexParameteri);
+    LOAD_GL_FUNC(glGenerateMipmap, glGenerateMipmap);
     LOAD_GL_FUNC(glGetIntegerv, glGetIntegerv);
+    LOAD_GL_FUNC(glIsEnabled, glIsEnabled);
 
     // Compile and link shader program
     uint32_t vs = compileShader(GL_VERTEX_SHADER, VERTEX_SHADER_SOURCE);
@@ -366,16 +386,34 @@ void GlRenderer::destroyMesh(uint32_t vao) {
 uint32_t GlRenderer::uploadTexture(const std::vector<uint8_t>& rgbaData, int width, int height) {
     if (rgbaData.empty() || width <= 0 || height <= 0 || !glGenTextures) return 0;
 
+    // Ensure the pixel buffer is large enough for width*height*4 bytes.
+    size_t expected = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+    std::vector<uint8_t> buf = rgbaData;
+    if (buf.size() < expected) {
+        buf.resize(expected, 0);
+    }
+
     uint32_t textureId = 0;
     glGenTextures(1, &textureId);
     glBindTexture(GL_TEXTURE_2D, textureId);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, rgbaData.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                 GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
+
+    // Set mipmap levels and generate mipmaps for better quality at distance
+    int mipLevels = 1 + static_cast<int>(std::floor(std::log2(std::max(width, height))));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipLevels - 1);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    if (glGenerateMipmap) {
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    std::cout << "[GL] Uploaded texture id=" << textureId << " " << width << "x" << height << std::endl;
+    std::cout << "[GL] Uploaded texture id=" << textureId << " " << width << "x" << height
+              << " mipLevels=" << mipLevels << std::endl;
     return textureId;
 }
 
@@ -435,6 +473,15 @@ void GlRenderer::renderMesh(uint32_t vao, int indexCount, uint32_t textureId,
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textureId);
 
+    // Capture GL state we are about to change (to restore afterwards)
+    int prevDepthFunc = 0;
+    glGetIntegerv(GL_DEPTH_FUNC, &prevDepthFunc);
+    int prevBlendSrc = 0, prevBlendDst = 0;
+    glGetIntegerv(GL_BLEND_SRC, &prevBlendSrc);
+    glGetIntegerv(GL_BLEND_DST, &prevBlendDst);
+    bool depthWasEnabled = glIsEnabled(GL_DEPTH_TEST) != GL_FALSE;
+    bool blendWasEnabled = glIsEnabled(GL_BLEND) != GL_FALSE;
+
     // Set rendering state
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
@@ -446,10 +493,17 @@ void GlRenderer::renderMesh(uint32_t vao, int indexCount, uint32_t textureId,
     glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
 
-    // Restore state
+    // Restore state (including GL state we changed, to avoid leaking into MC renderer)
     glUseProgram(static_cast<uint32_t>(prevProgram));
     glActiveTexture(static_cast<uint32_t>(prevActiveTex));
     glBindTexture(GL_TEXTURE_2D, static_cast<uint32_t>(prevTex));
+
+    // Restore depth test
+    if (depthWasEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    glDepthFunc(static_cast<GLenum>(prevDepthFunc));
+    // Restore blend
+    if (blendWasEnabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    glBlendFunc(static_cast<GLenum>(prevBlendSrc), static_cast<GLenum>(prevBlendDst));
 }
 
 void GlRenderer::shutdown() {
