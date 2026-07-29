@@ -663,6 +663,17 @@ public class ModelLoadManager {
 
         buildMeshes(mdl, vvd, vtx, meshTextureMap, result);
 
+        for (int lod = 1; lod <= 3; lod++) {
+            List<SourceModelData.MeshData> lodMeshes = buildMeshesForLod(mdl, vvd, vtx, lod, meshTextureMap);
+            if (!lodMeshes.isEmpty()) {
+                switch (lod) {
+                    case 1 -> result.lodMeshes1.addAll(lodMeshes);
+                    case 2 -> result.lodMeshes2.addAll(lodMeshes);
+                    case 3 -> result.lodMeshes3.addAll(lodMeshes);
+                }
+            }
+        }
+
         for (MdlDataTypes.Bone bone : mdl.bones) {
             result.bones.add(new SourceModelData.BoneInfo(
                 bone.name,
@@ -2094,20 +2105,22 @@ public class ModelLoadManager {
         return null;
     }
 
-    private static void buildMeshes(
+    private static List<SourceModelData.MeshData> buildMeshesForLod(
         MdlDataTypes.ParsedModel mdl,
         VvdParser.ParsedVvd vvd,
         VtxParser.ParsedVtx vtx,
-        Map<Integer, SourceModelData.MeshTextureInfo> meshTextureMap,
-        SourceModelData result
+        int lodLevel,
+        Map<Integer, SourceModelData.MeshTextureInfo> meshTextureMap
     ) {
+        List<SourceModelData.MeshData> meshes = new ArrayList<>();
         List<VvdParser.StudioVertexExt> vvdVerts = vvd.vertices;
         if (vvdVerts.isEmpty()) {
             LOGGER.warn("[ModelLoadManager] No VVD vertices available");
-            return;
+            return meshes;
         }
 
-        int vtxMeshCount = vtx.meshTriangles.size();
+        List<List<VtxParser.VtxTriangle>> vtxTrianglesForLod = VtxParser.getTrianglesForLod(vtx, lodLevel);
+        int vtxMeshCount = vtxTrianglesForLod.size();
         int mdlMeshCount = mdl.meshes.size();
         int mdlModelCount = mdl.models.size();
         LOGGER.info("[ModelLoadManager] buildMeshes: VVD vertices={}, VTX meshes={}, MDL meshes={}, MDL models={}",
@@ -2195,7 +2208,7 @@ public class ModelLoadManager {
                         mdl.meshes.get(alignedMdlMeshIdx).numvertices : 0;
 
                     List<VtxParser.VtxTriangle> tris = (globalMeshIdx < vtxMeshCount) ?
-                        vtx.meshTriangles.get(globalMeshIdx) : new ArrayList<>();
+                        vtxTrianglesForLod.get(globalMeshIdx) : new ArrayList<>();
 
                     if (tris.isEmpty()) continue;
 
@@ -2361,7 +2374,7 @@ public class ModelLoadManager {
                     int materialIdx = (alignedMdlMeshIdx < mdlMeshCount) ?
                         mdl.meshes.get(alignedMdlMeshIdx).material : -1;
 
-                    result.meshes.add(new SourceModelData.MeshData.Builder()
+                    meshes.add(new SourceModelData.MeshData.Builder()
                         .vertices(vertArray).indices(idxArray)
                         .boneWeights(boneWtArray).boneIndices(boneIdxArray)
                         .texture(texture).normalMap(normalMap)
@@ -2387,6 +2400,18 @@ public class ModelLoadManager {
             }
         }
 
+        return meshes;
+    }
+
+    private static void buildMeshes(
+        MdlDataTypes.ParsedModel mdl,
+        VvdParser.ParsedVvd vvd,
+        VtxParser.ParsedVtx vtx,
+        Map<Integer, SourceModelData.MeshTextureInfo> meshTextureMap,
+        SourceModelData result
+    ) {
+        List<SourceModelData.MeshData> meshes = buildMeshesForLod(mdl, vvd, vtx, 0, meshTextureMap);
+        result.meshes.addAll(meshes);
         if (result.meshes.isEmpty()) {
             LOGGER.warn("[ModelLoadManager] No meshes built: VTX produced no triangles. Model will be skipped (renders nothing).");
         }
