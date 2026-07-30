@@ -628,21 +628,24 @@ public class VmtParser {
          * @return 合并了所有父材质参数的新 VmtMaterial
          */
         public VmtMaterial resolve(VmtMaterial vmt, int maxDepth) {
+            return resolve(vmt, maxDepth, new java.util.HashSet<>());
+        }
+
+        private VmtMaterial resolve(VmtMaterial vmt, int maxDepth, java.util.Set<String> visited) {
             if (maxDepth <= 0) return vmt;
-            
             String include = vmt.parameters.get("%includematerial");
             if (include == null || include.isEmpty()) return vmt;
-            
+            if (!visited.add(include)) {
+                return vmt;
+            }
             VmtMaterial parent = materialLoader.apply(include);
             if (parent == null) return vmt;
-            
-            VmtMaterial resolved = resolve(parent, maxDepth - 1);
-            
-            // 合并：子 VMT 的参数覆盖父 VMT
+            VmtMaterial resolved = resolve(parent, maxDepth - 1, visited);
             VmtMaterial result = new VmtMaterial();
             result.shader = vmt.shader != null ? vmt.shader : resolved.shader;
+            result.shaderType = vmt.shaderType != ShaderType.UNKNOWN ? vmt.shaderType : resolved.shaderType;
             result.parameters.putAll(resolved.parameters);
-            result.parameters.putAll(vmt.parameters); // 子覆盖父
+            result.parameters.putAll(vmt.parameters);
             return result;
         }
     }
