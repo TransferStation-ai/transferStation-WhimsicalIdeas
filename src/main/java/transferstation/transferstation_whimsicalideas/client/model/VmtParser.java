@@ -13,8 +13,33 @@ import java.util.stream.Collectors;
 
 public class VmtParser {
 
+    public enum ShaderType {
+        VERTEX_LIT_GENERIC,
+        UNLIT_GENERIC,
+        EYE_REFRACT,
+        SPRITE,
+        CABLE,
+        SKYBOX,
+        TOOL_TEXTURE,
+        UNKNOWN;
+
+        public static ShaderType fromName(String name) {
+            if (name == null) return UNKNOWN;
+            String lower = name.trim().toLowerCase();
+            if (lower.contains("vertexlitgeneric")) return VERTEX_LIT_GENERIC;
+            if (lower.contains("unlitgeneric")) return UNLIT_GENERIC;
+            if (lower.contains("eyerefract")) return EYE_REFRACT;
+            if (lower.contains("sprite")) return SPRITE;
+            if (lower.contains("cable")) return CABLE;
+            if (lower.contains("skybox")) return SKYBOX;
+            if (lower.contains("tooltexture") || lower.contains("tools/tool")) return TOOL_TEXTURE;
+            return UNKNOWN;
+        }
+    }
+
     public static class VmtMaterial {
         public String shader;
+        public ShaderType shaderType = ShaderType.UNKNOWN;
         public Map<String, String> parameters = new HashMap<>();
 
         public String getBaseTexture() {
@@ -644,6 +669,7 @@ public class VmtParser {
 
                 if (braceDepth == 0 && material.shader == null) {
                     material.shader = unquote(line.trim());
+                    material.shaderType = ShaderType.fromName(material.shader);
                     continue;
                 }
 
