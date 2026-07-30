@@ -824,75 +824,24 @@ public class VtfParser {
                 if (blockOff + 16 > data.length) continue;
 
                 int modeInfo = data[blockOff] & 0x1F;
-                boolean mode1 = (modeInfo & 0x02) == 0;
-                boolean mode2 = !mode1 && (modeInfo & 0x01) == 0;
-                boolean mode0 = (modeInfo & 0x01) == 1 && (modeInfo & 0x10) != 0;
-                boolean mode3 = (modeInfo & 0x01) == 1 && (modeInfo & 0x10) == 0;
+                int mode;
+                if ((modeInfo & 1) == 1 && (modeInfo & 2) == 0) mode = 1;
+                else if ((modeInfo & 1) == 0 && (modeInfo & 2) == 0) mode = 2;
+                else if ((modeInfo & 1) == 1 && (modeInfo & 2) == 1 && (modeInfo & 16) != 0) mode = 0;
+                else if ((modeInfo & 1) == 1 && (modeInfo & 2) == 1 && (modeInfo & 16) == 0) mode = 3;
+                else if ((modeInfo & 0x1F) == 0x1E) mode = 4;
+                else if ((modeInfo & 0x1F) == 0x1C) mode = 5;
+                else if ((modeInfo & 0x1F) == 0x18) mode = 6;
+                else if ((modeInfo & 0x1F) == 0x10) mode = 7;
+                else if ((modeInfo & 0x1F) == 0x0E) mode = 8;
+                else if ((modeInfo & 0x1F) == 0x0C) mode = 9;
+                else if ((modeInfo & 0x1F) == 0x08) mode = 10;
+                else if ((modeInfo & 0x1F) == 0x06) mode = 11;
+                else if ((modeInfo & 0x1F) == 0x04) mode = 12;
+                else if ((modeInfo & 0x1F) == 0x02) mode = 13;
+                else mode = -1;
 
-                int[] transformed = {0, 0, 0, 0, 0, 0};
-                int r0, g0, b0, r1, g1, b1;
-
-                if (mode1) {
-                    // Mode 1 (10-10-10) - bit 1 clear = mode 1
-                    long low = readBits(data, blockOff, 1, 32);
-                    long high = readBits(data, blockOff, 33, 32);
-                    r0 = (int)(low & 0x3FF);
-                    g0 = (int)((low >> 10) & 0x3FF);
-                    b0 = (int)((low >> 20) & 0x3FF);
-                    r1 = (int)(high & 0x3FF);
-                    g1 = (int)((high >> 10) & 0x3FF);
-                    b1 = (int)((high >> 20) & 0x3FF);
-                    transformed[0] = 1;
-                } else if (mode0) {
-                    // Mode 0 (10-10-10 with transformation)
-                    long low = readBits(data, blockOff, 2, 32);
-                    long high = readBits(data, blockOff, 34, 32);
-                    r0 = (int)(low & 0x3FF);
-                    g0 = (int)((low >> 10) & 0x3FF);
-                    b0 = (int)((low >> 20) & 0x3FF);
-                    r1 = (int)(high & 0x3FF);
-                    g1 = (int)((high >> 10) & 0x3FF);
-                    b1 = (int)((high >> 20) & 0x3FF);
-                    // Apply delta transformation
-                    r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
-                    g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
-                    b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
-                    transformed[0] = 1;
-                } else if (mode2) {
-                    // Mode 2 (7-6-7) - bit 0 clear, bit 1 set
-                    long packed = readBits(data, blockOff, 2, 48);
-                    int r0_7 = (int)(packed & 0x7F);
-                    int g0_6 = (int)((packed >> 7) & 0x3F);
-                    int b0_7 = (int)((packed >> 13) & 0x7F);
-                    int r1_7 = (int)((packed >> 20) & 0x7F);
-                    int g1_6 = (int)((packed >> 27) & 0x3F);
-                    int b1_7 = (int)((packed >> 33) & 0x7F);
-                    // Unquantize 7/6-bit to 10-bit
-                    r0 = (r0_7 << 3) | (r0_7 >> 4);
-                    g0 = (g0_6 << 4) | g0_6;
-                    b0 = (b0_7 << 3) | (b0_7 >> 4);
-                    r1 = (r1_7 << 3) | (r1_7 >> 4);
-                    g1 = (g1_6 << 4) | g1_6;
-                    b1 = (b1_7 << 3) | (b1_7 >> 4);
-                    // Apply delta transformation
-                    r1 = (r0 + signExtend(r1, 7) * 2) & 0x3FF;
-                    g1 = (g0 + signExtend(g1, 6) * 2) & 0x3FF;
-                    b1 = (b0 + signExtend(b1, 7) * 2) & 0x3FF;
-                    transformed[0] = 1;
-                } else if (mode3) {
-                    // Mode 3 (10-10-10 with transformation)
-                    long packed = readBits(data, blockOff, 2, 56);
-                    r0 = (int)(packed & 0x3FF);
-                    g0 = (int)((packed >> 10) & 0x3FF);
-                    b0 = (int)((packed >> 20) & 0x3FF);
-                    r1 = (int)((packed >> 30) & 0x3FF);
-                    g1 = (int)((packed >> 40) & 0x3FF);
-                    b1 = (int)((packed >> 50) & 0x3FF);
-                    r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
-                    g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
-                    b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
-                    transformed[0] = 1;
-                } else {
+                if (mode < 0) {
                     for (int py = 0; py < 4; py++) {
                         for (int px = 0; px < 4; px++) {
                             int pxAbs = bx * 4 + px, pyAbs = by * 4 + py;
@@ -903,21 +852,222 @@ public class VtfParser {
                     continue;
                 }
 
-                // Index data occupies bytes 9-15 (modes 0,1) or 8-15 (modes 2,3)
-                int idxStartByte = (mode1 || mode0) ? 9 : 8;
-                long indexData = readBits(data, blockOff, idxStartByte * 8, (16 - idxStartByte) * 8);
-                int bitsPerIdx = 4; // BC6H uses 4-bit indices (0-15), interpolated
-                int weightCount = 16;
-                int[] weights = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+                int r0 = 0, g0 = 0, b0 = 0, r1 = 0, g1 = 0, b1 = 0;
+                int transformType = 0;
+                int idxBits = 4;
+                int fixupBit = 0;
+
+                switch (mode) {
+                    case 0:
+                        r0 = (int)readBits(data, blockOff, 2, 10);
+                        g0 = (int)readBits(data, blockOff, 12, 10);
+                        b0 = (int)readBits(data, blockOff, 22, 10);
+                        r1 = (int)readBits(data, blockOff, 34, 10);
+                        g1 = (int)readBits(data, blockOff, 44, 10);
+                        b1 = (int)readBits(data, blockOff, 54, 10);
+                        r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
+                        g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
+                        b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
+                        transformType = 1; idxBits = 4; fixupBit = 1;
+                        break;
+                    case 1:
+                        r0 = (int)readBits(data, blockOff, 1, 10);
+                        g0 = (int)readBits(data, blockOff, 11, 10);
+                        b0 = (int)readBits(data, blockOff, 21, 10);
+                        r1 = (int)readBits(data, blockOff, 33, 10);
+                        g1 = (int)readBits(data, blockOff, 43, 10);
+                        b1 = (int)readBits(data, blockOff, 53, 10);
+                        transformType = 0; idxBits = 4; fixupBit = 0;
+                        break;
+                    case 2:
+                        {
+                            long p = readBits(data, blockOff, 2, 48);
+                            int r0s = (int)(p & 0x7F);
+                            int g0s = (int)((p >> 7) & 0x3F);
+                            int b0s = (int)((p >> 13) & 0x7F);
+                            int r1s = (int)((p >> 20) & 0x7F);
+                            int g1s = (int)((p >> 27) & 0x3F);
+                            int b1s = (int)((p >> 33) & 0x7F);
+                            r0 = (r0s << 3) | (r0s >> 4);
+                            g0 = (g0s << 4) | g0s;
+                            b0 = (b0s << 3) | (b0s >> 4);
+                            r1 = (r1s << 3) | (r1s >> 4);
+                            g1 = (g1s << 4) | g1s;
+                            b1 = (b1s << 3) | (b1s >> 4);
+                            r1 = (r0 + signExtend(r1, 7) * 2) & 0x3FF;
+                            g1 = (g0 + signExtend(g1, 6) * 2) & 0x3FF;
+                            b1 = (b0 + signExtend(b1, 7) * 2) & 0x3FF;
+                            transformType = 1; idxBits = 4; fixupBit = 1;
+                        }
+                        break;
+                    case 3:
+                        r0 = (int)readBits(data, blockOff, 2, 10);
+                        g0 = (int)readBits(data, blockOff, 12, 10);
+                        b0 = (int)readBits(data, blockOff, 22, 10);
+                        r1 = (int)readBits(data, blockOff, 32, 10);
+                        g1 = (int)readBits(data, blockOff, 42, 10);
+                        b1 = (int)readBits(data, blockOff, 52, 10);
+                        r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
+                        g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
+                        b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
+                        transformType = 1; idxBits = 4; fixupBit = 0;
+                        break;
+                    case 4:
+                        r0 = (int)readBits(data, blockOff, 5, 10);
+                        g0 = (int)readBits(data, blockOff, 15, 10);
+                        b0 = (int)readBits(data, blockOff, 25, 10);
+                        r1 = (int)readBits(data, blockOff, 37, 10);
+                        g1 = (int)readBits(data, blockOff, 47, 10);
+                        b1 = (int)readBits(data, blockOff, 57, 10);
+                        r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
+                        g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
+                        b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
+                        transformType = 1; idxBits = 2; fixupBit = 0;
+                        break;
+                    case 5:
+                        r0 = (int)readBits(data, blockOff, 5, 10);
+                        g0 = (int)readBits(data, blockOff, 15, 10);
+                        b0 = (int)readBits(data, blockOff, 25, 10);
+                        r1 = (int)readBits(data, blockOff, 39, 10);
+                        g1 = (int)readBits(data, blockOff, 49, 10);
+                        b1 = (int)readBits(data, blockOff, 59, 10);
+                        r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
+                        g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
+                        b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
+                        transformType = 1; idxBits = 2; fixupBit = 0;
+                        break;
+                    case 6:
+                        r0 = (int)readBits(data, blockOff, 7, 10);
+                        g0 = (int)readBits(data, blockOff, 17, 10);
+                        b0 = (int)readBits(data, blockOff, 27, 10);
+                        r1 = (int)readBits(data, blockOff, 39, 10);
+                        g1 = (int)readBits(data, blockOff, 49, 10);
+                        b1 = (int)readBits(data, blockOff, 59, 10);
+                        r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
+                        g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
+                        b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
+                        transformType = 1; idxBits = 2; fixupBit = 0;
+                        break;
+                    case 7:
+                        r0 = (int)readBits(data, blockOff, 7, 10);
+                        g0 = (int)readBits(data, blockOff, 17, 10);
+                        b0 = (int)readBits(data, blockOff, 27, 10);
+                        r1 = (int)readBits(data, blockOff, 41, 10);
+                        g1 = (int)readBits(data, blockOff, 51, 10);
+                        b1 = (int)readBits(data, blockOff, 61, 10);
+                        r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
+                        g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
+                        b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
+                        transformType = 1; idxBits = 2; fixupBit = 0;
+                        break;
+                    case 8:
+                        r0 = (int)readBits(data, blockOff, 4, 10);
+                        g0 = (int)readBits(data, blockOff, 14, 10);
+                        b0 = (int)readBits(data, blockOff, 24, 10);
+                        r1 = (int)readBits(data, blockOff, 36, 10);
+                        g1 = (int)readBits(data, blockOff, 46, 10);
+                        b1 = (int)readBits(data, blockOff, 56, 10);
+                        r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
+                        g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
+                        b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
+                        transformType = 1; idxBits = 3; fixupBit = 0;
+                        break;
+                    case 9:
+                        r0 = (int)readBits(data, blockOff, 4, 10);
+                        g0 = (int)readBits(data, blockOff, 14, 10);
+                        b0 = (int)readBits(data, blockOff, 24, 10);
+                        r1 = (int)readBits(data, blockOff, 36, 10);
+                        g1 = (int)readBits(data, blockOff, 46, 10);
+                        b1 = (int)readBits(data, blockOff, 56, 10);
+                        r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
+                        g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
+                        b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
+                        transformType = 1; idxBits = 3; fixupBit = 0;
+                        break;
+                    case 10:
+                        r0 = (int)readBits(data, blockOff, 4, 10);
+                        g0 = (int)readBits(data, blockOff, 14, 10);
+                        b0 = (int)readBits(data, blockOff, 24, 10);
+                        r1 = (int)readBits(data, blockOff, 36, 10);
+                        g1 = (int)readBits(data, blockOff, 46, 10);
+                        b1 = (int)readBits(data, blockOff, 56, 10);
+                        r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
+                        g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
+                        b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
+                        transformType = 1; idxBits = 3; fixupBit = 0;
+                        break;
+                    case 11:
+                        r0 = (int)readBits(data, blockOff, 4, 10);
+                        g0 = (int)readBits(data, blockOff, 14, 10);
+                        b0 = (int)readBits(data, blockOff, 24, 10);
+                        r1 = (int)readBits(data, blockOff, 38, 10);
+                        g1 = (int)readBits(data, blockOff, 48, 10);
+                        b1 = (int)readBits(data, blockOff, 58, 10);
+                        r1 = (r0 + signExtend(r1, 10)) & 0x3FF;
+                        g1 = (g0 + signExtend(g1, 10)) & 0x3FF;
+                        b1 = (b0 + signExtend(b1, 10)) & 0x3FF;
+                        transformType = 1; idxBits = 3; fixupBit = 0;
+                        break;
+                    case 12:
+                        {
+                            long p = readBits(data, blockOff, 4, 48);
+                            r0 = (int)(p & 0x7F);
+                            g0 = (int)((p >> 7) & 0x3F);
+                            b0 = (int)((p >> 13) & 0x7F);
+                            r1 = (int)((p >> 20) & 0x7F);
+                            g1 = (int)((p >> 27) & 0x3F);
+                            b1 = (int)((p >> 33) & 0x7F);
+                            r0 = (r0 << 3) | (r0 >> 4);
+                            g0 = (g0 << 4) | g0;
+                            b0 = (b0 << 3) | (b0 >> 4);
+                            r1 = (r1 << 3) | (r1 >> 4);
+                            g1 = (g1 << 4) | g1;
+                            b1 = (b1 << 3) | (b1 >> 4);
+                            r1 = (r0 + signExtend(r1, 7)) & 0x3FF;
+                            g1 = (g0 + signExtend(g1, 6)) & 0x3FF;
+                            b1 = (b0 + signExtend(b1, 7)) & 0x3FF;
+                            transformType = 1; idxBits = 3; fixupBit = 0;
+                        }
+                        break;
+                    case 13:
+                        {
+                            long p = readBits(data, blockOff, 4, 48);
+                            r0 = (int)(p & 0x7F);
+                            g0 = (int)((p >> 7) & 0x3F);
+                            b0 = (int)((p >> 13) & 0x7F);
+                            r1 = (int)((p >> 20) & 0x7F);
+                            g1 = (int)((p >> 27) & 0x3F);
+                            b1 = (int)((p >> 33) & 0x7F);
+                            r0 = (r0 << 3) | (r0 >> 4);
+                            g0 = (g0 << 4) | g0;
+                            b0 = (b0 << 3) | (b0 >> 4);
+                            r1 = (r1 << 3) | (r1 >> 4);
+                            g1 = (g1 << 4) | g1;
+                            b1 = (b1 << 3) | (b1 >> 4);
+                            r1 = (r0 + signExtend(r1, 7)) & 0x3FF;
+                            g1 = (g0 + signExtend(g1, 6)) & 0x3FF;
+                            b1 = (b0 + signExtend(b1, 7)) & 0x3FF;
+                            transformType = 1; idxBits = 3; fixupBit = 0;
+                        }
+                        break;
+                }
+
+                int numIdx = 16;
+                int maxWeight = (1 << idxBits) - 1;
+                long indexData = 0;
+                int idxBitOff = mode <= 3 ? (transformType == 0 ? 65 : 66) : mode * 8 + 16;
+                int idxNumBits = numIdx * idxBits;
+                indexData = readBits(data, blockOff, idxBitOff, idxNumBits);
 
                 for (int py = 0; py < 4; py++) {
                     for (int px = 0; px < 4; px++) {
-                        int idx = (int)((indexData >> (bitsPerIdx * (py * 4 + px))) & 15);
-                        // BC6H uses a fixed 16-entry weight table
-                        int weight = weights[idx];
-                        int r = (r0 * (16 - weight) + r1 * weight) / 16;
-                        int g = (g0 * (16 - weight) + g1 * weight) / 16;
-                        int b = (b0 * (16 - weight) + b1 * weight) / 16;
+                        int pixelIdx = py * 4 + px;
+                        int idxShift = pixelIdx * idxBits;
+                        int idx = (int)((indexData >> idxShift) & maxWeight);
+                        int weight = idx;
+                        int r = (r0 * (maxWeight - weight) + r1 * weight) / maxWeight;
+                        int g = (g0 * (maxWeight - weight) + g1 * weight) / maxWeight;
+                        int b = (b0 * (maxWeight - weight) + b1 * weight) / maxWeight;
                         int pxAbs = bx * 4 + px, pyAbs = by * 4 + py;
                         if (pxAbs < width && pyAbs < height) {
                             int ri = clampByte(r >> 2), gi = clampByte(g >> 2), bi = clampByte(b >> 2);
