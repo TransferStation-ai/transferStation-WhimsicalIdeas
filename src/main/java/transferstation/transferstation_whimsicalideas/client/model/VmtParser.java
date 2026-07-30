@@ -200,6 +200,16 @@ public class VmtParser {
             return parseColor("$color");
         }
 
+        public boolean isColorVertex() {
+            String val = parameters.get("$color");
+            return val != null && val.toLowerCase().contains("vertex");
+        }
+
+        public boolean isColor2Vertex() {
+            String val = parameters.get("$color2");
+            return val != null && val.toLowerCase().contains("vertex");
+        }
+
         private boolean parseBool(String key) {
             String val = parameters.get(key);
             return val != null && parseBoolValue(val);
@@ -437,6 +447,22 @@ public class VmtParser {
          */
         public float[] getBaseTextureTransform() {
             return parseTextureTransform("$basetexturetransform");
+        }
+
+        public float[] getBaseTextureTransformMatrix() {
+            String val = parameters.get("$basetexturetransform");
+            if (val == null || val.isEmpty()) return null;
+            float[] parsed = parseTextureTransform("$basetexturetransform");
+            if (parsed == null) return null;
+            float scaleX = parsed[0], scaleY = parsed[1];
+            float rotDeg = parsed[2], transX = parsed[3], transY = parsed[4];
+            double rad = Math.toRadians(rotDeg);
+            double cos = Math.cos(rad);
+            double sin = Math.sin(rad);
+            return new float[]{
+                (float)(scaleX * cos), (float)(scaleX * sin), transX,
+                (float)(-scaleY * sin), (float)(scaleY * cos), transY
+            };
         }
 
         /**
