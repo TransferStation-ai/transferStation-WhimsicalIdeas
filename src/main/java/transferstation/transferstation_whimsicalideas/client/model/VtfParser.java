@@ -44,6 +44,8 @@ public class VtfParser {
     private static final int FORMAT_RGB161616F = 28;
 
     // Extended format support
+    private static final int FORMAT_ATI1N = 17;
+    private static final int FORMAT_ATI2N = 18;
     private static final int FORMAT_BC6H = 29;
     private static final int FORMAT_BC7 = 30;
 
@@ -241,6 +243,7 @@ public class VtfParser {
     private static boolean isBlockCompressed(int format) {
         return format == FORMAT_DXT1 || format == FORMAT_DXT3 || format == FORMAT_DXT5
             || format == FORMAT_DXT1_ONEBITALPHA
+            || format == FORMAT_ATI1N || format == FORMAT_ATI2N
             || format == FORMAT_BC6H || format == FORMAT_BC7;
     }
 
@@ -248,9 +251,11 @@ public class VtfParser {
         switch (format) {
             case FORMAT_DXT1:
             case FORMAT_DXT1_ONEBITALPHA:
+            case FORMAT_ATI1N:
                 return 8;
             case FORMAT_DXT3:
             case FORMAT_DXT5:
+            case FORMAT_ATI2N:
             case FORMAT_BC6H:
             case FORMAT_BC7:
                 return 16;
@@ -393,6 +398,12 @@ public class VtfParser {
                 break;
             case FORMAT_RGB161616F:
                 decodeRGB161616F(data, width, height, pixels);
+                break;
+            case FORMAT_ATI1N:
+                decodeATI1N(data, width, height, pixels);
+                break;
+            case FORMAT_ATI2N:
+                decodeATI2N(data, width, height, pixels);
                 break;
             case FORMAT_BC6H:
                 decodeBC6H(data, width, height, pixels);
@@ -680,6 +691,102 @@ public class VtfParser {
             int palIdx = data[idx] & 0xFF;
             pixels[i] = paletteColors[palIdx % 256];
             idx++;
+        }
+    }
+
+    private static void decodeATI1N(byte[] data, int width, int height, int[] pixels) {
+        int blockW = (width + 3) / 4;
+        int blockH = (height + 3) / 4;
+        for (int by = 0; by < blockH; by++) {
+            for (int bx = 0; bx < blockW; bx++) {
+                int blockOff = (by * blockW + bx) * 8;
+                if (blockOff + 8 > data.length) continue;
+                int r0 = data[blockOff] & 0xFF;
+                int r1 = data[blockOff + 1] & 0xFF;
+                long bits = 0;
+                for (int b = 2; b < 8; b++) {
+                    bits |= (long)(data[blockOff + b] & 0xFF) << ((b - 2) * 8);
+                }
+                int[] reds = new int[8];
+                reds[0] = r0;
+                reds[1] = r1;
+                if (r0 > r1) {
+                    for (int i = 2; i < 8; i++) {
+                        reds[i] = ((8 - i) * r0 + (i - 1) * r1) / 7;
+                    }
+                } else {
+                    for (int i = 2; i < 6; i++) {
+                        reds[i] = ((6 - i) * r0 + (i - 1) * r1) / 5;
+                    }
+                    reds[6] = 0;
+                    reds[7] = 255;
+                }
+                for (int py = 0; py < 4; py++) {
+                    for (int px = 0; px < 4; px++) {
+                        int idx = (int)((bits >> (3 * (py * 4 + px))) & 7);
+                        int v = reds[idx];
+                        int pxAbs = bx * 4 + px, pyAbs = by * 4 + py;
+                        if (pxAbs < width && pyAbs < height) {
+                            pixels[pyAbs * width + pxAbs] = 0xFF000000 | (v << 16) | (v << 8) | v;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static void decodeATI2N(byte[] data, int width, int height, int[] pixels) {
+        int blockW = (width + 3) / 4;
+        int blockH = (height + 3) / 4;
+        for (int by = 0; by < blockH; by++) {
+            for (int bx = 0; bx < blockW; bx++) {
+                int blockOff = (by * blockW + bx) * 16;
+                if (blockOff + 16 > data.length) continue;
+                for (int ch = 0; ch < 2; ch++) {
+                    int chOff = blockOff + ch * 8;
+                    int v0 = data[chOff] & 0xFF;
+                    int v1 = data[chOff + 1] & 0xFF;
+                    long bits = 0;
+                    for (int b = 2; b < 8; b++) {
+                        bits |= (long)(data[chOff + b] & 0xFF) << ((b - 2) * 8);
+                    }
+                    int[] vals = new int[8];
+                    vals[0] = v0;
+                    vals[1] = v1;
+                    if (v0 > v1) {
+                        for (int i = 2; i < 8; i++) {
+                            vals[i] = ((8 - i) * v0 + (i - 1) * v1) / 7;
+                        }
+                    } else {
+                        for (int i = 2; i < 6; i++) {
+                            vals[i] = ((6 - i) * v0 + (i - 1) * v1) / 5;
+                        }
+                        vals[6] = 0;
+                        vals[7] = 255;
+                    }
+                    for (int py = 0; py < 4; py++) {
+                        for (int px = 0; px < 4; px++) {
+                            int idx = (int)((bits >> (3 * (py * 4 + px))) & 7);
+                            int pxAbs = bx * 4 + px, pyAbs = by * 4 + py;
+                            if (pxAbs < width && pyAbs < height) {
+                                int pixelIdx = pyAbs * width + pxAbs;
+                                if (ch == 0) {
+                                    int r = vals[idx];
+                                    pixels[pixelIdx] = 0xFF000000 | (r << 16);
+                                } else {
+                                    int g = vals[idx];
+                                    int r = (pixels[pixelIdx] >> 16) & 0xFF;
+                                    float rn = r / 255.0f * 2.0f - 1.0f;
+                                    float gn = g / 255.0f * 2.0f - 1.0f;
+                                    float zn = (float)Math.sqrt(Math.max(0, 1.0f - rn*rn - gn*gn));
+                                    int b = (int)((zn * 0.5f + 0.5f) * 255.0f);
+                                    pixels[pixelIdx] = 0xFF000000 | (r << 16) | (g << 8) | clampByte(b);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
