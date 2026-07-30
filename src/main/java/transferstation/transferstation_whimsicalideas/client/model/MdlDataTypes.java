@@ -242,6 +242,7 @@ public class MdlDataTypes {
         public int baseptr;
         public int sznameindex;
         public String label;
+        public int szactivitynameindex;
         public int activity;
         public int actweight;
         public int[] events;

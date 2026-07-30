@@ -804,8 +804,16 @@ public class MdlParser {
             } else {
                 seq.label = "";
             }
-            seq.activity = buf.getInt();
-            seq.actweight = buf.getInt();
+            if (seqdescSize >= SEQDESC_SIZE_V49) {
+                seq.szactivitynameindex = buf.getInt();
+                int activityFlags = buf.getInt();
+                seq.activity = buf.getInt();
+                seq.actweight = buf.getInt();
+            } else {
+                seq.szactivitynameindex = 0;
+                seq.activity = buf.getInt();
+                seq.actweight = buf.getInt();
+            }
             seq.events = new int[]{buf.getInt(), buf.getInt()};
             seq.numevents = buf.getInt();
             seq.eventindex = buf.getInt();
