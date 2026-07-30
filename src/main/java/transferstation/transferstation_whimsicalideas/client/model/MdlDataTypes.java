@@ -367,6 +367,13 @@ public class MdlDataTypes {
         public float[] flexibleOffsets;
     }
 
+    public static class BoneFlexDriver {
+        public int boneIndex;
+        public int flexControllerIndex;
+        public float min;
+        public float max;
+    }
+
     public static class SrcBoneTransform {
         public float[] pos;
         public float[] quat;
