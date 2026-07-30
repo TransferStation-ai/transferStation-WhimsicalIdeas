@@ -163,11 +163,14 @@ public class VtfParser {
             buf.position(buf.position() + skipSize);
         }
 
+        boolean isCubemap = (flags & 0x20000000) != 0;
+
         VtfImageData result = new VtfImageData();
         result.width = width;
         result.height = height;
         result.format = imageFormat;
         result.frameCount = frames;
+        result.isCubemap = isCubemap;
 
         int dataSize = computeImageDataSize(width, height, imageFormat);
 
@@ -201,6 +204,25 @@ public class VtfParser {
         BufferedImage image = decodeToImage(rawData, width, height, imageFormat, p8Palette);
         java.util.List<BufferedImage> framesList = new java.util.ArrayList<>();
         framesList.add(image);
+
+        // Read cubemap faces (5 more after the first one at mip 0)
+        if (isCubemap) {
+            result.cubemapFaces = new BufferedImage[6];
+            result.cubemapFaces[0] = image;
+            int faceDataSize = dataSize;
+            for (int face = 1; face < 6; face++) {
+                if (buf.remaining() < faceDataSize) break;
+                byte[] faceData = new byte[faceDataSize];
+                buf.get(faceData);
+                if (faceData.length > 2 && isZlibHeader(faceData[0], faceData[1])) {
+                    byte[] decompressed = decompressZlib(faceData);
+                    if (decompressed != null && decompressed.length >= faceData.length) {
+                        faceData = decompressed;
+                    }
+                }
+                result.cubemapFaces[face] = decodeToImage(faceData, width, height, imageFormat, p8Palette);
+            }
+        }
 
         // Read additional frames for multi-frame VTF
         if (frames > 1) {
@@ -1436,6 +1458,8 @@ public class VtfParser {
         public BufferedImage image;
         public int frameCount = 1;
         public List<BufferedImage> frames;
+        public boolean isCubemap;
+        public BufferedImage[] cubemapFaces;
 
         public BufferedImage getFrame(int index) {
             if (frames != null && index >= 0 && index < frames.size()) {
