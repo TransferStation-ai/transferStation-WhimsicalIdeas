@@ -552,50 +552,6 @@ public class AnimationProcessor {
     }
 
     /**
-     * Apply animation delta on top of bind pose.
-     * Animation data from VMD is typically relative to bind pose.
-     */
-    private static void applyAnimationDelta(LivingEntity entity, AnimationData anim, 
-                                             SourceModelData modelData, float[][] localTransforms, float partialTicks) {
-        float elapsedSec = (entity.tickCount + partialTicks) / 20.0f;
-        int currentFrame = anim.frameCount > 0 ? (int) (elapsedSec * anim.fps) % anim.frameCount : 0;
-
-        for (AnimationData.AnimationTrack track : anim.tracks) {
-            // Map VMD bone name to MDL bone name
-            String mdlBoneName = mapVmdBoneNameToMdl(track.boneName, modelData);
-            int boneIndex = findBoneIndex(modelData, mdlBoneName);
-            if (boneIndex < 0) continue;
-
-            AnimationData.KeyFrame kf = findKeyFrame(track.keyFrames, currentFrame);
-            if (kf == null) continue;
-
-            // Create animation delta matrix
-            org.joml.Matrix4f deltaMat = new org.joml.Matrix4f();
-            deltaMat.identity();
-            if (kf.translation != null) {
-                deltaMat.translate(kf.translation[0], kf.translation[1], kf.translation[2]);
-            }
-            if (kf.rotation != null) {
-                float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, kf.rotation[3]))));
-                float s = (float) Math.sqrt(1.0 - kf.rotation[3] * kf.rotation[3]);
-                if (s > 0.001f) {
-                    float invS = 1.0f / s;
-                    deltaMat.rotate(angle, kf.rotation[0] * invS, kf.rotation[1] * invS, kf.rotation[2] * invS);
-                }
-            }
-            if (kf.scale != null) {
-                deltaMat.scale(kf.scale[0], kf.scale[1], kf.scale[2]);
-            }
-
-            // Multiply bind pose * animation delta
-            org.joml.Matrix4f bindPose = new org.joml.Matrix4f();
-            bindPose.set(localTransforms[boneIndex]);
-            bindPose.mul(deltaMat);
-            bindPose.get(localTransforms[boneIndex]);
-        }
-    }
-
-    /**
      * Map VMD bone names (e.g., "Bip01 Head") to MDL bone names (e.g., "ValveBiped.Bip01_Head").
      * Uses fuzzy matching with common Source Engine naming patterns.
      */
@@ -652,20 +608,6 @@ public class AnimationProcessor {
             }
         }
         return -1;
-    }
-
-    private static AnimationData.KeyFrame findKeyFrame(List<AnimationData.KeyFrame> keyFrames, int frame) {
-        if (keyFrames == null || keyFrames.isEmpty()) return null;
-        AnimationData.KeyFrame closest = null;
-        int minDiff = Integer.MAX_VALUE;
-        for (AnimationData.KeyFrame kf : keyFrames) {
-            int diff = Math.abs(kf.frame - frame);
-            if (diff < minDiff) {
-                minDiff = diff;
-                closest = kf;
-            }
-        }
-        return closest;
     }
 
     public static void setCurrentMorph(String morphName) {
