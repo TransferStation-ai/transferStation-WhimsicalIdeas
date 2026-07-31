@@ -148,8 +148,12 @@ public class VtfParser {
             }
         }
 
-        // VTF stores mipmaps from smallest (mipmapCount-1) to largest (mipmap 0).
-        // For multi-frame VTFs, each mipmap level stores all frames.
+        boolean isCubemap = (flags & 0x20000000) != 0;
+        int faceCount = isCubemap ? 6 : 1;
+
+        // VTF stores data mip-major: mipmaps from smallest (mipmapCount-1) to
+        // largest (mipmap 0); within each mipmap level, all frames are stored
+        // contiguously (first to last), and within each frame, all faces.
         // Skip all smaller mipmaps to reach the full-resolution image data.
         int skipSize = 0;
         for (int i = mipmapCount - 1; i > 0; i--) {
@@ -157,13 +161,11 @@ public class VtfParser {
             int mipHeight = Math.max(1, height >> i);
             int mipSize = computeImageDataSize(mipWidth, mipHeight, imageFormat);
             if (mipSize <= 0) break;
-            skipSize += mipSize * frames;
+            skipSize += mipSize * frames * faceCount;
         }
         if (skipSize > 0 && buf.position() + skipSize <= buf.limit()) {
             buf.position(buf.position() + skipSize);
         }
-
-        boolean isCubemap = (flags & 0x20000000) != 0;
 
         VtfImageData result = new VtfImageData();
         result.width = width;
@@ -225,34 +227,31 @@ public class VtfParser {
         }
 
         // Read additional frames for multi-frame VTF
+        // VTF stores data mip-major: for each mipmap level (smallest to
+        // largest), all frames are stored contiguously (first to last), and
+        // within each frame, all faces. After skipping the smaller mip levels
+        // above, the full-res level contains all frames back-to-back, so
+        // frame f's data directly follows frame f-1's.
         if (frames > 1) {
-            int frameSize = dataSize;
-            if (imageFormat == FORMAT_P8) frameSize = dataSize; // palette already read
             for (int f = 1; f < frames; f++) {
-                // Each frame stores its own mip pyramid (mipmapCount-1 .. 1) before
-                // the next frame's full-res block. Skip that frame's mip chain so
-                // we land on the correct full-res data for frame f.
-                int frameMipSkip = 0;
-                for (int i = mipmapCount - 1; i > 0; i--) {
-                    int mipWidth = Math.max(1, width >> i);
-                    int mipHeight = Math.max(1, height >> i);
-                    int mipSize = computeImageDataSize(mipWidth, mipHeight, imageFormat);
-                    if (mipSize <= 0) break;
-                    frameMipSkip += mipSize;
-                }
-                if (frameMipSkip > 0 && buf.position() + frameMipSkip <= buf.limit()) {
-                    buf.position(buf.position() + frameMipSkip);
-                }
-                if (buf.remaining() < frameSize) break;
-                byte[] frameData = new byte[dataSize];
-                buf.get(frameData);
-                if (frameData.length > 1 && frameData[0] == 0x78) {
-                    byte[] decompressed = decompressZlib(frameData);
-                    if (decompressed != null && decompressed.length > 0) {
-                        frameData = decompressed;
+                BufferedImage frame = null;
+                for (int face = 0; face < faceCount; face++) {
+                    if (buf.remaining() < dataSize) {
+                        frame = null;
+                        break;
+                    }
+                    byte[] frameData = new byte[dataSize];
+                    buf.get(frameData);
+                    if (frameData.length > 2 && isZlibHeader(frameData[0], frameData[1])) {
+                        byte[] decompressed = decompressZlib(frameData);
+                        if (decompressed != null && decompressed.length >= frameData.length) {
+                            frameData = decompressed;
+                        }
+                    }
+                    if (face == 0) {
+                        frame = decodeToImage(frameData, width, height, imageFormat, p8Palette);
                     }
                 }
-                BufferedImage frame = decodeToImage(frameData, width, height, imageFormat, p8Palette);
                 if (frame != null) framesList.add(frame);
             }
         }
