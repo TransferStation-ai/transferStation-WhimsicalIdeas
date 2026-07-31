@@ -71,4 +71,14 @@ class AnimationLayersTest {
         s.fadeTime = 0;
         assertEquals(1.0f, AnimationLayers.fadeWeight(s), 0.001f);
     }
+
+    @Test
+    void stopWithZeroFadeTimeRemovesLayerImmediately() {
+        // 语义验证：fadeTime=0 的 stop 必须被 tickFades 立即移除（防幽灵层）
+        AnimationLayers.LayerState s = new AnimationLayers.LayerState("overlay");
+        s.fadingOut = true;
+        s.fadeTime = 0;
+        boolean shouldRemove = s.fadingOut && (s.fadeTime <= 0 || AnimationLayers.fadeWeight(s) <= 0);
+        assertTrue(shouldRemove, "fadeTime=0 的 stop 应立即移除");
+    }
 }

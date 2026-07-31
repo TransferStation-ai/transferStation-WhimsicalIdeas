@@ -134,7 +134,7 @@ public class AnimationLayers {
                 s.fadeElapsed += Math.max(0, currentElapsedSec - s.lastElapsedSec);
             }
             s.lastElapsedSec = currentElapsedSec;
-            return s.fadingOut && fadeWeight(s) <= 0;
+            return s.fadingOut && (s.fadeTime <= 0 || fadeWeight(s) <= 0);
         });
     }
 
