@@ -201,6 +201,10 @@ dependencies {
 
 }
 
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
+}
+
 // ===================== Native C++ Build via CMake =====================
 ext.nativeSrcDir = file('src/main/native')
 ext.nativeBuildDir = file("${buildDir}/native")
