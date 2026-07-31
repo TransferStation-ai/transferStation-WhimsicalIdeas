@@ -206,7 +206,7 @@ public ShaderType shaderType = ShaderType.UNKNOWN;
 material.shaderType = ShaderType.fromName(material.shader);
 ```
 
-- [ ] **步骤 2：Commit**
+- [x] **步骤 2：Commit**
 
 ```bash
 git add src/main/java/.../VmtParser.java
@@ -374,7 +374,7 @@ private VmtMaterial resolve(VmtMaterial vmt, int maxDepth, java.util.Set<String>
 }
 ```
 
-- [ ] **步骤 2：Commit**
+- [x] **步骤 2：Commit**
 
 ```bash
 git add src/main/java/.../VmtParser.java
@@ -616,7 +616,7 @@ git commit -m "feat(vtf): add cubemap face detection and 6-face reading"
 **文件：**
 - 修改：`VtfParser.java:689-801`
 
-- [ ] **步骤 1：补充 BC6H mode 4-13 支持**
+- [x] **步骤 1：补充 BC6H mode 4-13 支持**
 
 当前只支持 mode 0-3（覆盖 ~95% 的实际使用量）。补充 mode 4-13（对应更精确的浮点和 alpha 变体）。不需要实现 mode 14（极稀有）。
 
@@ -657,7 +657,7 @@ if (mode < 0) {
 - Mode 8-11: 类似 mode 0 的 10bit 端点
 - Mode 12-13: 7bit 端点
 
-- [ ] **步骤 2：Commit**
+- [x] **步骤 2：Commit**
 
 ```bash
 git add src/main/java/.../VtfParser.java
@@ -669,7 +669,7 @@ git commit -m "feat(vtf): extend BC6H decoder to modes 4-13"
 **文件：**
 - 修改：`VtfParser.java:806-1047`
 
-- [ ] **步骤 1：替换当前分区表子集为完整 64-entry 数组**
+- [x] **步骤 1：替换当前分区表子集为完整 64-entry 数组**
 
 ```java
 // BC7 2-subset partition table (64 partitions × 16 entries each)
@@ -687,7 +687,7 @@ private static final int[] BC7_PARTITION_TABLE_2 = {
 
 实现时需从 BC7 格式规范（Microsoft DirectXTex 参考实现）复制完整的 64-entry partition table。2-subset 表 64×16 entries、3-subset 表 64×16 entries — 合计约 2048 字节的 int 数组。使用 `private static final int[]` 硬编码。
 
-- [ ] **步骤 2：Commit**
+- [x] **步骤 2：Commit**
 
 ```bash
 git add src/main/java/.../VtfParser.java
@@ -719,7 +719,7 @@ for (int f = 1; f < frames; f++) {
 
 当前读取多帧的逻辑有潜在问题：mipmap 的 skipping 只针对帧 0 之前执行，但没有正确跳过帧 0 之后其他帧的所有 mip 级别。
 
-- [ ] **步骤 2：Commit**
+- [x] **步骤 2：Commit**
 
 ```bash
 git add src/main/java/.../VtfParser.java
