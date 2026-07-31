@@ -456,12 +456,33 @@ public class VmtParser {
             if (parsed == null) return null;
             float scaleX = parsed[0], scaleY = parsed[1];
             float rotDeg = parsed[2], transX = parsed[3], transY = parsed[4];
+            // Extract optional center pivot (rotation/scale happen around it)
+            float centerX = 0f, centerY = 0f;
+            try {
+                int ci = val.toLowerCase().indexOf("center");
+                if (ci >= 0) {
+                    String after = val.substring(ci + 6).trim();
+                    String[] nums = extractBracketedNumbers(after);
+                    if (nums != null && nums.length >= 2) {
+                        centerX = Float.parseFloat(nums[0]);
+                        centerY = Float.parseFloat(nums[1]);
+                    } else {
+                        String[] parts = after.split("\\s+");
+                        centerX = Float.parseFloat(parts[0]);
+                        centerY = parts.length > 1 ? Float.parseFloat(parts[1]) : 0;
+                    }
+                }
+            } catch (Exception ignored) {
+                // Fall back to origin-center transform
+            }
             double rad = Math.toRadians(rotDeg);
             double cos = Math.cos(rad);
             double sin = Math.sin(rad);
             return new float[]{
-                (float)(scaleX * cos), (float)(scaleX * sin), transX,
-                (float)(-scaleY * sin), (float)(scaleY * cos), transY
+                (float)(scaleX * cos), (float)(scaleX * sin),
+                (float)(transX + centerX - scaleX * (centerX * cos + centerY * sin)),
+                (float)(-scaleY * sin), (float)(scaleY * cos),
+                (float)(transY + centerY - scaleY * (-centerX * sin + centerY * cos))
             };
         }
 
