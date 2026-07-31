@@ -78,7 +78,17 @@ class AnimationLayersTest {
         AnimationLayers.LayerState s = new AnimationLayers.LayerState("overlay");
         s.fadingOut = true;
         s.fadeTime = 0;
-        boolean shouldRemove = s.fadingOut && (s.fadeTime <= 0 || AnimationLayers.fadeWeight(s) <= 0);
-        assertTrue(shouldRemove, "fadeTime=0 的 stop 应立即移除");
+        assertTrue(AnimationLayers.shouldRemove(s), "fadeTime=0 的 stop 应立即移除");
+    }
+
+    @Test
+    void stopWithPositiveFadeTimeKeepsLayerUntilFaded() {
+        AnimationLayers.LayerState s = new AnimationLayers.LayerState("overlay");
+        s.fadingOut = true;
+        s.fadeTime = 1.0f;
+        s.fadeElapsed = 0.25f;
+        assertFalse(AnimationLayers.shouldRemove(s), "淡出未完成不应移除");
+        s.fadeElapsed = 1.5f;
+        assertTrue(AnimationLayers.shouldRemove(s), "淡出完成后应移除");
     }
 }

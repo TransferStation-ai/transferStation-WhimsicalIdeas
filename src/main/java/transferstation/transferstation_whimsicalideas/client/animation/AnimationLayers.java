@@ -134,8 +134,13 @@ public class AnimationLayers {
                 s.fadeElapsed += Math.max(0, currentElapsedSec - s.lastElapsedSec);
             }
             s.lastElapsedSec = currentElapsedSec;
-            return s.fadingOut && (s.fadeTime <= 0 || fadeWeight(s) <= 0);
+            return shouldRemove(s);
         });
+    }
+
+    /** tickFades 的移除判定：淡出完成（或 fadeTime<=0 的瞬停）即移除。 */
+    static boolean shouldRemove(LayerState s) {
+        return s.fadingOut && (s.fadeTime <= 0 || fadeWeight(s) <= 0);
     }
 
     /** 该层是否屏蔽此骨骼（无层状态 = 层不存在 = 不参与混合）。 */
