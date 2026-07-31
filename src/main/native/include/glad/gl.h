@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #ifdef __cplusplus
+#include "gl_platform.h"
 extern "C" {
 #endif
 
@@ -35,19 +36,19 @@ typedef char GLchar;
 #define GL_LINK_STATUS 0x8B82
 
 /* GL function pointer declarations */
-extern uint32_t (__stdcall* glad_glCreateShader)(GLenum type);
-extern void (__stdcall* glad_glShaderSource)(uint32_t shader, GLsizei count, const GLchar** string, const GLint* length);
-extern void (__stdcall* glad_glCompileShader)(uint32_t shader);
-extern void (__stdcall* glad_glGetShaderiv)(uint32_t shader, GLenum pname, GLint* params);
-extern void (__stdcall* glad_glGetShaderInfoLog)(uint32_t shader, GLsizei bufSize, GLsizei* length, GLchar* infoLog);
-extern void (__stdcall* glad_glDeleteShader)(uint32_t shader);
-extern uint32_t (__stdcall* glad_glCreateProgram)(void);
-extern void (__stdcall* glad_glAttachShader)(uint32_t program, uint32_t shader);
-extern void (__stdcall* glad_glLinkProgram)(uint32_t program);
-extern void (__stdcall* glad_glGetProgramiv)(uint32_t program, GLenum pname, GLint* params);
-extern void (__stdcall* glad_glGetProgramInfoLog)(uint32_t program, GLsizei bufSize, GLsizei* length, GLchar* infoLog);
-extern void (__stdcall* glad_glDeleteProgram)(uint32_t program);
-extern GLint (__stdcall* glad_glGetUniformLocation)(uint32_t program, const GLchar* name);
+extern uint32_t (GL_API* glad_glCreateShader)(GLenum type);
+extern void (GL_API* glad_glShaderSource)(uint32_t shader, GLsizei count, const GLchar** string, const GLint* length);
+extern void (GL_API* glad_glCompileShader)(uint32_t shader);
+extern void (GL_API* glad_glGetShaderiv)(uint32_t shader, GLenum pname, GLint* params);
+extern void (GL_API* glad_glGetShaderInfoLog)(uint32_t shader, GLsizei bufSize, GLsizei* length, GLchar* infoLog);
+extern void (GL_API* glad_glDeleteShader)(uint32_t shader);
+extern uint32_t (GL_API* glad_glCreateProgram)(void);
+extern void (GL_API* glad_glAttachShader)(uint32_t program, uint32_t shader);
+extern void (GL_API* glad_glLinkProgram)(uint32_t program);
+extern void (GL_API* glad_glGetProgramiv)(uint32_t program, GLenum pname, GLint* params);
+extern void (GL_API* glad_glGetProgramInfoLog)(uint32_t program, GLsizei bufSize, GLsizei* length, GLchar* infoLog);
+extern void (GL_API* glad_glDeleteProgram)(uint32_t program);
+extern GLint (GL_API* glad_glGetUniformLocation)(uint32_t program, const GLchar* name);
 
 /* Load all GL function pointers */
 int gladLoadGL(void);

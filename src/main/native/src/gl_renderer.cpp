@@ -1,3 +1,4 @@
+#include "gl_platform.h"
 #include "gl_renderer.h"
 #include <iostream>
 #include <cstring>
@@ -6,54 +7,48 @@
 #include <unordered_map>
 #include <utility>
 
-#define WIN32_LEAN_AND_MEAN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-
 // OpenGL function pointer types
-typedef void (APIENTRY* GL_GENVERTEXARRAYS)(int, uint32_t*);
-typedef void (APIENTRY* GL_DELETEVERTEXARRAYS)(int, const uint32_t*);
-typedef void (APIENTRY* GL_BINDVERTEXARRAY)(uint32_t);
-typedef void (APIENTRY* GL_GENBUFFERS)(int, uint32_t*);
-typedef void (APIENTRY* GL_DELETEBUFFERS)(int, const uint32_t*);
-typedef void (APIENTRY* GL_BINDBUFFER)(uint32_t, uint32_t);
-typedef void (APIENTRY* GL_BUFFERDATA)(uint32_t, intptr_t, const void*, uint32_t);
-typedef void (APIENTRY* GL_ENABLEVERTEXATTRIBARRAY)(uint32_t);
-typedef void (APIENTRY* GL_VERTEXATTRIBPOINTER)(uint32_t, int, uint32_t, int, int, const void*);
-typedef uint32_t (APIENTRY* GL_CREATESHADER)(uint32_t);
-typedef void (APIENTRY* GL_SHADERSOURCE)(uint32_t, int, const char**, const int*);
-typedef void (APIENTRY* GL_COMPILESHADER)(uint32_t);
-typedef void (APIENTRY* GL_GETSHADERIV)(uint32_t, uint32_t, int*);
-typedef void (APIENTRY* GL_GETSHADERINFOLOG)(uint32_t, int, int*, char*);
-typedef uint32_t (APIENTRY* GL_CREATEPROGRAM)(void);
-typedef void (APIENTRY* GL_ATTACHSHADER)(uint32_t, uint32_t);
-typedef void (APIENTRY* GL_LINKPROGRAM)(uint32_t);
-typedef void (APIENTRY* GL_GETPROGRAMIV)(uint32_t, uint32_t, int*);
-typedef void (APIENTRY* GL_GETPROGRAMINFOLOG)(uint32_t, int, int*, char*);
-typedef void (APIENTRY* GL_DELETESHADER)(uint32_t);
-typedef void (APIENTRY* GL_USEPROGRAM)(uint32_t);
-typedef void (APIENTRY* GL_UNIFORMMATRIX4FV)(int, int, int, const float*);
-typedef int (APIENTRY* GL_GETUNIFORMLOCATION)(uint32_t, const char*);
-typedef void (APIENTRY* GL_UNIFORM1I)(int, int);
-typedef void (APIENTRY* GL_UNIFORM1F)(int, float);
-typedef void (APIENTRY* GL_UNIFORM3FV)(int, int, const float*);
-typedef void (APIENTRY* GL_UNIFORM4FV)(int, int, const float*);
-typedef void (APIENTRY* GL_VIEWPORT)(int, int, int, int);
-typedef void (APIENTRY* GL_ENABLE)(uint32_t);
-typedef void (APIENTRY* GL_DISABLE)(uint32_t);
-typedef void (APIENTRY* GL_DEPTHFUNC)(uint32_t);
-typedef void (APIENTRY* GL_BLENDFUNC)(uint32_t, uint32_t);
-typedef void (APIENTRY* GL_DRAWELEMENTS)(uint32_t, int, uint32_t, const void*);
-typedef void (APIENTRY* GL_ACTIVETEXTURE)(uint32_t);
-typedef void (APIENTRY* GL_BINDTEXTURE)(uint32_t, uint32_t);
-typedef void (APIENTRY* GL_GENTEXTURES)(int, uint32_t*);
-typedef void (APIENTRY* GL_DELETETEXTURES)(int, const uint32_t*);
-typedef void (APIENTRY* GL_TEXIMAGE2D)(uint32_t, int, int, int, int, int, uint32_t, uint32_t, const void*);
-typedef void (APIENTRY* GL_TEXPARAMETERI)(uint32_t, uint32_t, int);
-typedef void (APIENTRY* GL_GENERATEMIPMAP)(uint32_t);
-typedef void (APIENTRY* GL_GETINTEGERV)(uint32_t, int*);
+typedef void (GL_API* GL_GENVERTEXARRAYS)(int, uint32_t*);
+typedef void (GL_API* GL_DELETEVERTEXARRAYS)(int, const uint32_t*);
+typedef void (GL_API* GL_BINDVERTEXARRAY)(uint32_t);
+typedef void (GL_API* GL_GENBUFFERS)(int, uint32_t*);
+typedef void (GL_API* GL_DELETEBUFFERS)(int, const uint32_t*);
+typedef void (GL_API* GL_BINDBUFFER)(uint32_t, uint32_t);
+typedef void (GL_API* GL_BUFFERDATA)(uint32_t, intptr_t, const void*, uint32_t);
+typedef void (GL_API* GL_ENABLEVERTEXATTRIBARRAY)(uint32_t);
+typedef void (GL_API* GL_VERTEXATTRIBPOINTER)(uint32_t, int, uint32_t, int, int, const void*);
+typedef uint32_t (GL_API* GL_CREATESHADER)(uint32_t);
+typedef void (GL_API* GL_SHADERSOURCE)(uint32_t, int, const char**, const int*);
+typedef void (GL_API* GL_COMPILESHADER)(uint32_t);
+typedef void (GL_API* GL_GETSHADERIV)(uint32_t, uint32_t, int*);
+typedef void (GL_API* GL_GETSHADERINFOLOG)(uint32_t, int, int*, char*);
+typedef uint32_t (GL_API* GL_CREATEPROGRAM)(void);
+typedef void (GL_API* GL_ATTACHSHADER)(uint32_t, uint32_t);
+typedef void (GL_API* GL_LINKPROGRAM)(uint32_t);
+typedef void (GL_API* GL_GETPROGRAMIV)(uint32_t, uint32_t, int*);
+typedef void (GL_API* GL_GETPROGRAMINFOLOG)(uint32_t, int, int*, char*);
+typedef void (GL_API* GL_DELETESHADER)(uint32_t);
+typedef void (GL_API* GL_USEPROGRAM)(uint32_t);
+typedef void (GL_API* GL_UNIFORMMATRIX4FV)(int, int, int, const float*);
+typedef int (GL_API* GL_GETUNIFORMLOCATION)(uint32_t, const char*);
+typedef void (GL_API* GL_UNIFORM1I)(int, int);
+typedef void (GL_API* GL_UNIFORM1F)(int, float);
+typedef void (GL_API* GL_UNIFORM3FV)(int, int, const float*);
+typedef void (GL_API* GL_UNIFORM4FV)(int, int, const float*);
+typedef void (GL_API* GL_VIEWPORT)(int, int, int, int);
+typedef void (GL_API* GL_ENABLE)(uint32_t);
+typedef void (GL_API* GL_DISABLE)(uint32_t);
+typedef void (GL_API* GL_DEPTHFUNC)(uint32_t);
+typedef void (GL_API* GL_BLENDFUNC)(uint32_t, uint32_t);
+typedef void (GL_API* GL_DRAWELEMENTS)(uint32_t, int, uint32_t, const void*);
+typedef void (GL_API* GL_ACTIVETEXTURE)(uint32_t);
+typedef void (GL_API* GL_BINDTEXTURE)(uint32_t, uint32_t);
+typedef void (GL_API* GL_GENTEXTURES)(int, uint32_t*);
+typedef void (GL_API* GL_DELETETEXTURES)(int, const uint32_t*);
+typedef void (GL_API* GL_TEXIMAGE2D)(uint32_t, int, int, int, int, int, uint32_t, uint32_t, const void*);
+typedef void (GL_API* GL_TEXPARAMETERI)(uint32_t, uint32_t, int);
+typedef void (GL_API* GL_GENERATEMIPMAP)(uint32_t);
+typedef void (GL_API* GL_GETINTEGERV)(uint32_t, int*);
 
 // Global function pointers (loaded once during initialize)
 static GL_GENVERTEXARRAYS     glGenVertexArrays = nullptr;
@@ -97,16 +92,13 @@ static GL_TEXIMAGE2D          glTexImage2D = nullptr;
 static GL_TEXPARAMETERI       glTexParameteri = nullptr;
 static GL_GENERATEMIPMAP      glGenerateMipmap = nullptr;
 static GL_GETINTEGERV         glGetIntegerv = nullptr;
-typedef int (APIENTRY* GL_ISENABLED)(uint32_t);
+typedef int (GL_API* GL_ISENABLED)(uint32_t);
 static GL_ISENABLED           glIsEnabled = nullptr;
 
 #define LOAD_GL_FUNC(name, var) \
     do { \
         const char* funcName = #name; \
-        var = reinterpret_cast<decltype(var)>(wglGetProcAddress(funcName)); \
-        if (!var) { \
-            var = reinterpret_cast<decltype(var)>(GetProcAddress(glModule, funcName)); \
-        } \
+        var = reinterpret_cast<decltype(var)>(glPlatformLoadProc(funcName)); \
         if (!var) { \
             std::cerr << "[GL] Failed to load " << funcName << std::endl; \
             return false; \
@@ -199,9 +191,8 @@ static std::unordered_map<uint32_t, std::pair<uint32_t, uint32_t>> s_meshBuffers
 bool GlRenderer::initialize() {
     if (s_initialized) return true;
 
-    HMODULE glModule = GetModuleHandleA("opengl32.dll");
-    if (!glModule) {
-        std::cerr << "[GL] opengl32.dll not loaded" << std::endl;
+    if (!glPlatformLoadProc("glGetString")) {
+        std::cerr << "[GL] OpenGL library not available" << std::endl;
         return false;
     }
 
@@ -516,11 +507,10 @@ void GlRenderer::shutdown() {
 
     if (s_program) {
         // s_program is a program object, not a shader — use glDeleteProgram
-        typedef void (APIENTRY* GL_DELETEPROGRAM)(uint32_t);
+        typedef void (GL_API* GL_DELETEPROGRAM)(uint32_t);
         static GL_DELETEPROGRAM pDeleteProgram = nullptr;
         if (!pDeleteProgram) {
-            pDeleteProgram = reinterpret_cast<GL_DELETEPROGRAM>(wglGetProcAddress("glDeleteProgram"));
-            if (!pDeleteProgram) pDeleteProgram = reinterpret_cast<GL_DELETEPROGRAM>(GetProcAddress(GetModuleHandleA("opengl32.dll"), "glDeleteProgram"));
+            pDeleteProgram = reinterpret_cast<GL_DELETEPROGRAM>(glPlatformLoadProc("glDeleteProgram"));
         }
         if (pDeleteProgram) pDeleteProgram(s_program);
         s_program = 0;

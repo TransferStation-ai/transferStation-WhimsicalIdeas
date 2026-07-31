@@ -34,7 +34,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
             return fallback.parseMdl(data);
         }
         try {
-            byte[] nativeResult = GmodNativeBridge.nativeParseMdlSerialized(data);
+            byte[] nativeResult = GmodNativeCoreBridge.nativeParseMdlSerialized(data);
             if (nativeResult != null && nativeResult.length > 4) {
                 MdlDataTypes.ParsedModel model = deserializeParsedModel(nativeResult);
                 if (model != null) {
@@ -55,7 +55,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
             return fallback.parseVvd(data);
         }
         try {
-            byte[] nativeResult = GmodNativeBridge.nativeParseVvdSerialized(data);
+            byte[] nativeResult = GmodNativeCoreBridge.nativeParseVvdSerialized(data);
             if (nativeResult != null && nativeResult.length > 4) {
                 VvdParser.ParsedVvd vvd = deserializeParsedVvd(nativeResult);
                 if (vvd != null) {
@@ -75,7 +75,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
             return fallback.parseVtx(data);
         }
         try {
-            byte[] nativeResult = GmodNativeBridge.nativeParseVtxSerialized(data);
+            byte[] nativeResult = GmodNativeCoreBridge.nativeParseVtxSerialized(data);
             if (nativeResult != null && nativeResult.length > 4) {
                 VtxParser.ParsedVtx vtx = deserializeParsedVtx(nativeResult);
                 if (vtx != null) {
@@ -392,7 +392,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
     public PhyParser.ParsedPhy parsePhy(byte[] data) {
         if (!isAvailable()) return PhyParser.parse(data);
         try {
-            byte[] nativeResult = GmodNativeBridge.nativeParsePhySerialized(data);
+            byte[] nativeResult = GmodNativeCoreBridge.nativeParsePhySerialized(data);
             if (nativeResult != null && nativeResult.length > 4) {
                 PhyParser.ParsedPhy phy = deserializeParsedPhy(nativeResult);
                 if (phy != null) return phy;

@@ -3,6 +3,11 @@ package transferstation.transferstation_whimsicalideas.client.model;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 
 public class GmodNativeCoreBridge {
@@ -10,6 +15,9 @@ public class GmodNativeCoreBridge {
     private static boolean nativeLoaded = false;
     private static boolean initAttempted = false;
     private static String lastLoadError = null;
+
+    // Resource extraction paths for Linux .so
+    private static Path extractedLinuxSoPath = null;
 
     // Platform state
     private static boolean linuxInit = false;
@@ -71,6 +79,19 @@ public class GmodNativeCoreBridge {
             linuxArch = osArch.isEmpty() ? "unknown" : osArch;
         }
 
+        // 1. Try extracting from bundled resources
+        if (tryLoadLinuxFromResources()) {
+            linuxLoaded = true;
+            return true;
+        }
+
+        // 2. Try build output directories (dev environment)
+        if (tryLoadLinuxFromBuildDir()) {
+            linuxLoaded = true;
+            return true;
+        }
+
+        // 3. Try system library path (e.g. installed system-wide)
         String[] libNames = {
             "native-core-" + linuxArch,
             "native-core",
@@ -80,10 +101,10 @@ public class GmodNativeCoreBridge {
             try {
                 System.loadLibrary(libName);
                 linuxLoaded = true;
-                LogUtils.getLogger().info("[GmodNativeCore] native-core.so ({}) Loaded for Linux (arch={})", libName, linuxArch);
+                LogUtils.getLogger().info("[GmodNativeCore] native-core.so ({}) Loaded from system library path for Linux (arch={})", libName, linuxArch);
                 return true;
             } catch (Throwable t) {
-                LogUtils.getLogger().debug("[GmodNativeCore] Failed to load {}: {}", libName, t.getMessage());
+                LogUtils.getLogger().debug("[GmodNativeCore] Failed to load {} from system path: {}", libName, t.getMessage());
             }
         }
 
@@ -92,6 +113,57 @@ public class GmodNativeCoreBridge {
             LogUtils.getLogger().warn("[GmodNativeCore] {}; using Java fallback", lastLoadError);
         }
         return linuxLoaded;
+    }
+
+    private static boolean tryLoadLinuxFromResources() {
+        String[] resourcePaths = {
+            "/natives/linux/" + linuxArch + "/native-core.so",
+        };
+        try {
+            for (String resourcePath : resourcePaths) {
+                try (InputStream in = GmodNativeCoreBridge.class.getResourceAsStream(resourcePath)) {
+                    if (in == null) continue;
+                    Path tempDir = Files.createTempDirectory("gmod_native_linux_");
+                    tempDir.toFile().deleteOnExit();
+                    Path soPath = tempDir.resolve("native-core.so");
+                    Files.copy(in, soPath, StandardCopyOption.REPLACE_EXISTING);
+                    soPath.toFile().deleteOnExit();
+                    extractedLinuxSoPath = soPath;
+                    System.load(soPath.toAbsolutePath().toString());
+                    LogUtils.getLogger().info("[GmodNativeCore] native-core.so loaded from resources: {}", resourcePath);
+                    return true;
+                } catch (UnsatisfiedLinkError e) {
+                    LogUtils.getLogger().warn("[GmodNativeCore] Found native-core.so in resources but failed to load: {}", e.getMessage());
+                    lastLoadError = "resource .so load failed: " + e.getMessage();
+                }
+            }
+        } catch (IOException e) {
+            LogUtils.getLogger().debug("[GmodNativeCore] Failed to extract native-core.so from resources", e);
+        }
+        return false;
+    }
+
+    private static boolean tryLoadLinuxFromBuildDir() {
+        // Search in build output and source tree locations
+        String[] searchPaths = {
+            "build/resources/natives/linux/" + linuxArch + "/native-core.so",
+            "build/native/linux/cmake-build/libnative-core.so",
+            "src/main/resources/natives/linux/" + linuxArch + "/native-core.so",
+        };
+        for (String path : searchPaths) {
+            try {
+                Path resolved = Path.of(path);
+                if (Files.exists(resolved)) {
+                    System.load(resolved.toAbsolutePath().toString());
+                    LogUtils.getLogger().info("[GmodNativeCore] native-core.so loaded from build dir: {}", resolved);
+                    return true;
+                }
+            } catch (UnsatisfiedLinkError e) {
+                LogUtils.getLogger().debug("[GmodNativeCore] Found .so in build dir but failed to load: {}", e.getMessage());
+                lastLoadError = "build-dir .so load failed: " + e.getMessage();
+            }
+        }
+        return false;
     }
 
     private static boolean tryLoadAndroid() {

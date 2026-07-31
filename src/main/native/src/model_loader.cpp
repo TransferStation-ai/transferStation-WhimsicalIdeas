@@ -10,6 +10,8 @@
 #include <future>
 #include <mutex>
 #include <thread>
+
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -17,6 +19,7 @@
 #include <windows.h>
 #include <propidl.h>
 #include <gdiplus.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -138,6 +141,7 @@ std::string ModelLoader::toLower(std::string_view s) {
 
 // Memory-mapped file reading for large files
 std::vector<uint8_t> ModelLoader::readFileMapped(const std::string& path) {
+#ifdef _WIN32
     HANDLE hFile = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE) {
@@ -186,6 +190,15 @@ std::vector<uint8_t> ModelLoader::readFileMapped(const std::string& path) {
     CloseHandle(hFile);
 
     return data;
+#else
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) throw std::runtime_error("Cannot open file: " + path);
+    size_t fileSize = static_cast<size_t>(file.tellg());
+    file.seekg(0);
+    std::vector<uint8_t> data(fileSize);
+    file.read(reinterpret_cast<char*>(data.data()), fileSize);
+    return data;
+#endif
 }
 
 // Parallel file loading
@@ -209,6 +222,7 @@ std::vector<ModelLoader::FileData> ModelLoader::loadFilesParallel(const std::vec
 
 // Load common image with GDI+ fallback
 static bool loadCommonImage(const std::string& imagePath, std::vector<uint8_t>& outRgba, int& outW, int& outH) {
+#ifdef _WIN32
     static bool gdiplusInitialized = false;
     static ULONG_PTR gdiplusToken = 0;
 
@@ -253,6 +267,10 @@ static bool loadCommonImage(const std::string& imagePath, std::vector<uint8_t>& 
         return true;
     }
     return false;
+#else
+    (void)imagePath; (void)outRgba; (void)outW; (void)outH;
+    return false;
+#endif
 }
 
 static bool isCommonImageExt(const std::string& ext) {

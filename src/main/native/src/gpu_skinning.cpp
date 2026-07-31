@@ -1,37 +1,23 @@
+#include "glad/gl.h"
 #include "gpu_skinning.h"
 #include "gl_renderer.h"
 #include <iostream>
 #include <cstring>
 #include <vector>
 #include <algorithm>
+#include <cstddef>
 
-#define WIN32_LEAN_AND_MEAN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-
-typedef unsigned int GLsizeiptr;
-typedef unsigned int GLuint;
-typedef int GLint;
-typedef int GLsizei;
-typedef unsigned int GLenum;
-typedef unsigned int GLbitfield;
-typedef float GLfloat;
-typedef void GLvoid;
-typedef char GLchar;
+// GL types not provided by glad/gl.h
+typedef ptrdiff_t GLsizeiptr;
 typedef ptrdiff_t GLintptr;
-typedef unsigned char GLboolean;
 
 constexpr unsigned int GL_COMPUTE_SHADER = 0x91B9;
-constexpr unsigned int GL_SHADER_STORAGE_BUFFER = 0x90D2;
 constexpr unsigned int GL_DYNAMIC_READ = 0x88E9;
 constexpr unsigned int GL_DYNAMIC_COPY = 0x88EC;
 constexpr unsigned int GL_READ_ONLY = 0x88B8;
 constexpr unsigned int GL_WRITE_ONLY = 0x88B9;
 constexpr unsigned int GL_READ_WRITE = 0x88BA;
-constexpr unsigned int GL_COMPILE_STATUS = 0x8B81;
-constexpr unsigned int GL_LINK_STATUS = 0x8B82;
+constexpr unsigned int GL_SHADER_STORAGE_BUFFER = 0x90D2;
 constexpr unsigned int GL_INFO_LOG_LENGTH = 0x8B84;
 constexpr unsigned int GL_CURRENT_PROGRAM = 0x8B8D;
 constexpr unsigned int GL_ARRAY_BUFFER = 0x8892;
@@ -40,11 +26,8 @@ constexpr unsigned int GL_STATIC_DRAW = 0x88E4;
 constexpr unsigned int GL_DYNAMIC_DRAW = 0x88E8;
 constexpr unsigned int GL_STREAM_DRAW = 0x88E0;
 constexpr unsigned int GL_FLOAT = 0x1406;
-constexpr unsigned int GL_FALSE = 0;
 constexpr unsigned int GL_UNSIGNED_INT = 0x1405;
 constexpr unsigned int GL_TRIANGLES = 0x0004;
-constexpr unsigned int GL_VERTEX_SHADER = 0x8B31;
-constexpr unsigned int GL_FRAGMENT_SHADER = 0x8B30;
 constexpr unsigned int GL_ALL_BARRIER_BITS = 0xFFFFFFFF;
 constexpr unsigned int GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT = 0x00000001;
 constexpr unsigned int GL_SHADER_STORAGE_BARRIER_BIT = 0x00002000;
@@ -54,44 +37,44 @@ constexpr unsigned int GL_TEXTURE_2D = 0x0DE1;
 constexpr unsigned int GL_ACTIVE_TEXTURE = 0x84E0;
 constexpr unsigned int GL_TEXTURE_BINDING_2D = 0x8069;
 
-typedef void (APIENTRY* PFNGLDISPATCHCOMPUTE)(GLuint, GLuint, GLuint);
-typedef void (APIENTRY* PFNGLMEMORYBARRIER)(GLbitfield);
-typedef void (APIENTRY* PFNGLGENBUFFERS)(GLsizei, GLuint*);
-typedef void (APIENTRY* PFNGLDELETEBUFFERS)(GLsizei, const GLuint*);
-typedef void (APIENTRY* PFNGLBINDBUFFER)(GLenum, GLuint);
-typedef void (APIENTRY* PFNGLBUFFERDATA)(GLenum, GLsizeiptr, const void*, GLenum);
-typedef void (APIENTRY* PFNGLBUFFERSUBDATA)(GLenum, GLintptr, GLsizeiptr, const void*);
-typedef void* (APIENTRY* PFNGLMAPBUFFERRANGE)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
-typedef GLboolean (APIENTRY* PFNGLUNMAPBUFFER)(GLenum);
-typedef GLuint (APIENTRY* PFNGLCREATESHADER)(GLenum);
-typedef void (APIENTRY* PFNGLSHADERSOURCE)(GLuint, GLsizei, const char**, const GLint*);
-typedef void (APIENTRY* PFNGLCOMPILESHADER)(GLuint);
-typedef void (APIENTRY* PFNGLGETSHADERIV)(GLuint, GLenum, GLint*);
-typedef void (APIENTRY* PFNGLGETSHADERINFOLOG)(GLuint, GLsizei, GLsizei*, char*);
-typedef GLuint (APIENTRY* PFNGLCREATEPROGRAM)(void);
-typedef void (APIENTRY* PFNGLATTACHSHADER)(GLuint, GLuint);
-typedef void (APIENTRY* PFNGLLINKPROGRAM)(GLuint);
-typedef void (APIENTRY* PFNGLGETPROGRAMIV)(GLuint, GLenum, GLint*);
-typedef void (APIENTRY* PFNGLGETPROGRAMINFOLOG)(GLuint, GLsizei, GLsizei*, char*);
-typedef void (APIENTRY* PFNGLDELETESHADER)(GLuint);
-typedef void (APIENTRY* PFNGLDELETEPROGRAM)(GLuint);
-typedef void (APIENTRY* PFNGLUSEPROGRAM)(GLuint);
-typedef GLint (APIENTRY* PFNGLGETUNIFORMLOCATION)(GLuint, const char*);
-typedef void (APIENTRY* PFNGLUNIFORM1I)(GLint, GLint);
-typedef void (APIENTRY* PFNGLUNIFORMMATRIX4FV)(GLint, GLsizei, GLboolean, const GLfloat*);
-typedef void (APIENTRY* PFNGLBINDBUFFERBASE)(GLenum, GLuint, GLuint);
-typedef void (APIENTRY* PFNGLENABLEVERTEXATTRIBARRAY)(GLuint);
-typedef void (APIENTRY* PFNGLVERTEXATTRIBPOINTER)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
-typedef void (APIENTRY* PFNGLGENVERTEXARRAYS)(GLsizei, GLuint*);
-typedef void (APIENTRY* PFNGLBINDVERTEXARRAY)(GLuint);
-typedef void (APIENTRY* PFNGLDELETEVERTEXARRAYS)(GLsizei, const GLuint*);
-typedef void (APIENTRY* PFNGLDRAWELEMENTS)(GLenum, GLsizei, GLenum, const void*);
-typedef void (APIENTRY* PFNGLACTIVETEXTURE)(GLenum);
-typedef void (APIENTRY* PFNGLBINDTEXTURE)(GLenum, GLuint);
-typedef void (APIENTRY* PFNGLGETINTEGERV)(GLenum, GLint*);
-typedef void (APIENTRY* PFNGLUNIFORM3FV)(GLint, GLsizei, const GLfloat*);
-typedef void (APIENTRY* PFNGLUNIFORM4FV)(GLint, GLsizei, const GLfloat*);
-typedef void (APIENTRY* PFNGLUNIFORM1F)(GLint, GLfloat);
+typedef void (GL_API* PFNGLDISPATCHCOMPUTE)(GLuint, GLuint, GLuint);
+typedef void (GL_API* PFNGLMEMORYBARRIER)(GLbitfield);
+typedef void (GL_API* PFNGLGENBUFFERS)(GLsizei, GLuint*);
+typedef void (GL_API* PFNGLDELETEBUFFERS)(GLsizei, const GLuint*);
+typedef void (GL_API* PFNGLBINDBUFFER)(GLenum, GLuint);
+typedef void (GL_API* PFNGLBUFFERDATA)(GLenum, GLsizeiptr, const void*, GLenum);
+typedef void (GL_API* PFNGLBUFFERSUBDATA)(GLenum, GLintptr, GLsizeiptr, const void*);
+typedef void* (GL_API* PFNGLMAPBUFFERRANGE)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
+typedef GLboolean (GL_API* PFNGLUNMAPBUFFER)(GLenum);
+typedef GLuint (GL_API* PFNGLCREATESHADER)(GLenum);
+typedef void (GL_API* PFNGLSHADERSOURCE)(GLuint, GLsizei, const char**, const GLint*);
+typedef void (GL_API* PFNGLCOMPILESHADER)(GLuint);
+typedef void (GL_API* PFNGLGETSHADERIV)(GLuint, GLenum, GLint*);
+typedef void (GL_API* PFNGLGETSHADERINFOLOG)(GLuint, GLsizei, GLsizei*, char*);
+typedef GLuint (GL_API* PFNGLCREATEPROGRAM)(void);
+typedef void (GL_API* PFNGLATTACHSHADER)(GLuint, GLuint);
+typedef void (GL_API* PFNGLLINKPROGRAM)(GLuint);
+typedef void (GL_API* PFNGLGETPROGRAMIV)(GLuint, GLenum, GLint*);
+typedef void (GL_API* PFNGLGETPROGRAMINFOLOG)(GLuint, GLsizei, GLsizei*, char*);
+typedef void (GL_API* PFNGLDELETESHADER)(GLuint);
+typedef void (GL_API* PFNGLDELETEPROGRAM)(GLuint);
+typedef void (GL_API* PFNGLUSEPROGRAM)(GLuint);
+typedef GLint (GL_API* PFNGLGETUNIFORMLOCATION)(GLuint, const char*);
+typedef void (GL_API* PFNGLUNIFORM1I)(GLint, GLint);
+typedef void (GL_API* PFNGLUNIFORMMATRIX4FV)(GLint, GLsizei, GLboolean, const GLfloat*);
+typedef void (GL_API* PFNGLBINDBUFFERBASE)(GLenum, GLuint, GLuint);
+typedef void (GL_API* PFNGLENABLEVERTEXATTRIBARRAY)(GLuint);
+typedef void (GL_API* PFNGLVERTEXATTRIBPOINTER)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
+typedef void (GL_API* PFNGLGENVERTEXARRAYS)(GLsizei, GLuint*);
+typedef void (GL_API* PFNGLBINDVERTEXARRAY)(GLuint);
+typedef void (GL_API* PFNGLDELETEVERTEXARRAYS)(GLsizei, const GLuint*);
+typedef void (GL_API* PFNGLDRAWELEMENTS)(GLenum, GLsizei, GLenum, const void*);
+typedef void (GL_API* PFNGLACTIVETEXTURE)(GLenum);
+typedef void (GL_API* PFNGLBINDTEXTURE)(GLenum, GLuint);
+typedef void (GL_API* PFNGLGETINTEGERV)(GLenum, GLint*);
+typedef void (GL_API* PFNGLUNIFORM3FV)(GLint, GLsizei, const GLfloat*);
+typedef void (GL_API* PFNGLUNIFORM4FV)(GLint, GLsizei, const GLfloat*);
+typedef void (GL_API* PFNGLUNIFORM1F)(GLint, GLfloat);
 
 static PFNGLDISPATCHCOMPUTE glDispatchCompute = nullptr;
 static PFNGLMEMORYBARRIER glMemoryBarrier = nullptr;
@@ -255,12 +238,10 @@ static void popGlState() {
 }
 
 bool GpuSkinning::loadExtensions() {
-    HMODULE glModule = GetModuleHandleA("opengl32.dll");
-    if (!glModule) return false;
+    if (!glPlatformLoadProc("glGetString")) return false;
 
     #define LOAD(name, var) \
-        var = reinterpret_cast<decltype(var)>(wglGetProcAddress(#name)); \
-        if (!var) var = reinterpret_cast<decltype(var)>(GetProcAddress(glModule, #name));
+        var = reinterpret_cast<decltype(var)>(glPlatformLoadProc(#name));
 
     LOAD(glDispatchCompute, glDispatchCompute);
     LOAD(glMemoryBarrier, glMemoryBarrier);
