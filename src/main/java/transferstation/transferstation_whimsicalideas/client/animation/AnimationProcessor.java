@@ -210,15 +210,40 @@ public class AnimationProcessor {
         // 2. Try to get VMD animation
         String animName = getActiveAnimationName(entity);
         AnimationData anim = getAnimation(animName);
-        
+
         // 3. If no VMD animation, try MDL's built-in sequence animation data
         if (anim == null || anim.tracks.isEmpty()) {
             anim = getMdlSequenceAnimation(entity, modelData, animName);
         }
 
-        // 4. Apply animation delta on top of bind pose
-        if (anim != null && !anim.tracks.isEmpty()) {
-            applyAnimationDelta(entity, anim, modelData, localTransforms, partialTicks);
+        // 4. Sample base layer deltas (with frame interpolation)
+        Map<Integer, float[]> deltas = sampleAnimationDeltas(entity, anim, modelData, partialTicks);
+
+        // 4b. Overlay layer: blend gesture deltas on top (per-bone weight = layerWeight * boneMask)
+        AnimationLayers.tickFades(entity, (entity.tickCount + partialTicks) / 20.0f);
+        AnimationLayers.LayerState overlay = AnimationLayers.getActiveOverlay(entity, AnimationLayers.OVERLAY);
+        if (overlay != null) {
+            float layerWeight = AnimationLayers.fadeWeight(overlay) * overlay.weight;
+            Map<Integer, float[]> overlayDeltas = sampleAnimationDeltas(entity, overlay.anim, modelData, partialTicks);
+            for (Map.Entry<Integer, float[]> entry : overlayDeltas.entrySet()) {
+                int boneIdx = entry.getKey();
+                String boneName = modelData.bones.get(boneIdx).name;
+                if (AnimationLayers.isMaskedOut(entity, AnimationLayers.OVERLAY, boneName)) continue;
+                float[] base = deltas.get(boneIdx);
+                if (base == null) {
+                    deltas.put(boneIdx, blendDeltas(toIdentityDelta(), entry.getValue(), layerWeight));
+                } else {
+                    deltas.put(boneIdx, blendDeltas(base, entry.getValue(), layerWeight));
+                }
+            }
+        }
+
+        // 4c. Apply mixed deltas on top of bind pose
+        for (Map.Entry<Integer, float[]> entry : deltas.entrySet()) {
+            org.joml.Matrix4f bindPose = new org.joml.Matrix4f();
+            bindPose.set(localTransforms[entry.getKey()]);
+            bindPose.mul(deltaToMatrix(entry.getValue()));
+            bindPose.get(localTransforms[entry.getKey()]);
         }
 
         // 5. Convert local transforms to world-space by walking hierarchy in
@@ -393,6 +418,137 @@ public class AnimationProcessor {
             anim.addTrack(track);
         }
         return anim;
+    }
+
+    /** delta 分量布局：{tx,ty,tz, qx,qy,qz,qw, sx,sy,sz} */
+    static final int DELTA_LEN = 10;
+
+    /**
+     * 按浮点帧号采样轨道，相邻两 keyframe 间插值：
+     * 平移/缩放 lerp，旋转 nlerp。f 越界时 clamp 到首尾帧。
+     * 返回 DELTA_LEN 数组；无关键帧返回 null。
+     */
+    static float[] sampleTrackAtTime(AnimationData.AnimationTrack track, float frameFloat) {
+        if (track == null || track.keyFrames == null || track.keyFrames.isEmpty()) return null;
+        List<AnimationData.KeyFrame> kfs = track.keyFrames;
+        // 关键帧按 frame 升序（VMD 解析保证，防御性拷贝排序避免改坏原始数据）
+        if (kfs.size() > 1 && kfs.get(0).frame > kfs.get(1).frame) {
+            kfs = new ArrayList<>(kfs);
+            kfs.sort((a, b) -> Integer.compare(a.frame, b.frame));
+        }
+
+        AnimationData.KeyFrame first = kfs.get(0);
+        AnimationData.KeyFrame last = kfs.get(kfs.size() - 1);
+        if (frameFloat <= first.frame) return toDelta(first);
+        if (frameFloat >= last.frame) return toDelta(last);
+
+        for (int i = 0; i < kfs.size() - 1; i++) {
+            AnimationData.KeyFrame a = kfs.get(i);
+            AnimationData.KeyFrame b = kfs.get(i + 1);
+            if (frameFloat >= a.frame && frameFloat <= b.frame) {
+                float t = (b.frame > a.frame) ? (frameFloat - a.frame) / (b.frame - a.frame) : 0;
+                float[] da = toDelta(a);
+                float[] db = toDelta(b);
+                return blendDeltas(da, db, t);
+            }
+        }
+        return toDelta(last);
+    }
+
+    private static float[] toDelta(AnimationData.KeyFrame kf) {
+        float[] d = new float[DELTA_LEN];
+        if (kf.translation != null) {
+            d[0] = kf.translation[0]; d[1] = kf.translation[1]; d[2] = kf.translation[2];
+        }
+        if (kf.rotation != null) {
+            d[3] = kf.rotation[0]; d[4] = kf.rotation[1]; d[5] = kf.rotation[2]; d[6] = kf.rotation[3];
+        } else {
+            d[6] = 1.0f; // 无旋转 = 恒等四元数
+        }
+        if (kf.scale != null) {
+            d[7] = kf.scale[0]; d[8] = kf.scale[1]; d[9] = kf.scale[2];
+        } else {
+            d[7] = 1.0f; d[8] = 1.0f; d[9] = 1.0f;
+        }
+        return d;
+    }
+
+    /** 四元数 nlerp（自动处理相反方向），返回归一化结果。 */
+    static float[] nlerpQuat(float[] a, float[] b, float t) {
+        float dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+        float[] b2 = (dot < 0) ? new float[]{-b[0], -b[1], -b[2], -b[3]} : b;
+        float[] out = new float[4];
+        for (int i = 0; i < 4; i++) {
+            out[i] = a[i] + (b2[i] - a[i]) * t;
+        }
+        float len = (float) Math.sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2] + out[3] * out[3]);
+        if (len > 1e-6f) {
+            for (int i = 0; i < 4; i++) out[i] /= len;
+        } else {
+            out[3] = 1.0f;
+        }
+        return out;
+    }
+
+    /**
+     * 按权重混合 base/overlay delta：平移/缩放 lerp，旋转 nlerp。
+     * weight clamp 到 [0,1]。
+     */
+    static float[] blendDeltas(float[] base, float[] overlay, float weight) {
+        float t = Math.max(0.0f, Math.min(1.0f, weight));
+        float[] out = new float[DELTA_LEN];
+        for (int i = 0; i < 3; i++) out[i] = base[i] + (overlay[i] - base[i]) * t;   // 平移
+        float[] rot = nlerpQuat(new float[]{base[3], base[4], base[5], base[6]},
+                                new float[]{overlay[3], overlay[4], overlay[5], overlay[6]}, t);
+        out[3] = rot[0]; out[4] = rot[1]; out[5] = rot[2]; out[6] = rot[3];
+        for (int i = 7; i < DELTA_LEN; i++) out[i] = base[i] + (overlay[i] - base[i]) * t; // 缩放
+        return out;
+    }
+
+    /**
+     * 采样单层动画，返回 boneIndex → delta 分量 {tx,ty,tz,qx,qy,qz,qw,sx,sy,sz}。
+     * 动画 delta 相对 bind pose（VMD 惯例）。
+     */
+    private static Map<Integer, float[]> sampleAnimationDeltas(LivingEntity entity, AnimationData anim,
+                                                                SourceModelData modelData, float partialTicks) {
+        Map<Integer, float[]> deltas = new HashMap<>();
+        if (anim == null || anim.tracks.isEmpty()) return deltas;
+
+        float elapsedSec = (entity.tickCount + partialTicks) / 20.0f;
+        float frameFloat = elapsedSec * anim.fps;
+        if (anim.loop && anim.frameCount > 0) {
+            frameFloat = frameFloat % anim.frameCount;
+        } else if (anim.frameCount > 0) {
+            frameFloat = Math.min(frameFloat, anim.frameCount - 1);
+        }
+
+        for (AnimationData.AnimationTrack track : anim.tracks) {
+            String mdlBoneName = mapVmdBoneNameToMdl(track.boneName, modelData);
+            int boneIndex = findBoneIndex(modelData, mdlBoneName);
+            if (boneIndex < 0) continue;
+            float[] d = sampleTrackAtTime(track, frameFloat);
+            if (d != null) deltas.put(boneIndex, d);
+        }
+        return deltas;
+    }
+
+    /** delta 分量 → 变换矩阵（T * R * S）。 */
+    private static org.joml.Matrix4f deltaToMatrix(float[] d) {
+        org.joml.Matrix4f m = new org.joml.Matrix4f();
+        m.identity();
+        m.translate(d[0], d[1], d[2]);
+        float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, d[6]))));
+        float s = (float) Math.sqrt(Math.max(0.0f, 1.0f - d[6] * d[6]));
+        if (s > 0.001f) {
+            float invS = 1.0f / s;
+            m.rotate(angle, d[3] * invS, d[4] * invS, d[5] * invS);
+        }
+        m.scale(d[7], d[8], d[9]);
+        return m;
+    }
+
+    private static float[] toIdentityDelta() {
+        return new float[]{0, 0, 0, 0, 0, 0, 1, 1, 1, 1};
     }
 
     /**
