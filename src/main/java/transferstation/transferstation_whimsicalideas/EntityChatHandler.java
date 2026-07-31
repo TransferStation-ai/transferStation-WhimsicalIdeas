@@ -4,14 +4,13 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraftforge.event.entity.EntityJoinLevelEvent;
-import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.TickEvent.LevelTickEvent;
+import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
-import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -91,22 +90,27 @@ private static String selectMessageForEntity(LivingEntity entity, String name) {
         net.minecraftforge.registries.ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
     String entityType = regKey != null ? regKey.toString() : "";
 
-    List<String> messages;
-    if (entity instanceof net.minecraft.world.entity.monster.Monster || 
-        entityType.contains("monster") || entityType.contains("zombie") ||
-        entityType.contains("skeleton") || entityType.contains("creeper")) {
-        messages = HOSTILE_MESSAGES;
-    } else if (entity instanceof net.minecraft.world.entity.animal.Animal ||
-               entityType.contains("villager") || entityType.contains("animal")) {
-        messages = Config.getEntityMessages(); // friendly messages
-    } else {
-        messages = NEUTRAL_MESSAGES;
-    }
-    
+    List<String> messages = getStrings(entity, entityType);
+
     if (messages == null || messages.isEmpty()) return name + " says something...";
     String message = messages.get(random.nextInt(messages.size()));
     return message.replace("%entity%", name);
 }
+
+    private static List<String> getStrings(LivingEntity entity, String entityType) {
+        List<String> messages;
+        if (entity instanceof net.minecraft.world.entity.monster.Monster ||
+            entityType.contains("monster") || entityType.contains("zombie") ||
+            entityType.contains("skeleton") || entityType.contains("creeper")) {
+            messages = HOSTILE_MESSAGES;
+        } else if (entity instanceof net.minecraft.world.entity.animal.Animal ||
+                   entityType.contains("villager") || entityType.contains("animal")) {
+            messages = Config.getEntityMessages(); // friendly messages
+        } else {
+            messages = NEUTRAL_MESSAGES;
+        }
+        return messages;
+    }
 
     private static void sendRandomMessageToPlayers(net.minecraft.world.level.Level level) {
         if (!(level instanceof ServerLevel serverLevel)) return;

@@ -13,6 +13,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.FormattedCharSequence;
+import org.jetbrains.annotations.NotNull;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.ModelPackage;
 
@@ -108,17 +109,29 @@ public class GmodModelScreen extends Screen {
 
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.transferstation_whimsicalideas.ai_config"),
-                btn -> minecraft.setScreen(new AiConfigScreen())
+                btn -> {
+                    if (minecraft != null) {
+                        minecraft.setScreen(new AiConfigScreen());
+                    }
+                }
         ).pos(x + 4, y + 226).size(126, 14).build());
 
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.transferstation_whimsicalideas.model_editor"),
-                btn -> minecraft.setScreen(new transferstation.transferstation_whimsicalideas.client.editor.ModelEditorScreen(this))
+                btn -> {
+                    if (minecraft != null) {
+                        minecraft.setScreen(new transferstation.transferstation_whimsicalideas.client.editor.ModelEditorScreen(this));
+                    }
+                }
         ).pos(x + 134, y + 226).size(126, 14).build());
 
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.transferstation_whimsicalideas.anim_editor"),
-                btn -> minecraft.setScreen(new transferstation.transferstation_whimsicalideas.client.editor.AnimationEditorScreen(this))
+                btn -> {
+                    if (minecraft != null) {
+                        minecraft.setScreen(new transferstation.transferstation_whimsicalideas.client.editor.AnimationEditorScreen(this));
+                    }
+                }
         ).pos(x + 264, y + 226).size(126, 14).build());
 
         addRenderableWidget(Button.builder(
@@ -155,7 +168,7 @@ public class GmodModelScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
+    public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         renderBackground(graphics);
 
         graphics.fillGradient(x, y, x + 135, y + 235, 0xff_222222, 0xff_222222);
@@ -164,7 +177,7 @@ public class GmodModelScreen extends Screen {
 
         searchField.render(graphics, mouseX, mouseY, partialTicks);
 
-        if (minecraft.player != null) {
+        if (minecraft != null && minecraft.player != null) {
             com.mojang.blaze3d.platform.Window window = Minecraft.getInstance().getWindow();
             double scale = window.getGuiScale();
             int scissorX = (int) ((x + 5) * scale);
@@ -204,7 +217,7 @@ public class GmodModelScreen extends Screen {
     }
 
     @Override
-    public void resize(Minecraft minecraft, int width, int height) {
+    public void resize(@NotNull Minecraft minecraft, int width, int height) {
         String value = searchField != null ? searchField.getValue() : "";
         super.resize(minecraft, width, height);
         if (searchField != null) {
@@ -287,7 +300,7 @@ public class GmodModelScreen extends Screen {
     static class ModelSelectButton extends Button {
         private final ModelPackage pkg;
         private final GmodModelScreen parent;
-        private ResourceLocation iconLoc;
+        private final ResourceLocation iconLoc;
 
         ModelSelectButton(int x, int y, int w, int h, ModelPackage pkg, GmodModelScreen parent) {
             super(x, y, w, h, Component.literal(pkg.getDisplayName()), btn -> {}, DEFAULT_NARRATION);

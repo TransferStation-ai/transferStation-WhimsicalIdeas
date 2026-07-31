@@ -6,7 +6,6 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
-import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -26,7 +25,7 @@ public class ModelExportCommand {
     private static final SuggestionProvider<CommandSourceStack> MODEL_PACKAGE_SUGGESTIONS =
         (ctx, builder) -> {
             Path modelsDir = getModelsDir();
-            if (modelsDir == null || !Files.exists(modelsDir)) return builder.buildFuture();
+            if (!Files.exists(modelsDir)) return builder.buildFuture();
             try (Stream<Path> dirs = Files.list(modelsDir)) {
                 dirs.filter(Files::isDirectory)
                     .map(d -> d.getFileName().toString())
@@ -63,12 +62,10 @@ public class ModelExportCommand {
     private static int export(CommandContext<CommandSourceStack> ctx, String defaultFormat, String defaultOutput) {
         CommandSourceStack source = ctx.getSource();
         String packageName = StringArgumentType.getString(ctx, "package");
-        String format = defaultFormat;
-        String outputStr = defaultOutput;
 
         try {
             Path modelsDir = getModelsDir();
-            if (modelsDir == null || !Files.exists(modelsDir)) {
+            if (!Files.exists(modelsDir)) {
                 source.sendFailure(Component.translatable("command.transferstation_whimsicalideas.export.not_found", packageName));
                 return 0;
             }
@@ -78,18 +75,18 @@ public class ModelExportCommand {
                 return 0;
             }
 
-            Path outputDir = outputStr != null ? Path.of(outputStr) : packageDir.resolve("export");
+            Path outputDir = defaultOutput != null ? Path.of(defaultOutput) : packageDir.resolve("export");
             Files.createDirectories(outputDir);
 
-            source.sendSuccess(() -> Component.translatable("command.transferstation_whimsicalideas.export.started", packageName, format), false);
+            source.sendSuccess(() -> Component.translatable("command.transferstation_whimsicalideas.export.started", packageName, defaultFormat), false);
 
-            ModelExporter.ExportResult result = ModelExporter.export(packageDir, outputDir, format);
-            if (result.success) {
+            ModelExporter.ExportResult result = ModelExporter.export(packageDir, outputDir, defaultFormat);
+            if (result.success()) {
                 source.sendSuccess(() -> Component.translatable("command.transferstation_whimsicalideas.export.success", outputDir.toString()), true);
             } else {
-                source.sendFailure(Component.translatable("command.transferstation_whimsicalideas.export.failed", result.errorMessage));
+                source.sendFailure(Component.translatable("command.transferstation_whimsicalideas.export.failed", result.errorMessage()));
             }
-            return result.success ? 1 : 0;
+            return result.success() ? 1 : 0;
         } catch (Exception e) {
             source.sendFailure(Component.translatable("command.transferstation_whimsicalideas.export.failed", e.getMessage()));
             return 0;

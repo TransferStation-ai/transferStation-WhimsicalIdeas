@@ -13,22 +13,10 @@ import java.util.stream.Stream;
 public class ModelExporter {
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    public static class ExportResult {
-        public final boolean success;
-        public final String errorMessage;
-        public ExportResult(boolean success, String errorMessage) {
-            this.success = success;
-            this.errorMessage = errorMessage;
-        }
+    public record ExportResult(boolean success, String errorMessage) {
     }
 
-    public static class TextureEntry {
-        public final String name;
-        public final Path pngPath;
-        public TextureEntry(String name, Path pngPath) {
-            this.name = name;
-            this.pngPath = pngPath;
-        }
+    public record TextureEntry(String name, Path pngPath) {
     }
 
     public static ExportResult export(Path packageDir, Path outputDir, String format) {

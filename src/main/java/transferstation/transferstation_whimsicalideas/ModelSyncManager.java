@@ -20,7 +20,6 @@ import java.util.stream.Stream;
 /**
  * Manages automatic model scanning, caching, and sync when players join the world.
  * Heavily inspired by YesSteveModel's ServerModelManager pattern.
- *
  * On player join, this triggers:
  * 1. Re-scan of model directories for new packages
  * 2. Pre-warming of model caches

@@ -1,6 +1,5 @@
 package transferstation.transferstation_whimsicalideas.event;
 
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.InteractionResult;

@@ -6,13 +6,12 @@ import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import org.slf4j.Logger;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -39,10 +38,12 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, M extend
     @Nullable
     protected abstract RenderType getRenderType(T p_115322_, boolean p_115323_, boolean p_115324_, boolean p_115325_);
 
+    @Unique
     private static final Logger RENDER_DIAG_LOGGER = LogUtils.getLogger();
+    @Unique
     private static final Map<LivingEntity, String> ENTITY_MODEL_CACHE = Collections.synchronizedMap(new WeakHashMap<>());
 
-    @Inject(method = "render", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "render*", at = @At("HEAD"), cancellable = true)
     private void onRender(T entity, float entityYaw, float partialTicks,
                           PoseStack poseStack, MultiBufferSource bufferSource, int packedLight,
                           CallbackInfo ci) {

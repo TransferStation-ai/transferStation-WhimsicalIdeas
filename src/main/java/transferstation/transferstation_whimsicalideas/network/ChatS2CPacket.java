@@ -1,29 +1,28 @@
 package transferstation.transferstation_whimsicalideas.network;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.world.entity.Entity;
 import net.minecraftforge.network.NetworkEvent;
+import transferstation.transferstation_whimsicalideas.client.NpcChatScreen;
+import transferstation.transferstation_whimsicalideas.client.model.NpcEntity;
+
 import java.util.UUID;
 import java.util.function.Supplier;
 
-public class ChatS2CPacket {
-    public final UUID npcUuid;
-    public final String reply;
-    public final String emotion;   // happy/angry/sad/neutral/scared
-    public final String gesture;   // wave/nod/shake/point/idle
-
-    public ChatS2CPacket(UUID npcUuid, String reply, String emotion, String gesture) {
-        this.npcUuid = npcUuid;
-        this.reply = reply;
-        this.emotion = emotion;
-        this.gesture = gesture;
-    }
+/**
+ * @param emotion happy/angry/sad/neutral/scared
+ * @param gesture wave/nod/shake/point/idle
+ */
+public record ChatS2CPacket(UUID npcUuid, String reply, String emotion, String gesture) {
 
     public static ChatS2CPacket decode(FriendlyByteBuf buf) {
         return new ChatS2CPacket(
-            buf.readUUID(),
-            buf.readUtf(512),
-            buf.readUtf(32),
-            buf.readUtf(32)
+                buf.readUUID(),
+                buf.readUtf(512),
+                buf.readUtf(32),
+                buf.readUtf(32)
         );
     }
 
@@ -36,12 +35,12 @@ public class ChatS2CPacket {
 
     public static void handle(ChatS2CPacket packet, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
-            var mc = net.minecraft.client.Minecraft.getInstance();
+            var mc = Minecraft.getInstance();
             if (mc.player == null) return;
             var level = mc.player.level();
             // ClientLevel doesn't expose getEntity(UUID) publicly, so iterate
-            net.minecraft.world.entity.Entity foundEntity = null;
-            if (level instanceof net.minecraft.client.multiplayer.ClientLevel clientLevel) {
+            Entity foundEntity = null;
+            if (level instanceof ClientLevel clientLevel) {
                 for (var e : clientLevel.entitiesForRendering()) {
                     if (e.getUUID().equals(packet.npcUuid)) {
                         foundEntity = e;
@@ -49,9 +48,9 @@ public class ChatS2CPacket {
                     }
                 }
             }
-            if (foundEntity instanceof transferstation.transferstation_whimsicalideas.client.model.NpcEntity npc) {
+            if (foundEntity instanceof NpcEntity npc) {
                 // Forward to active chat screen (NpcChatScreen — will be created in task 2)
-                if (mc.screen instanceof transferstation.transferstation_whimsicalideas.client.NpcChatScreen screen) {
+                if (mc.screen instanceof NpcChatScreen screen) {
                     screen.onNpcReply(packet.reply, packet.emotion, packet.gesture);
                 }
                 // Apply emotion/gesture on NPC

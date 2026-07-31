@@ -2,27 +2,15 @@ package transferstation.transferstation_whimsicalideas.common;
 
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
-import java.util.*;
 import transferstation.transferstation_whimsicalideas.client.model.MdlDataTypes;
 import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
 
+import java.util.*;
+
 public class BodyHitboxSystem {
 
-    public static class HitboxEntry {
-        public final InjurySystem.BodyPart bodyPart;
-        public final float minX, minY, minZ;
-        public final float maxX, maxY, maxZ;
-        public final int boneIndex;
-        public final int groupIndex;
-
-        public HitboxEntry(InjurySystem.BodyPart bodyPart, float minX, float minY, float minZ,
-                          float maxX, float maxY, float maxZ, int boneIndex, int groupIndex) {
-            this.bodyPart = bodyPart;
-            this.minX = minX; this.minY = minY; this.minZ = minZ;
-            this.maxX = maxX; this.maxY = maxY; this.maxZ = maxZ;
-            this.boneIndex = boneIndex;
-            this.groupIndex = groupIndex;
-        }
+    public record HitboxEntry(InjurySystem.BodyPart bodyPart, float minX, float minY, float minZ, float maxX,
+                              float maxY, float maxZ, int boneIndex, int groupIndex) {
     }
 
     private static final Map<UUID, List<HitboxEntry>> entityHitboxes = new HashMap<>();
@@ -31,7 +19,7 @@ public class BodyHitboxSystem {
         UUID uuid = entity.getUUID();
         List<HitboxEntry> entries = new ArrayList<>();
 
-        if (modelData.hitboxSets != null && !modelData.hitboxSets.isEmpty()) {
+        if (!modelData.hitboxSets.isEmpty()) {
             MdlDataTypes.HitboxSet hitboxSet = modelData.hitboxSets.get(0);
             for (MdlDataTypes.Bbox hb : hitboxSet.hitboxes) {
                 InjurySystem.BodyPart bodyPart = mapToBodyPart(hb.bone, hb.group, modelData);

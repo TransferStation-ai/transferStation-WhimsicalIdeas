@@ -84,11 +84,11 @@ public class ObjWriter {
     private static String findMatchingTexture(String matName, List<ModelExporter.TextureEntry> textures) {
         String matLower = matName.toLowerCase();
         for (ModelExporter.TextureEntry tex : textures) {
-            String tName = tex.name;
+            String tName = tex.name();
             if (tName.contains("/")) tName = tName.substring(tName.lastIndexOf('/') + 1);
             if (tName.contains(".")) tName = tName.substring(0, tName.lastIndexOf('.'));
             if (tName.equalsIgnoreCase(matName) || matLower.contains(tName.toLowerCase())) {
-                return tex.name;
+                return tex.name();
             }
         }
         return null;

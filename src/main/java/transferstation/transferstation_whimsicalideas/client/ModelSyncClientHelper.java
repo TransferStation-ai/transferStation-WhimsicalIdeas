@@ -63,8 +63,7 @@ public final class ModelSyncClientHelper {
 
         int prewarmed = 0;
         int deferred = 0;
-        for (int i = 0; i < ordered.size(); i++) {
-            String modelName = ordered.get(i);
+        for (String modelName : ordered) {
             Path packageDir = modelsDir.resolve(modelName);
             if (!Files.exists(packageDir)) continue;
 

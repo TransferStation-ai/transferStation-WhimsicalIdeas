@@ -5,7 +5,6 @@ import com.google.gson.GsonBuilder;
 import com.mojang.logging.LogUtils;
 import transferstation.transferstation_whimsicalideas.client.model.MdlModelRenderer;
 import transferstation.transferstation_whimsicalideas.client.model.ModelPackage;
-import transferstation.transferstation_whimsicalideas.client.model.NpcModelRegistry;
 import org.slf4j.Logger;
 
 import java.io.IOException;

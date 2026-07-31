@@ -34,7 +34,7 @@ public class TextureExporter {
                 try {
                     byte[] data = Files.readAllBytes(f);
                     var vtf = VtfParser.parse(data);
-                    if (vtf == null || vtf.image == null) continue;
+                    if (vtf.image == null) continue;
 
                     String relPath = materialsDir.relativize(f).toString()
                         .replace('\\', '/')
