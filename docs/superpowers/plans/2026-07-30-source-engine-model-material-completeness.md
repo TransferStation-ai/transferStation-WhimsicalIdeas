@@ -703,7 +703,7 @@ git commit -m "fix(vtf): replace BC7 subset partition tables with full 64-entry 
 
 **问题：** 当前多帧 VTF 读取假设每帧对帧内 mip 链的跳过逻辑与帧 0 相同，但帧间间隔可能因格式不同而变化。
 
-- [ ] **步骤 1：改进帧间读取精确度**
+- [x] **步骤 1：改进帧间读取精确度（按 mip-major 布局连续读取帧，cubemap 计入面数）**
 
 ```java
 // 当前: frameSize = dataSize (在全分辨率数据读取前重新定位)
