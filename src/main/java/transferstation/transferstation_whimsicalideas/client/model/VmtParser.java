@@ -28,8 +28,8 @@ public class VmtParser {
             if (lower.contains("eyerefract")) return EYE_REFRACT;
             if (lower.contains("sprite")) return SPRITE;
             if (lower.contains("cable")) return CABLE;
-            if (lower.contains("skybox")) return SKYBOX;
             if (lower.contains("tooltexture") || lower.contains("tools/tool")) return TOOL_TEXTURE;
+            if (lower.contains("skybox")) return SKYBOX;
             return UNKNOWN;
         }
     }

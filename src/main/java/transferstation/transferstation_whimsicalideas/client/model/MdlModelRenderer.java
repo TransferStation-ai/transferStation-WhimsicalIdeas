@@ -443,6 +443,12 @@ public class MdlModelRenderer {
 
         PoseStack.Pose pose = poseStack.last();
         Matrix4f matrix = pose.pose();
+        try {
+            net.minecraft.client.Camera cam =
+                net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera();
+            GmodNativeBridge.nativeSetCameraPosition(
+                (float) cam.getPosition().x, (float) cam.getPosition().y, (float) cam.getPosition().z);
+        } catch (Throwable ignored) {}
         float[] matArray = new float[16];
         matrix.get(matArray);
 

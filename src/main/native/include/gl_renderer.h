@@ -27,15 +27,25 @@ public:
 
     static void renderMesh(uint32_t vao, int indexCount, uint32_t textureId,
                            const float* modelMatrix, int packedLight,
-                           const float* colorTint = nullptr);
+                           const float* colorTint = nullptr,
+                           RenderMode mode = RenderMode::BASE);
+
+    static void setCameraPosition(float x, float y, float z);
+    static void setPhongBoost(float boost);
 
     static void shutdown();
 
 private:
     static const char* VERTEX_SHADER_SOURCE;
     static const char* FRAGMENT_SHADER_SOURCE;
-    static uint32_t s_program;
+    static const char* FRAGMENT_SHADER_UNLIT;
+    static const char* FRAGMENT_SHADER_EYE;
+    static uint32_t s_programBase;
+    static uint32_t s_programUnlit;
+    static uint32_t s_programEye;
     static bool s_initialized;
+    static float s_cameraPos[3];
+    static float s_phongBoost;
 
     static uint32_t compileShader(uint32_t type, const char* source);
     static uint32_t linkProgram(uint32_t vs, uint32_t fs);

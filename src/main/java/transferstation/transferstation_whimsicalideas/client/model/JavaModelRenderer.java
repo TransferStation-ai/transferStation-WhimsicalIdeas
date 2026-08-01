@@ -146,7 +146,12 @@ public class JavaModelRenderer {
         poseStack.pushPose();
 
         // 整体朝向补偿：把 Source 模型前向对齐到 Minecraft 实体前向（-Z，看向玩家）
-        poseStack.mulPose(com.mojang.math.Axis.YP.rotation(MODEL_FACING_YAW));
+        // Sprite shader 模型改为面向相机（billboard）
+        if (needsSpriteBillboard(data)) {
+            applySpriteBillboard(poseStack);
+        } else {
+            poseStack.mulPose(com.mojang.math.Axis.YP.rotation(MODEL_FACING_YAW));
+        }
         logFacingCompensation();
 
         float scale = entity.getBbHeight() / 1.8f;
@@ -178,6 +183,36 @@ public class JavaModelRenderer {
 
     private static final int fullbrightLight = 0xF000F0;
 
+    private static boolean isSkippedShader(SourceModelData.MeshData mesh) {
+        if (mesh.shaderType == null) return false;
+        VmtParser.ShaderType st = VmtParser.ShaderType.fromName(mesh.shaderType);
+        return st == VmtParser.ShaderType.SKYBOX || st == VmtParser.ShaderType.TOOL_TEXTURE;
+    }
+
+    private static boolean isSelfIllumShader(SourceModelData.MeshData mesh) {
+        if (mesh.shaderType == null) return false;
+        VmtParser.ShaderType st = VmtParser.ShaderType.fromName(mesh.shaderType);
+        return st == VmtParser.ShaderType.UNLIT_GENERIC || st == VmtParser.ShaderType.EYE_REFRACT;
+    }
+
+    private static boolean needsSpriteBillboard(SourceModelData data) {
+        for (SourceModelData.MeshData mesh : data.meshes) {
+            if (mesh.shaderType != null
+                    && VmtParser.ShaderType.fromName(mesh.shaderType) == VmtParser.ShaderType.SPRITE) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void applySpriteBillboard(PoseStack poseStack) {
+        net.minecraft.client.Camera camera =
+            net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera();
+        poseStack.mulPose(camera.rotation().conjugate());
+        // Source sprite 前向 +X → MC 前向 -Z：绕 Y 轴补偿 90°
+        poseStack.mulPose(com.mojang.math.Axis.YP.rotation((float) Math.PI / 2));
+    }
+
     private static RenderType selectRenderType(ResourceLocation texture, boolean translucent,
                                                  boolean alphaTest, boolean selfIllum, boolean noCull) {
         ResourceLocation tex = texture != null
@@ -205,13 +240,18 @@ public class JavaModelRenderer {
                                                         Matrix3f normalMatrix, MultiBufferSource bufferSource,
                                                         int packedLight) {
         if (mesh.indices.length < 3) return;
+        if (isSkippedShader(mesh)) return;
 
         ResourceLocation texture = mesh.texture;
         if (texture != null) {
             ModelLoadManager.getColorResolver().ensureTextureRegistered(texture);
         }
-        RenderType renderType = selectRenderType(texture, mesh.translucent, mesh.alphaTest, mesh.selfIllum, mesh.noCull);
-        int light = mesh.selfIllum ? fullbrightLight : packedLight;
+        boolean selfIllum = mesh.selfIllum || isSelfIllumShader(mesh);
+        boolean alphaTest = mesh.alphaTest
+                || (mesh.shaderType != null
+                    && VmtParser.ShaderType.fromName(mesh.shaderType) == VmtParser.ShaderType.EYE_REFRACT);
+        RenderType renderType = selectRenderType(texture, mesh.translucent, alphaTest, selfIllum, mesh.noCull);
+        int light = selfIllum ? fullbrightLight : packedLight;
         VertexConsumer consumer = bufferSource.getBuffer(renderType);
 
         float[] vertices = mesh.vertices;
@@ -278,7 +318,12 @@ public class JavaModelRenderer {
         poseStack.pushPose();
 
         // 整体朝向补偿：与 renderWithData 保持一致（见上方说明）
-        poseStack.mulPose(com.mojang.math.Axis.YP.rotation(MODEL_FACING_YAW));
+        // Sprite shader 模型改为面向相机（billboard）
+        if (needsSpriteBillboard(data)) {
+            applySpriteBillboard(poseStack);
+        } else {
+            poseStack.mulPose(com.mojang.math.Axis.YP.rotation(MODEL_FACING_YAW));
+        }
 
         float scale = entity instanceof LivingEntity le ? le.getBbHeight() / 1.8f : 1.0f;
         poseStack.scale(scale, scale, scale);
@@ -319,13 +364,18 @@ public class JavaModelRenderer {
                                             MultiBufferSource bufferSource, int packedLight,
                                             float[][] boneMatrices) {
         if (mesh.indices.length < 3) return;
+        if (isSkippedShader(mesh)) return;
 
         ResourceLocation texture = mesh.texture;
         if (texture != null) {
             ModelLoadManager.getColorResolver().ensureTextureRegistered(texture);
         }
-        RenderType renderType = selectRenderType(texture, mesh.translucent, mesh.alphaTest, mesh.selfIllum, mesh.noCull);
-        int light = mesh.selfIllum ? fullbrightLight : packedLight;
+        boolean selfIllum = mesh.selfIllum || isSelfIllumShader(mesh);
+        boolean alphaTest = mesh.alphaTest
+                || (mesh.shaderType != null
+                    && VmtParser.ShaderType.fromName(mesh.shaderType) == VmtParser.ShaderType.EYE_REFRACT);
+        RenderType renderType = selectRenderType(texture, mesh.translucent, alphaTest, selfIllum, mesh.noCull);
+        int light = selfIllum ? fullbrightLight : packedLight;
         VertexConsumer consumer = bufferSource.getBuffer(renderType);
 
         float[] vertices = mesh.vertices;

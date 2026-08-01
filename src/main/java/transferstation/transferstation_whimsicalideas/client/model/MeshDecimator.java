@@ -243,6 +243,7 @@ public class MeshDecimator {
                 .phongBoost(original.phongBoost).vtfKey(original.vtfKey)
                 .colorTint(original.colorTint).alpha(original.alpha)
                 .surfaceProp(original.surfaceProp).detailBlendMode(original.detailBlendMode)
+                .shaderType(original.shaderType)
                 .build();
         }
 
@@ -289,6 +290,7 @@ public class MeshDecimator {
             .vtfKey(original.vtfKey).colorTint(original.colorTint)
             .alpha(original.alpha).surfaceProp(original.surfaceProp)
             .detailBlendMode(original.detailBlendMode)
+            .shaderType(original.shaderType)
             .build();
     }
 
