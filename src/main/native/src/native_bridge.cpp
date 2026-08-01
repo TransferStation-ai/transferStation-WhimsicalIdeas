@@ -208,15 +208,23 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBrid
     return static_cast<jint>(it->second->meshes.size());
 }
 
+JNIEXPORT void JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBridge_nativeSetCameraPosition(
+    JNIEnv* env, jclass, jfloat x, jfloat y, jfloat z)
+{
+    GlRenderer::setCameraPosition(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+}
+
 static void renderMeshList(
     const std::vector<MeshData>& meshes,
     const float* matrix,
     int packedLight)
 {
     for (const auto& mesh : meshes) {
+        if (mesh.renderMode == RenderMode::SKIP) continue;
         if (!mesh.glVao || mesh.indexCount <= 0) continue;
         GlRenderer::renderMesh(mesh.glVao, mesh.indexCount, mesh.textureId,
-                                matrix, packedLight, mesh.colorTint);
+                                matrix, packedLight, mesh.colorTint, mesh.renderMode);
     }
 }
 
