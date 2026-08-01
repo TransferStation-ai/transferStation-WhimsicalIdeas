@@ -1031,11 +1031,18 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromSmd(
                 mesh.textureName = matLower;
             }
 
-            for (auto& [key, vmtInfo] : vmtInfoMap) {
-                if (ModelLoader::toLower(key) == matLower) {
-                    mesh.renderMode = inferRenderMode(vmtInfo);
-                    break;
+            auto vmtIt = vmtInfoMap.find(matLower);
+            if (vmtIt == vmtInfoMap.end()) {
+                for (auto& [k, vi] : vmtInfoMap) {
+                    std::string keyLower = ModelLoader::toLower(k);
+                    if (keyLower.find(matLower) != std::string::npos || matLower.find(keyLower) != std::string::npos) {
+                        vmtIt = vmtInfoMap.find(k);
+                        break;
+                    }
                 }
+            }
+            if (vmtIt != vmtInfoMap.end()) {
+                mesh.renderMode = inferRenderMode(vmtIt->second);
             }
 
             mesh.indices = std::move(meshIndices[material]);
