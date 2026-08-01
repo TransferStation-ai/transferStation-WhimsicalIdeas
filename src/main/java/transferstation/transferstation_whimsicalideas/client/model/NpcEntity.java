@@ -265,7 +265,9 @@ public class NpcEntity extends PathfinderMob {
     @Override
     public void aiStep() {
         super.aiStep();
-        // 每tick驱动AI能力
+        // AI pose 过期/淡出与程序化手势 keyframe 应用
+        NpcBoneController.updateBones(level().getGameTime());
+        // ÿtick����AI����
         aiAgent.tick();
 
         if (!level().isClientSide()) InjurySystem.tick(this);
@@ -360,7 +362,7 @@ public class NpcEntity extends PathfinderMob {
             case "nod" -> NpcBoneController.playNodAnimation(id, bones);
             case "shake" -> NpcBoneController.playShakeAnimation(id, bones);
             case "dance" -> NpcBoneController.playDanceAnimation(id, bones);
-            default -> NpcBoneController.resetAllBones(id);
+            default -> { /* 未知手势：不动作，避免清空该实体全部骨骼状态 */ }
         }
     }
 
