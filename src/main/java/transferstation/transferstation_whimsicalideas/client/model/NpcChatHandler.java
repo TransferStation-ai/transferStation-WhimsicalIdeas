@@ -1,25 +1,26 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
+import transferstation.transferstation_whimsicalideas.network.ChatS2CPacket;
+import transferstation.transferstation_whimsicalideas.network.NpcChatNetwork;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
-
-import transferstation.transferstation_whimsicalideas.network.ChatS2CPacket;
-import transferstation.transferstation_whimsicalideas.network.NpcChatNetwork;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class NpcChatHandler {
 
@@ -32,8 +33,38 @@ public class NpcChatHandler {
     private static String apiKey = "";
     private static String apiEndpoint = "https://api.player2.game/v1/chat";
     private static boolean enabled = false;
-    private static int maxHistoryLength = 10;
+    private static final int maxHistoryLength = 10;
     private static boolean closed = false;
+
+    /** AI pose 单次指令骨骼上限 */
+    static final int MAX_POSE_BONES = 8;
+
+    /** 解析 AI 回复 JSON 的 pose.bones（骨骼名 → [rx, ry, rz]），非法条目忽略，超限截断。 */
+    static Map<String, float[]> parsePoseBones(JsonObject bonesObj) {
+        Map<String, float[]> out = new HashMap<>();
+        if (bonesObj == null) return out;
+        for (var entry : bonesObj.entrySet()) {
+            if (out.size() >= MAX_POSE_BONES) break;
+            try {
+                if (!entry.getValue().isJsonArray()) continue;
+                var arr = entry.getValue().getAsJsonArray();
+                if (arr.size() < 3) continue;
+                float[] r = new float[3];
+                boolean ok = true;
+                for (int i = 0; i < 3; i++) {
+                    if (!arr.get(i).isJsonPrimitive() || !arr.get(i).getAsJsonPrimitive().isNumber()) {
+                        ok = false;
+                        break;
+                    }
+                    r[i] = arr.get(i).getAsFloat();
+                }
+                if (ok) out.put(entry.getKey(), r);
+            } catch (Exception e) {
+                LOGGER.warn("[NpcChat] Skipping malformed pose bone '{}': {}", entry.getKey(), e.getMessage());
+            }
+        }
+        return out;
+    }
 
     public enum AiProvider {
         CUSTOM("custom", "gmod-npc"),
@@ -115,9 +146,7 @@ public class NpcChatHandler {
                         serverLevel.getServer().execute(() -> processStructuredResponse(npc, rawReply, player));
                     } else {
                         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-                        if (mc != null) {
-                            mc.execute(() -> processStructuredResponse(npc, rawReply, player));
-                        }
+                        mc.execute(() -> processStructuredResponse(npc, rawReply, player));
                     }
 
                     return extractPlainReply(reply);
@@ -165,9 +194,13 @@ public class NpcChatHandler {
         sb.append("IMPORTANT: When responding, you may optionally return a JSON object ");
         sb.append("with the format: {\"reply\": \"...\", \"emotion\": \"happy|angry|sad|neutral|scared\", ");
         sb.append("\"gesture\": \"wave|nod|shake|point|idle\", ");
-        sb.append("\"action\": {\"type\": \"chop_wood|follow|stop|guard|emote\"}");
-        sb.append("} to control my expressions and actions. ");
-        sb.append("The 'action' field is optional. If you don't return JSON, I'll just use plain text.");
+        sb.append("\"action\": {\"type\": \"chop_wood|follow|stop|guard|emote\"}, ");
+        sb.append("\"pose\": {\"bones\": {\"ValveBiped.Bip01_Head\": [0, 0.5, 0]}, \"duration\": 2.0}} ");
+        sb.append("to control my expressions, actions and bones. ");
+        sb.append("The 'action' and 'pose' fields are optional. ");
+        sb.append("For 'pose', bones accepts Source engine bone names (e.g. \"ValveBiped.Bip01_Head\", \"ValveBiped.Bip01_R_UpperArm\", \"ValveBiped.Bip01_L_Hand\") or VMD-style names (\"Bip01 Head\"); ");
+        sb.append("angles are in radians as [rx, ry, rz]; 'duration' is in seconds (0.5-10). ");
+        sb.append("If you don't return JSON, I'll just use plain text.");
 
         return sb.toString();
     }
@@ -195,24 +228,7 @@ public class NpcChatHandler {
             case OPENAI:
             case DEEPSEEK:
                 body.addProperty("model", modelName);
-                var messages = new com.google.gson.JsonArray();
-
-                var sysMsg = new JsonObject();
-                sysMsg.addProperty("role", "system");
-                sysMsg.addProperty("content", systemPrompt);
-                messages.add(sysMsg);
-
-                if (!history.isEmpty()) {
-                    var histMsg = new JsonObject();
-                    histMsg.addProperty("role", "assistant");
-                    histMsg.addProperty("content", history);
-                    messages.add(histMsg);
-                }
-
-                var userMsg = new JsonObject();
-                userMsg.addProperty("role", "user");
-                userMsg.addProperty("content", message);
-                messages.add(userMsg);
+                var messages = getJsonElements(systemPrompt, history, message);
 
                 body.add("messages", messages);
                 body.addProperty("temperature", 0.7);
@@ -247,6 +263,28 @@ public class NpcChatHandler {
         return builder.POST(HttpRequest.BodyPublishers.ofString(body.toString())).build();
     }
 
+    private static @NotNull JsonArray getJsonElements(String systemPrompt, String history, String message) {
+        var messages = new JsonArray();
+
+        var sysMsg = new JsonObject();
+        sysMsg.addProperty("role", "system");
+        sysMsg.addProperty("content", systemPrompt);
+        messages.add(sysMsg);
+
+        if (!history.isEmpty()) {
+            var histMsg = new JsonObject();
+            histMsg.addProperty("role", "assistant");
+            histMsg.addProperty("content", history);
+            messages.add(histMsg);
+        }
+
+        var userMsg = new JsonObject();
+        userMsg.addProperty("role", "user");
+        userMsg.addProperty("content", message);
+        messages.add(userMsg);
+        return messages;
+    }
+
     private static String parseResponse(String responseBody) {
         try {
             JsonObject json = JsonParser.parseString(responseBody).getAsJsonObject();
@@ -254,7 +292,7 @@ public class NpcChatHandler {
             switch (provider) {
                 case OPENAI:
                 case DEEPSEEK:
-                    if (json.has("choices") && json.getAsJsonArray("choices").size() > 0) {
+                    if (json.has("choices") && !json.getAsJsonArray("choices").isEmpty()) {
                         return json.getAsJsonArray("choices").get(0).getAsJsonObject()
                             .get("message").getAsJsonObject().get("content").getAsString();
                     }
@@ -287,6 +325,8 @@ public class NpcChatHandler {
         String emotion = "neutral";
         String gesture = "idle";
         String cleanReply = rawReply;
+        Map<String, float[]> poseBones = null;
+        float poseDuration = 2.0f;
 
         try {
             String trimmed = rawReply.trim();
@@ -296,6 +336,16 @@ public class NpcChatHandler {
                 if (json.has("emotion")) emotion = json.get("emotion").getAsString();
                 if (json.has("gesture")) gesture = json.get("gesture").getAsString();
                 if (json.has("reply")) cleanReply = json.get("reply").getAsString();
+
+                if (json.has("pose") && json.get("pose").isJsonObject()) {
+                    JsonObject pose = json.getAsJsonObject("pose");
+                    if (pose.has("bones") && pose.get("bones").isJsonObject()) {
+                        poseBones = parsePoseBones(pose.getAsJsonObject("bones"));
+                    }
+                    if (pose.has("duration") && pose.get("duration").isJsonPrimitive()) {
+                        poseDuration = pose.get("duration").getAsFloat();
+                    }
+                }
 
                 if (json.has("action") && json.get("action").isJsonObject()) {
                     JsonObject action = json.getAsJsonObject("action");
@@ -323,14 +373,16 @@ public class NpcChatHandler {
             default -> data.setCurrentMood("neutral");
         }
 
-        npc.setAnimation(gesture);
         npc.handleGesture(emotion, gesture);
+        if (poseBones != null && !poseBones.isEmpty()) {
+            npc.applyBonePose(poseBones, Math.max(0.5f, Math.min(10.0f, poseDuration)));
+        }
 
         // Send S2C packet to the player
         if (player instanceof ServerPlayer sp) {
             NpcChatNetwork.CHANNEL.send(
                 net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
-                new ChatS2CPacket(npc.getUUID(), cleanReply, emotion, gesture)
+                new ChatS2CPacket(npc.getUUID(), cleanReply, emotion, gesture, poseBones, poseDuration)
             );
         }
     }
