@@ -34,6 +34,9 @@ static inline uint16_t readUint16(const uint8_t* buf, int offset) {
 
 // VMT material info
 struct VmtInfo {
+    std::string shaderName;  // VMT 第一行 shader 名，如 "UnlitGeneric"
+    bool selfIllum = false;  // $selfillum
+    bool envmap = false;     // $envmap 键存在
     std::string baseTexture;
     std::string bumpMap;
     std::string lightwarptexture;
@@ -76,6 +79,16 @@ static VmtInfo parseVmtMaterial(const std::string& vmtPath) {
         if (start == std::string::npos) continue;
         line = line.substr(start);
 
+        if (info.shaderName.empty() && !line.empty()
+            && line[0] != '{' && line[0] != '}' && line[0] != '/') {
+            std::string token = line;
+            size_t tokStart = token.find_first_not_of(" \t\"");
+            if (tokStart != std::string::npos) token = token.substr(tokStart);
+            size_t tokEnd = token.find_first_of(" \t\r\"");
+            if (tokEnd != std::string::npos) token = token.substr(0, tokEnd);
+            if (!token.empty()) info.shaderName = token;
+        }
+
         if (info.baseTexture.empty()) {
             info.baseTexture = extractValue(line, "$basetexture");
             if (info.baseTexture.empty()) info.baseTexture = extractValue(line, "$BaseTexture");
@@ -89,6 +102,12 @@ static VmtInfo parseVmtMaterial(const std::string& vmtPath) {
         if (!tr.empty()) info.translucent = boolVal(tr);
         std::string at = extractValue(line, "$alphatest");
         if (!at.empty()) info.alphaTest = boolVal(at);
+
+        std::string si = extractValue(line, "$selfillum");
+        if (!si.empty()) info.selfIllum = boolVal(si);
+        if (info.envmap == false && !extractValue(line, "$envmap").empty()) {
+            info.envmap = true;
+        }
         std::string ph = extractValue(line, "$phong");
         if (!ph.empty()) info.phong = boolVal(ph);
         std::string hl = extractValue(line, "$halflambert");
@@ -127,6 +146,29 @@ static VmtInfo parseVmtMaterial(const std::string& vmtPath) {
         }
     }
     return info;
+}
+
+// 与 ModelLoader::toLower 同语义（该成员为 private，文件级函数无法访问）
+static std::string toLowerString(const std::string& s) {
+    std::string r = s;
+    std::transform(r.begin(), r.end(), r.begin(), ::tolower);
+    return r;
+}
+
+static RenderMode inferRenderMode(const VmtInfo& info) {
+    std::string s = toLowerString(info.shaderName);
+    if (s.find("unlitgeneric") != std::string::npos || info.selfIllum) {
+        return RenderMode::UNLIT;
+    }
+    if (s.find("eyerefract") != std::string::npos) {
+        return RenderMode::EYE;
+    }
+    if (s.find("skybox") != std::string::npos
+        || s.find("tooltexture") != std::string::npos
+        || s.find("tools/tool") != std::string::npos) {
+        return RenderMode::SKIP;
+    }
+    return RenderMode::BASE;
 }
 
 void ModelLoader::toLowerInPlace(std::string& s) {
