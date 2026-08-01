@@ -240,6 +240,8 @@ struct MeshVertex {
     float u, v;
 };
 
+enum class RenderMode { BASE, UNLIT, EYE, SKIP };
+
 struct MeshData {
     std::vector<MeshVertex> vertices;
     std::vector<uint32_t> indices;
@@ -253,6 +255,7 @@ struct MeshData {
     bool translucent = false;
     bool alphaTest = false;
     bool noCull = false;
+    RenderMode renderMode = RenderMode::BASE;
 };
 
 #pragma pack(pop)
