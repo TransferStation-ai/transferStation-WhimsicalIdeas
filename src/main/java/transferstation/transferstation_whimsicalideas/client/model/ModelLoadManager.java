@@ -29,7 +29,8 @@ public class ModelLoadManager {
     private static final int VVD_VERTEX_SIZE = 48;
     // Bump this whenever parsing logic changes to invalidate old caches
     // 25: 在磁盘缓存中持久化解码后的纹理像素，命中时无需重新解析 VTF
-    private static final int CACHE_FORMAT_VERSION = 25;
+    // 26: 在磁盘缓存中持久化 shaderType，命中时无需重新解析 VMT
+    private static final int CACHE_FORMAT_VERSION = 26;
 
     private static final Map<String, SourceModelData> modelCache = Collections.synchronizedMap(new LinkedHashMap<>() {
         @Override
@@ -881,6 +882,8 @@ public class ModelLoadManager {
                     ResourceLocation selfIllumMask = readResourceLocation(dis);
                     ResourceLocation phongExponentTexture = readResourceLocation(dis);
 
+                    String shaderType = dis.readBoolean() ? dis.readUTF() : null;
+
                     data.meshes.add(new SourceModelData.MeshData.Builder()
                         .vertices(verts).indices(indices)
                         .boneWeights(boneWeights).boneIndices(boneIndices)
@@ -894,6 +897,7 @@ public class ModelLoadManager {
                         .bodyPartIndex(bodyPartIdx).modelIndex(modelIdx).materialIndex(materialIdx)
                         .vtfKey(vtfKey).colorTint(colorTint).alpha(alpha)
                         .surfaceProp(surfaceProp).detailBlendMode(detailBlendMode)
+                        .shaderType(shaderType)
                         .build());
                 }
 
@@ -1229,6 +1233,13 @@ public class ModelLoadManager {
                     writeResourceLocation(dos, mesh.detailMap);
                     writeResourceLocation(dos, mesh.selfIllumMask);
                     writeResourceLocation(dos, mesh.phongExponentTexture);
+
+                    if (mesh.shaderType != null) {
+                        dos.writeBoolean(true);
+                        dos.writeUTF(mesh.shaderType);
+                    } else {
+                        dos.writeBoolean(false);
+                    }
                 }
 
                 // Serialize reference bone transforms (srcBoneTransforms)
@@ -1728,6 +1739,7 @@ public class ModelLoadManager {
             boolean alphaTest = false;
             boolean noCull = false;
             String vtfKey = null;
+            String shaderType = null;
 
             String materialName = smdMesh.materialName;
             if (materialName != null && !materialName.isEmpty()) {
@@ -1772,6 +1784,7 @@ public class ModelLoadManager {
                             translucent = mat.isTransparent();
                             alphaTest = mat.isAlphaTest();
                             noCull = mat.isNoCull();
+                            shaderType = mat.shader;
                             String bumpPath = mat.getBumpMap();
                             if (bumpPath != null && !bumpPath.isEmpty()) {
                                 String bumpNorm = bumpPath.replace('\\', '/').toLowerCase();
@@ -1826,6 +1839,7 @@ public class ModelLoadManager {
                 .translucent(translucent).alphaTest(alphaTest).noCull(noCull)
                 .bodyPartIndex(0).modelIndex(0).materialIndex(meshIdx)
                 .vtfKey(vtfKey)
+                .shaderType(shaderType)
                 .build());
 
             meshIdx++;
@@ -2267,6 +2281,7 @@ public class ModelLoadManager {
                     String vtfKey = null;
                     float[] colorTint = null;
                     float alpha = 1.0f;
+                    String shaderType = null;
                     String surfaceProp = null;
                     int detailBlendMode = 0;
 
@@ -2292,6 +2307,7 @@ public class ModelLoadManager {
                         alpha = texInfo.alpha;
                         surfaceProp = texInfo.surfaceProp;
                         detailBlendMode = texInfo.detailBlendMode;
+                        shaderType = texInfo.shaderType;
                     }
 
                     int materialIdx = (alignedMdlMeshIdx < mdlMeshCount) ?
@@ -2310,6 +2326,7 @@ public class ModelLoadManager {
                         .bodyPartIndex(model.bodypartIndex).modelIndex(modelIdx).materialIndex(materialIdx)
                         .vtfKey(vtfKey).colorTint(colorTint).alpha(alpha)
                         .surfaceProp(surfaceProp).detailBlendMode(detailBlendMode)
+                        .shaderType(shaderType)
                         .build());
                 }
                 ModelLoadProgress.progress();
@@ -3087,13 +3104,15 @@ public class ModelLoadManager {
         ResourceLocation phongExponentTex = findTextureMap(mat.getPhongExponentTexture(), vtfCache, cdPrefixes);
         float[] colorTint = mat.getColor2();
         if (colorTint == null) colorTint = mat.getColor();
-        return new SourceModelData.MeshTextureInfo(loc, normalMap,
+        SourceModelData.MeshTextureInfo info = new SourceModelData.MeshTextureInfo(loc, normalMap,
             ssbumpMap, envMapMask, parallaxMap, detailMap, selfIllumMask,
             mat.isTransparent(), mat.isAlphaTest(), mat.isNoCull(),
             mat.isSelfIllum(), mat.hasPhong(), mat.isHalfLambert(),
             mat.getPhongBoost(), mat.getPhongFresnelRanges(), phongExponentTex,
             vtfKey, colorTint, mat.getAlpha(),
             mat.getSurfaceProp(), mat.getDetailBlendMode());
+        info.shaderType = mat.shader;
+        return info;
     }
 
     /**
