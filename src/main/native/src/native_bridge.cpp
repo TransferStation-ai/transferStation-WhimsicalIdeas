@@ -129,6 +129,7 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBrid
         auto uploadMeshes = [](std::vector<MeshData>& meshes) {
             for (auto& mesh : meshes) {
                 if (mesh.vertices.empty() || mesh.indices.empty()) continue;
+                if (mesh.renderMode == RenderMode::SKIP) continue;
                 uint32_t vao = GlRenderer::buildMesh(mesh.vertices, mesh.indices);
                 mesh.glVao = vao;
                 mesh.indexCount = static_cast<int>(mesh.indices.size());

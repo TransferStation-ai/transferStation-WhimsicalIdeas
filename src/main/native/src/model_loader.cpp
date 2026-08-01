@@ -825,6 +825,7 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromDirectory(
                             mesh.translucent = vmtInfo.translucent;
                             mesh.alphaTest = vmtInfo.alphaTest;
                             mesh.noCull = vmtInfo.noCull;
+                            mesh.renderMode = inferRenderMode(vmtInfo);
                             break;
                         }
                     }
@@ -1028,6 +1029,13 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromSmd(
                 model->textureData.push_back(std::move(td));
                 model->textures.push_back({0, 0, 0});
                 mesh.textureName = matLower;
+            }
+
+            for (auto& [key, vmtInfo] : vmtInfoMap) {
+                if (ModelLoader::toLower(key) == matLower) {
+                    mesh.renderMode = inferRenderMode(vmtInfo);
+                    break;
+                }
             }
 
             mesh.indices = std::move(meshIndices[material]);
