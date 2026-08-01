@@ -199,11 +199,8 @@ public class NpcEntity extends PathfinderMob {
 
         if (itemStack.is(Items.WRITABLE_BOOK)) {
             if (!level().isClientSide()) {
-                String message = null;
-                if (itemStack.getTag() != null) {
-                    message = itemStack.hasTag() && itemStack.getTag().contains("pages") ?
-                            itemStack.getTag().getList("pages", 8).getString(0) : "I have something to say...";
-                }
+                String message = itemStack.hasTag() && itemStack.getTag().contains("pages") ?
+                        itemStack.getTag().getList("pages", 8).getString(0) : "I have something to say...";
 
                 NpcChatHandler.sendMessage(this, player, message).thenAccept(reply -> {
                     if (player instanceof ServerPlayer serverPlayer) {
@@ -239,14 +236,16 @@ public class NpcEntity extends PathfinderMob {
             float dvy = 0.5f;
             float dvz = (float)(Math.cos(Math.toRadians(deathYaw)) * 0.5);
 
-            var entity = source.getEntity();
-            if (entity != null) {
-                float angle = (float) Math.atan2(
-                        entity.getX() - this.getX(),
-                        entity.getZ() - this.getZ());
-                dvx = (float) (-Math.sin(angle) * 1.2);
-                dvz = (float) (Math.cos(angle) * 1.2);
-                dvy = 0.6f;
+            if (source != null) {
+                var entity = source.getEntity();
+                if (entity != null) {
+                    float angle = (float) Math.atan2(
+                            entity.getX() - this.getX(),
+                            entity.getZ() - this.getZ());
+                    dvx = (float) (-Math.sin(angle) * 1.2);
+                    dvz = (float) (Math.cos(angle) * 1.2);
+                    dvy = 0.6f;
+                }
             }
 
             EntityType<NpcRagdoll> ragdollType = NpcModelRegistry.getNpcRagdollType();
@@ -339,7 +338,11 @@ public class NpcEntity extends PathfinderMob {
      * 缺失时 fallback 程序化手势。不打断 base 层动画。
      */
     public void playGesture(String gesture, float fadeTime) {
-        if (gesture == null || gesture.isEmpty() || "idle".equals(gesture)) return;
+        if (gesture == null || gesture.isEmpty()) return;
+        if ("idle".equals(gesture)) {
+            AnimationLayers.stop(this, AnimationLayers.OVERLAY, fadeTime);
+            return;
+        }
         if (AnimationProcessor.getAnimation(gesture) != null) {
             AnimationLayers.play(this, AnimationLayers.OVERLAY, gesture, 1.0f,
                     AnimationLayers.BoneMaskType.UPPER_BODY, fadeTime);
