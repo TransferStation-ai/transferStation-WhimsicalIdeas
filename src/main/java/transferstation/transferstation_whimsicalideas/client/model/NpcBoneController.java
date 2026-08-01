@@ -91,9 +91,8 @@ public class NpcBoneController {
             Matrix4f matrix = new Matrix4f();
             matrix.identity();
             matrix.translate(position);
-            // AI pose 立即生效：存在目标旋转时直接用目标；淡出阶段回落 rotation 插值
-            Vector3f effRotation = (targetRotation != null) ? targetRotation : rotation;
-            matrix.rotateXYZ(effRotation);
+            // 渲染始终走 rotation（updateBones 负责 targetRotation 的插值收敛），保证队列插值通道语义不变
+            matrix.rotateXYZ(rotation);
             matrix.scale(scale);
             return matrix;
         }
@@ -264,6 +263,7 @@ public class NpcBoneController {
 
         String key = entityId + ":" + boneName;
         BoneState state = boneStates.computeIfAbsent(key, k -> new BoneState());
+        state.rotation.set(clampAngle(rx), clampAngle(ry), clampAngle(rz));
         state.targetRotation = new Vector3f(clampAngle(rx), clampAngle(ry), clampAngle(rz));
         state.fadeOutTick = -1;
         state.expireTick = (durationSec <= 0) ? -1
@@ -305,7 +305,8 @@ public class NpcBoneController {
                 state.rotation.lerp(state.targetRotation, state.interpolationSpeed);
                 if (state.rotation.distance(state.targetRotation) < 0.001f) {
                     state.rotation.set(state.targetRotation);
-                    state.targetRotation = null;
+                    // targetRotation 保留：applyAiPose 同步写入 rotation 后首帧即收敛，
+                    // 若清空则立即生效语义与 pose 跟踪状态丢失；过期分支负责置 null
                 }
             }
         }
