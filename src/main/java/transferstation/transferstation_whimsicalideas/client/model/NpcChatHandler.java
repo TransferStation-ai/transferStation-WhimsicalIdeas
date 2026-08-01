@@ -375,7 +375,9 @@ public class NpcChatHandler {
 
         npc.handleGesture(emotion, gesture);
         if (poseBones != null && !poseBones.isEmpty()) {
-            npc.applyBonePose(poseBones, Math.max(0.5f, Math.min(10.0f, poseDuration)));
+            float clampedDuration = Math.max(0.5f, Math.min(10.0f, poseDuration));
+            npc.applyBonePose(poseBones, clampedDuration);
+            poseDuration = clampedDuration;
         }
 
         // Send S2C packet to the player
