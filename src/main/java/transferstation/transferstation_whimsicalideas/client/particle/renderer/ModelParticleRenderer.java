@@ -1,13 +1,9 @@
 package transferstation.transferstation_whimsicalideas.client.particle.renderer;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.texture.OverlayTexture;
 import transferstation.transferstation_whimsicalideas.client.particle.Particle;
 import transferstation.transferstation_whimsicalideas.client.particle.ParticleEmitter;
-import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
-import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
 
 import java.util.List;
 

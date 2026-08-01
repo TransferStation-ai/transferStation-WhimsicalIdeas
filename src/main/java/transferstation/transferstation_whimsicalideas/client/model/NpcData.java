@@ -23,10 +23,10 @@ public class NpcData {
     private long lastInteractionTick = 0;
     private int killCount = 0;
     private int deathCount = 0;
-    private List<String> knownPlayers = new ArrayList<>();
+    private final List<String> knownPlayers = new ArrayList<>();
     private String aiPersonality = "friendly";
-    private float maxAffection = 100.0f;
-    private float maxLoyalty = 100.0f;
+    private final float maxAffection = 100.0f;
+    private final float maxLoyalty = 100.0f;
 
     private static final Random RANDOM = new Random();
 
@@ -92,15 +92,15 @@ public class NpcData {
     }
 
     public float getAffection() { return affection; }
-    public void setAffection(float affection) { this.affection = clamp(affection, 0, maxAffection); }
+    public void setAffection(float affection) { this.affection = clamp(affection, maxAffection); }
     public void addAffection(float amount) { setAffection(this.affection + amount); }
 
     public float getLoyalty() { return loyalty; }
-    public void setLoyalty(float loyalty) { this.loyalty = clamp(loyalty, 0, maxLoyalty); }
+    public void setLoyalty(float loyalty) { this.loyalty = clamp(loyalty, maxLoyalty); }
     public void addLoyalty(float amount) { setLoyalty(this.loyalty + amount); }
 
     public float getBetrayalProbability() { return betrayalProbability; }
-    public void setBetrayalProbability(float prob) { this.betrayalProbability = clamp(prob, 0, 1); }
+    public void setBetrayalProbability(float prob) { this.betrayalProbability = clamp(prob, 1); }
 
     public UUID getOwnerUUID() { return ownerUUID; }
     public void setOwnerUUID(UUID uuid) { this.ownerUUID = uuid; }
@@ -136,20 +136,20 @@ public class NpcData {
         if (affection < 20) adjustedBetrayal *= 2.0f;
         else if (affection > 80) adjustedBetrayal *= 0.2f;
 
-        adjustedBetrayal = clamp(adjustedBetrayal, 0, 1);
+        adjustedBetrayal = clamp(adjustedBetrayal, 1);
         return RANDOM.nextFloat() < adjustedBetrayal;
     }
 
     public void onInteract() {
-        affection = clamp(affection + 2.0f + RANDOM.nextFloat() * 3.0f, 0, maxAffection);
-        loyalty = clamp(loyalty + 0.5f + RANDOM.nextFloat() * 1.0f, 0, maxLoyalty);
-        betrayalProbability = clamp(betrayalProbability - 0.005f, 0, 1);
+        affection = clamp(affection + 2.0f + RANDOM.nextFloat() * 3.0f, maxAffection);
+        loyalty = clamp(loyalty + 0.5f + RANDOM.nextFloat(), maxLoyalty);
+        betrayalProbability = clamp(betrayalProbability - 0.005f, 1);
     }
 
     public void onHurtBy(Entity attacker) {
-        affection = clamp(affection - 10.0f, 0, maxAffection);
-        loyalty = clamp(loyalty - 5.0f, 0, maxLoyalty);
-        betrayalProbability = clamp(betrayalProbability + 0.05f, 0, 1);
+        affection = clamp(affection - 10.0f, maxAffection);
+        loyalty = clamp(loyalty - 5.0f, maxLoyalty);
+        betrayalProbability = clamp(betrayalProbability + 0.05f, 1);
         if (attacker != null) {
             currentMood = "angry";
         }
@@ -157,8 +157,8 @@ public class NpcData {
 
     public void onKill() {
         killCount++;
-        loyalty = clamp(loyalty + 3.0f, 0, maxLoyalty);
-        affection = clamp(affection + 1.0f, 0, maxAffection);
+        loyalty = clamp(loyalty + 3.0f, maxLoyalty);
+        affection = clamp(affection + 1.0f, maxAffection);
     }
 
     public Component getMoodDescription() {
@@ -171,7 +171,7 @@ public class NpcData {
         };
     }
 
-    private static float clamp(float value, float min, float max) {
-        return Math.max(min, Math.min(max, value));
+    private static float clamp(float value, float max) {
+        return Math.max((float) 0, Math.min(max, value));
     }
 }

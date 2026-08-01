@@ -9,7 +9,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
 
@@ -29,7 +30,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
     }
 
     @Override
-    public MdlDataTypes.ParsedModel parseMdl(byte[] data) throws IOException {
+    public MdlDataTypes.ParsedModel parseMdl(byte[] data) {
         if (!isAvailable()) {
             return fallback.parseMdl(data);
         }
@@ -50,7 +51,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
     }
 
     @Override
-    public VvdParser.ParsedVvd parseVvd(byte[] data) throws IOException {
+    public VvdParser.ParsedVvd parseVvd(byte[] data) {
         if (!isAvailable()) {
             return fallback.parseVvd(data);
         }
@@ -70,7 +71,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
     }
 
     @Override
-    public VtxParser.ParsedVtx parseVtx(byte[] data) throws IOException {
+    public VtxParser.ParsedVtx parseVtx(byte[] data) {
         if (!isAvailable()) {
             return fallback.parseVtx(data);
         }
@@ -118,7 +119,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
     public long getNativeHandle(Path packageDir) {
         if (!isAvailable()) return 0;
         try {
-            Path mdlFile = findFirstFile(packageDir, ".mdl");
+            Path mdlFile = findFirstFile(packageDir);
             if (mdlFile == null) return 0;
             String modelName = packageDir.getFileName().toString();
             return GmodNativeBridge.nativeLoadModel(
@@ -465,10 +466,10 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
         }
     }
 
-    private Path findFirstFile(Path dir, String extension) {
+    private Path findFirstFile(Path dir) {
         try (var files = java.nio.file.Files.walk(dir, 4)) {
             return files.filter(Files::isRegularFile)
-                .filter(f -> f.getFileName().toString().toLowerCase().endsWith(extension))
+                .filter(f -> f.getFileName().toString().toLowerCase().endsWith(".mdl"))
                 .findFirst()
                 .orElse(null);
         } catch (IOException e) {

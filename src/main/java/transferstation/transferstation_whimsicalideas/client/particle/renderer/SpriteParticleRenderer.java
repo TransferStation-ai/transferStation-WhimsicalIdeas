@@ -8,7 +8,6 @@ import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
-import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import transferstation.transferstation_whimsicalideas.client.particle.Particle;
 import transferstation.transferstation_whimsicalideas.client.particle.ParticleEmitter;

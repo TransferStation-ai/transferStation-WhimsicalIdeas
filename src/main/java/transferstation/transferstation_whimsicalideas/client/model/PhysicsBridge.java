@@ -18,8 +18,8 @@ public class PhysicsBridge {
         return available;
     }
 
-    public static boolean tryInitialize() {
-        if (initialized) return available;
+    public static void tryInitialize() {
+        if (initialized) return;
         initialized = true;
 
         try {
@@ -33,7 +33,6 @@ public class PhysicsBridge {
             LOGGER.debug("[Physics] Native physics not available: {}", e.getMessage());
         }
 
-        return available;
     }
 
     public static long createRigidBody(float x, float y, float z, float mass) {
@@ -58,56 +57,72 @@ public class PhysicsBridge {
         if (!available) return;
         try {
             nativeSetRestitution(id, restitution);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static void setFriction(long id, float friction) {
         if (!available) return;
         try {
             nativeSetFriction(id, friction);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static void setLinearFactor(long id, float fx, float fy, float fz) {
         if (!available) return;
         try {
             nativeSetLinearFactor(id, fx, fy, fz);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static void setAngularFactor(long id, float fx, float fy, float fz) {
         if (!available) return;
         try {
             nativeSetAngularFactor(id, fx, fy, fz);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static void destroyRigidBody(long id) {
         if (!available) return;
         try {
             nativeDestroyRigidBody(id);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static void setVelocity(long id, float vx, float vy, float vz) {
         if (!available) return;
         try {
             nativeSetVelocity(id, vx, vy, vz);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static void applyImpulse(long id, float ix, float iy, float iz) {
         if (!available) return;
         try {
             nativeApplyImpulse(id, ix, iy, iz);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static void setKinematicPose(long id, float px, float py, float pz, float rx, float ry, float rz, float rw) {
         if (!available) return;
         try {
             nativeSetKinematicPose(id, px, py, pz, rx, ry, rz, rw);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static float[] getPosition(long id) {
@@ -132,14 +147,18 @@ public class PhysicsBridge {
         if (!available) return;
         try {
             nativeStepSimulation(deltaTime);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static void setGravity(float gx, float gy, float gz) {
         if (!available) return;
         try {
             nativeSetGravity(gx, gy, gz);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static long createJoint(long bodyA, long bodyB, float pax, float pay, float paz, float pbx, float pby, float pbz) {
@@ -165,14 +184,18 @@ public class PhysicsBridge {
         if (!available) return;
         try {
             nativeSetJointLimit(jointId, linearLimit, angularLimit);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static void destroyJoint(long id) {
         if (!available) return;
         try {
             nativeDestroyJoint(id);
-        } catch (UnsatisfiedLinkError e) {}
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static boolean raycast(float fromX, float fromY, float fromZ, float toX, float toY, float toZ,

@@ -68,14 +68,12 @@ public class PhyParser {
             int fileLen = buf.limit();
 
             result.size = buf.getInt();
-            result.id = readFixedString(buf, 4);
+            result.id = readFixedString(buf);
             result.solidCount = buf.getInt();
             result.checksum = buf.getInt();
 
             boolean altOffset = false;
-            if (result.id.equals("VPHY") || result.id.equals("PHYS")) {
-                // normal
-            } else if (fileLen >= 20) {
+                if (fileLen >= 20) {
                 int altMagic = buf.getInt(16);
                 if (altMagic == 0x59504856 || altMagic == 0x53594850) {
                     altOffset = true;
@@ -98,7 +96,7 @@ public class PhyParser {
             Map<Integer, String> solidNames = (kvStart > 0) ? parseSolidNames(data, kvStart, fileLen) : new HashMap<>();
 
             int binaryEnd = (kvStart > 0) ? kvStart : fileLen;
-            int cursor = altOffset ? 16 : 16;
+            int cursor = 16;
 
             for (int i = 0; i < result.solidCount; i++) {
                 if (cursor + 28 > binaryEnd) break;
@@ -110,7 +108,7 @@ public class PhyParser {
                 // Check for VPHY magic at cursor+4
                 String vphysicsId = "";
                 if (cursor + 8 <= binaryEnd) {
-                    vphysicsId = readFixedString(buf, cursor + 4, 4);
+                    vphysicsId = readFixedString(buf, cursor + 4);
                 }
 
                 int surfaceSize = 0;
@@ -185,7 +183,9 @@ public class PhyParser {
                 int q4 = block.indexOf('"', q3 + 1); if (q4 < 0) break;
                 String key = block.substring(q1 + 1, q2);
                 String value = block.substring(q3 + 1, q4);
-                if (key.equals("index")) try { solidIndex = Integer.parseInt(value); } catch (NumberFormatException e) { }
+                if (key.equals("index")) try { solidIndex = Integer.parseInt(value); } catch (NumberFormatException e) {
+                    throw new RuntimeException(e);
+                }
                 else if (key.equals("name")) solidName = value;
                 propIdx = q4 + 1;
             }
@@ -376,18 +376,18 @@ public class PhyParser {
         return (short)((data[off] & 0xFF) | ((data[off+1] & 0xFF) << 8));
     }
 
-    private static String readFixedString(ByteBuffer buf, int length) {
-        byte[] bytes = new byte[length];
+    private static String readFixedString(ByteBuffer buf) {
+        byte[] bytes = new byte[4];
         buf.get(bytes);
         int nullTerm = 0;
         while (nullTerm < bytes.length && bytes[nullTerm] != 0) nullTerm++;
         return new String(bytes, 0, nullTerm, StandardCharsets.UTF_8);
     }
 
-    private static String readFixedString(ByteBuffer buf, int absPos, int length) {
+    private static String readFixedString(ByteBuffer buf, int absPos) {
         int oldPos = buf.position();
         buf.position(absPos);
-        byte[] bytes = new byte[length];
+        byte[] bytes = new byte[4];
         buf.get(bytes);
         buf.position(oldPos);
         int nullTerm = 0;

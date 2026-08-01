@@ -9,7 +9,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 public class VmtParser {
 
@@ -67,15 +66,6 @@ public class VmtParser {
                 return btNorm;
             }
             // No $cdmaterials: if the path looks absolute (starts with a known category), return as-is
-            if (btNorm.startsWith("models/") || btNorm.startsWith("materials/")
-                || btNorm.startsWith("nature/") || btNorm.startsWith("decals/")
-                || btNorm.startsWith("effects/") || btNorm.startsWith("editor/")
-                || btNorm.startsWith("vgui/") || btNorm.startsWith("skybox/")
-                || btNorm.startsWith("overlays/") || btNorm.startsWith("particle/")
-                || btNorm.startsWith("lights/") || btNorm.startsWith("map/")
-                || btNorm.startsWith("console/") || btNorm.startsWith("ui/")) {
-                return btNorm;
-            }
             return btNorm;
         }
 
@@ -212,7 +202,7 @@ public class VmtParser {
 
         private boolean parseBool(String key) {
             String val = parameters.get(key);
-            return val != null && parseBoolValue(val);
+            return parseBoolValue(val);
         }
 
         private static boolean parseBoolValue(String val) {
@@ -582,7 +572,7 @@ public class VmtParser {
             List<Map.Entry<Integer, Integer>> sorted = colorFrequency.entrySet().stream()
                 .sorted((a, b) -> b.getValue() - a.getValue())
                 .limit(count)
-                .collect(Collectors.toList());
+                .toList();
 
             int[] topColors = new int[Math.min(count, sorted.size())];
             for (int i = 0; i < topColors.length; i++) {
@@ -748,7 +738,7 @@ public class VmtParser {
 
         // Handle quoted key-value pairs: "key" "value"
         if (line.startsWith("\"")) {
-            int firstEnd = findClosingQuote(line, 1);
+            int firstEnd = findClosingQuote(line);
             if (firstEnd < 0) return;
 
             String key = line.substring(1, firstEnd).trim();
@@ -758,7 +748,7 @@ public class VmtParser {
 
             String value;
             if (rest.startsWith("\"")) {
-                int secondEnd = findClosingQuote(rest, 1);
+                int secondEnd = findClosingQuote(rest);
                 if (secondEnd < 0) {
                     value = rest.substring(1).trim();
                 } else {
@@ -810,8 +800,8 @@ public class VmtParser {
         }
     }
 
-    private static int findClosingQuote(String s, int start) {
-        int idx = start;
+    private static int findClosingQuote(String s) {
+        int idx = 1;
         while (idx < s.length()) {
             if (s.charAt(idx) == '\\' && idx + 1 < s.length()) {
                 idx += 2;

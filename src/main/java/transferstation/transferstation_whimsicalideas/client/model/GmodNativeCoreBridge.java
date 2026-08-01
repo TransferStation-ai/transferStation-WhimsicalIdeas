@@ -1,7 +1,7 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
 import com.mojang.logging.LogUtils;
-import org.slf4j.Logger;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,9 +16,6 @@ public class GmodNativeCoreBridge {
     private static boolean initAttempted = false;
     private static String lastLoadError = null;
 
-    // Resource extraction paths for Linux .so
-    private static Path extractedLinuxSoPath = null;
-
     // Platform state
     private static boolean linuxInit = false;
     private static boolean linuxLoaded = false;
@@ -26,7 +23,6 @@ public class GmodNativeCoreBridge {
 
     private static boolean androidInit = false;
     private static boolean androidLoaded = false;
-    private static String androidAbi = null;
 
     public static synchronized boolean isAvailable() {
         return nativeLoaded;
@@ -128,7 +124,7 @@ public class GmodNativeCoreBridge {
                     Path soPath = tempDir.resolve("native-core.so");
                     Files.copy(in, soPath, StandardCopyOption.REPLACE_EXISTING);
                     soPath.toFile().deleteOnExit();
-                    extractedLinuxSoPath = soPath;
+                    // Resource extraction paths for Linux .so
                     System.load(soPath.toAbsolutePath().toString());
                     LogUtils.getLogger().info("[GmodNativeCore] native-core.so loaded from resources: {}", resourcePath);
                     return true;
@@ -171,17 +167,7 @@ public class GmodNativeCoreBridge {
         androidInit = true;
 
         String osArch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-        if (osArch.contains("aarch64") || osArch.contains("arm64")) {
-            androidAbi = "arm64-v8a";
-        } else if (osArch.contains("arm")) {
-            androidAbi = osArch.contains("v7") ? "armeabi-v7a" : "armeabi";
-        } else if (osArch.contains("x86_64") || osArch.contains("amd64")) {
-            androidAbi = "x86_64";
-        } else if (osArch.contains("x86")) {
-            androidAbi = "x86";
-        } else {
-            androidAbi = osArch.isEmpty() ? "unknown" : osArch;
-        }
+        String androidAbi = getString(osArch);
 
         String[] libNames = {
             "native-core-" + androidAbi,
@@ -204,6 +190,22 @@ public class GmodNativeCoreBridge {
             LogUtils.getLogger().warn("[GmodNativeCore] {}; using Java fallback", lastLoadError);
         }
         return androidLoaded;
+    }
+
+    private static @NotNull String getString(String osArch) {
+        String androidAbi;
+        if (osArch.contains("aarch64") || osArch.contains("arm64")) {
+            androidAbi = "arm64-v8a";
+        } else if (osArch.contains("arm")) {
+            androidAbi = osArch.contains("v7") ? "armeabi-v7a" : "armeabi";
+        } else if (osArch.contains("x86_64") || osArch.contains("amd64")) {
+            androidAbi = "x86_64";
+        } else if (osArch.contains("x86")) {
+            androidAbi = "x86";
+        } else {
+            androidAbi = osArch.isEmpty() ? "unknown" : osArch;
+        }
+        return androidAbi;
     }
 
     // ── Core parsing native methods ────────────────────────────────

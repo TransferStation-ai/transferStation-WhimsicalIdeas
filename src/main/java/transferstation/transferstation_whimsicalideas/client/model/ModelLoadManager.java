@@ -3,8 +3,8 @@ package transferstation.transferstation_whimsicalideas.client.model;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 
 import java.awt.image.BufferedImage;
@@ -17,10 +17,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
-import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
-
-import transferstation.transferstation_whimsicalideas.client.model.AttachmentItemManager;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -58,7 +55,7 @@ public class ModelLoadManager {
      * - 新方案：世代只增不减，每个条目独立追踪最后注册世代
      */
     public static void markTexturesStale() {
-        colorResolver.incrementGeneration();
+        TextureColorResolver.incrementGeneration();
     }
 
     public static void setCacheDir(Path dir) {
@@ -92,8 +89,7 @@ public class ModelLoadManager {
     }
 
     private static void fireModelLoadedCallbacks(String cacheKey, SourceModelData data,
-                                                   ModelParserStrategy strategy, long elapsedMs,
-                                                   boolean success, String errorMessage) {
+                                                   ModelParserStrategy strategy, long elapsedMs) {
         if (callbacks.isEmpty()) return;
         if (cacheKey == null) return;
 
@@ -103,28 +99,24 @@ public class ModelLoadManager {
         if (lastSep >= 0) name = cacheKey.substring(lastSep + 1);
         builder.modelName(name);
         builder.loadTimeMs(elapsedMs);
-        builder.success(success);
+        builder.success(true);
         builder.parserStrategy(strategy != null ? strategy.getPlatformName() : "none");
 
         if (data != null) {
-            builder.numBones(data.bones != null ? data.bones.size() : 0);
-            builder.numBodyParts(data.bodyParts != null ? data.bodyParts.size() : 0);
-            builder.numMeshes(data.meshes != null ? data.meshes.size() : 0);
+            builder.numBones(data.bones.size());
+            builder.numBodyParts(data.bodyParts.size());
+            builder.numMeshes(data.meshes.size());
             builder.numVertices(data.totalVertices());
             builder.numTriangles(data.totalTriangles());
-            if (data.bodyParts != null) {
-                List<String> bpNames = new ArrayList<>();
-                for (SourceModelData.BodyPartInfo bp : data.bodyParts) {
-                    bpNames.add(bp.name);
-                }
-                builder.bodyPartNames(bpNames);
+            List<String> bpNames = new ArrayList<>();
+            for (SourceModelData.BodyPartInfo bp : data.bodyParts) {
+                bpNames.add(bp.name);
             }
-        } else {
-            builder.warnings(List.of(errorMessage != null ? errorMessage : "unknown error"));
-        }
+            builder.bodyPartNames(bpNames);
+        } 
 
         ModelLoadDiagnostics diag = builder.build();
-        LOGGER.info("[ModelLoadManager] " + diag.toSummaryString());
+        LOGGER.info("[ModelLoadManager] {}", diag.toSummaryString());
 
         // Iterate over a snapshot to avoid concurrent modification
         ModelLoadCallback[] snapshot;
@@ -174,7 +166,7 @@ public class ModelLoadManager {
             // - markTexturesStale() 递增世代计数器
             // - reRegisterAllTextures() 批量重建 DynamicTexture
             // - ensureTextureRegistered() 按需逐条目重注册
-            if (colorResolver.getStatistics().registeredTextures == 0) {
+            if (colorResolver.getStatistics().registeredTextures() == 0) {
                 LOGGER.info("[ModelLoadManager] Re-registering textures from cached model: {}", packageDir);
                 reRegisterTexturesFromCache(packageDir, cached);
             }
@@ -201,9 +193,9 @@ public class ModelLoadManager {
             long startTime = System.nanoTime();
             SourceModelData data = loadFromDirectory(packageDir, strategy);
             long elapsedMs = (System.nanoTime() - startTime) / 1_000_000;
-            if (data != null && !data.meshes.isEmpty()) {
+            if (!data.meshes.isEmpty()) {
                 modelCache.put(cacheKey, data);
-                fireModelLoadedCallbacks(cacheKey, data, strategy, elapsedMs, true, null);
+                fireModelLoadedCallbacks(cacheKey, data, strategy, elapsedMs);
                 // 磁盘缓存异步保存，不阻塞进度条和后续模型加载
                 final SourceModelData dataToCache = data;
                 CompletableFuture.runAsync(() -> saveToDiskCache(packageDir, dataToCache))
@@ -311,7 +303,7 @@ public class ModelLoadManager {
             } else {
                 mdl = MdlParser.parse(vpkFiles.mdlData);
                 vvd = VvdParser.parse(vpkFiles.vvdData);
-                vtx = VtxParser.parse(vpkFiles.vtxData, vvd != null ? vvd.vertices.size() : Integer.MAX_VALUE);
+                vtx = VtxParser.parse(vpkFiles.vtxData, vvd.vertices.size());
             }
         } else if (vpkFiles.hasSmd()) {
             // SMD fallback - parse SMD directly
@@ -333,6 +325,21 @@ public class ModelLoadManager {
         Path primaryMaterialsDir = allMaterialsDirs.isEmpty() ? null : allMaterialsDirs.get(0);
 
         // Merge cdTextures from MDL with Lua hints
+        List<String> allCdPrefixes = getStringList(mdl, luaCdMaterialsHints);
+
+        int textureFileCount = countTextureFiles(allMaterialsDirs);
+        ModelLoadProgress.begin(ModelLoadProgress.Phase.TEXTURING, textureFileCount);
+        Map<Integer, SourceModelData.MeshTextureInfo> meshTextureMap =
+            loadTextures(mdl, primaryMaterialsDir, allMaterialsDirs, luaMaterialHints, allCdPrefixes);
+
+        int estimatedMeshCount = vtx.meshTriangles.size();
+        if (estimatedMeshCount == 0) estimatedMeshCount = mdl.meshes.size();
+        ModelLoadProgress.begin(ModelLoadProgress.Phase.BUILDING, estimatedMeshCount);
+        return buildSourceModelData(mdl, vvd, vtx, meshTextureMap, modelName,
+            mdl.includeModels, includePath -> loadModelFromVpk(archive, includePath));
+    }
+
+    private static @NotNull List<String> getStringList(MdlDataTypes.ParsedModel mdl, List<String> luaCdMaterialsHints) {
         List<String> allCdPrefixes = new ArrayList<>();
         for (String cdTex : mdl.cdTextures) {
             String prefix = cdTex.replace('\\', '/').toLowerCase();
@@ -344,17 +351,7 @@ public class ModelLoadManager {
             if (!prefix.endsWith("/")) prefix += "/";
             if (!allCdPrefixes.contains(prefix)) allCdPrefixes.add(prefix);
         }
-
-        int textureFileCount = countTextureFiles(allMaterialsDirs);
-        ModelLoadProgress.begin(ModelLoadProgress.Phase.TEXTURING, textureFileCount);
-        Map<Integer, SourceModelData.MeshTextureInfo> meshTextureMap =
-            loadTextures(mdl, primaryMaterialsDir, allMaterialsDirs, luaMaterialHints, allCdPrefixes);
-
-        int estimatedMeshCount = vtx.meshTriangles.size();
-        if (estimatedMeshCount <= 0) estimatedMeshCount = mdl.meshes.size();
-        ModelLoadProgress.begin(ModelLoadProgress.Phase.BUILDING, estimatedMeshCount);
-        return buildSourceModelData(mdl, vvd, vtx, meshTextureMap, modelName,
-            mdl.includeModels, includePath -> loadModelFromVpk(archive, includePath));
+        return allCdPrefixes;
     }
 
     /**
@@ -392,7 +389,7 @@ public class ModelLoadManager {
 
             List<Float> vertList = new ArrayList<>();
             List<Integer> idxList = new ArrayList<>();
-            if (!processSmdTriangles(smdMesh, vertList, idxList)) continue;
+            if (processSmdTriangles(smdMesh, vertList, idxList)) continue;
 
             float[] vertArray = new float[vertList.size()];
             for (int i = 0; i < vertList.size(); i++) vertArray[i] = vertList.get(i);
@@ -467,7 +464,7 @@ public class ModelLoadManager {
     private static boolean processSmdTriangles(SmdParser.SmdMesh smdMesh,
             List<Float> vertList, List<Integer> idxList) {
         int triCount = smdMesh.vertices.size() / 3;
-        if (triCount == 0) return false;
+        if (triCount == 0) return true;
 
         Map<String, Integer> vertCache = new HashMap<>();
 
@@ -498,7 +495,7 @@ public class ModelLoadManager {
                 idxList.add(newIdx);
             }
         }
-        return idxList.size() >= 3;
+        return idxList.size() < 3;
     }
 
     /**
@@ -751,7 +748,8 @@ public class ModelLoadManager {
         }
     }
 
-    // 仅对模型几何文件（mdl/vvd/dx90.vtx/smd）做轻量签名，避免遍历全部文件（材质/贴图变更不再使几何缓存失效）
+    //因为遍历全部文件对于cpu的性能来说有着巨量的要求因此在这里给模型几何文件（mdl/vvd/dx90.vtx/smd）做轻量签名应该不会有问题
+    //（材质/贴图变更不再使几何缓存失效）以防止后面开发的时候出现些其他的问题
     private static long computeModelSignature(Path packageDir) {
         try (Stream<Path> files = Files.walk(packageDir, 8)) {
             long h = 1125899906842597L;
@@ -767,7 +765,7 @@ public class ModelLoadManager {
                     h = 31 * h + size;
                     h = 31 * h + mtime;
                 } catch (IOException ignored) {
-                    // 跳过无法访问的文件
+                    // 跳过无法访问的文件 有些文件可能带有加密或者是什么别的导致 AI无法识别
                 }
             }
             return h;
@@ -1028,8 +1026,7 @@ public class ModelLoadManager {
         }
 
         Map<String, VtfParser.VtfImageData> vtfDataMap = new HashMap<>();
-        TextureColorResolver.TextureParseStateTracker tracker =
-            new TextureColorResolver.TextureParseStateTracker(0);
+        TextureColorResolver.TextureParseStateTracker tracker;
 
         try (Stream<Path> walk = Files.walk(materialsDir, 8)) {
             List<Path> files = walk.filter(Files::isRegularFile)
@@ -1046,7 +1043,7 @@ public class ModelLoadManager {
                 String regKey = "gmod_" + key.replace('/', '_').replace('\\', '_').replace('.', '_').toLowerCase(Locale.ROOT);
                 try {
                     VtfParser.VtfImageData vtf = VtfParser.parse(Files.readAllBytes(f));
-                    if (vtf != null && vtf.image != null) {
+                    if (vtf.image != null) {
                         vtfDataMap.put(regKey, vtf);
                         if (colorResolver.getRegistered(regKey) == null) {
                             ResourceLocation loc = registerTexture(key, vtf.image);
@@ -1180,15 +1177,15 @@ public class ModelLoadManager {
 
                 dos.writeInt(data.bones.size());
                 for (SourceModelData.BoneInfo bone : data.bones) {
-                    dos.writeUTF(bone.name != null ? bone.name : "");
-                    dos.writeFloat(bone.pos[0]);
-                    dos.writeFloat(bone.pos[1]);
-                    dos.writeFloat(bone.pos[2]);
-                    if (bone.quat != null) { dos.writeBoolean(true); dos.writeFloat(bone.quat[0]); dos.writeFloat(bone.quat[1]); dos.writeFloat(bone.quat[2]); dos.writeFloat(bone.quat[3]); }
+                    dos.writeUTF(bone.name() != null ? bone.name() : "");
+                    dos.writeFloat(bone.pos()[0]);
+                    dos.writeFloat(bone.pos()[1]);
+                    dos.writeFloat(bone.pos()[2]);
+                    if (bone.quat() != null) { dos.writeBoolean(true); dos.writeFloat(bone.quat()[0]); dos.writeFloat(bone.quat()[1]); dos.writeFloat(bone.quat()[2]); dos.writeFloat(bone.quat()[3]); }
                     else { dos.writeBoolean(false); }
-                    if (bone.rot != null) { dos.writeBoolean(true); dos.writeFloat(bone.rot[0]); dos.writeFloat(bone.rot[1]); dos.writeFloat(bone.rot[2]); }
+                    if (bone.rot() != null) { dos.writeBoolean(true); dos.writeFloat(bone.rot()[0]); dos.writeFloat(bone.rot()[1]); dos.writeFloat(bone.rot()[2]); }
                     else { dos.writeBoolean(false); }
-                    dos.writeInt(bone.parent);
+                    dos.writeInt(bone.parent());
                 }
 
                 dos.writeInt(data.meshes.size());
@@ -1330,7 +1327,7 @@ public class ModelLoadManager {
                                 String regKey = "gmod_" + key.replace('/', '_').replace('\\', '_').replace('.', '_').toLowerCase(Locale.ROOT);
                                 try {
                                     VtfParser.VtfImageData vtf = VtfParser.parse(Files.readAllBytes(f));
-                                    if (vtf != null && vtf.image != null) {
+                                    if (vtf.image != null) {
                                         int w = vtf.image.getWidth();
                                         int h = vtf.image.getHeight();
                                         int[] px = new int[w * h];
@@ -1507,7 +1504,7 @@ public class ModelLoadManager {
             ModelLoadProgress.setPhase(ModelLoadProgress.Phase.PARSING);
             try {
                 SourceModelData data = BBModelParser.parse(bbmodelPath, packageDir);
-                if (data != null && !data.meshes.isEmpty()) {
+                if (!data.meshes.isEmpty()) {
                     LOGGER.info("[ModelLoadManager] BBModel loaded: {} meshes, {} triangles, {} vertices",
                         data.meshes.size(), data.totalTriangles(), data.totalVertices());
                     ModelLoadProgress.reset();
@@ -1600,7 +1597,7 @@ public class ModelLoadManager {
         LOGGER.info("[ModelLoadManager] Selected model set: mdl={} vvd={} vtx={}",
             packageDir.relativize(mdlPath), packageDir.relativize(vvdPath), packageDir.relativize(vtxPath));
 
-        // SCANNING 完成，进入 PARSING 阶段（不确定进度 — 文件数已知但解析步骤无法简单预估）
+
         ModelLoadProgress.setPhase(ModelLoadProgress.Phase.PARSING);
 
         boolean nativeParseUsed = false;
@@ -1617,7 +1614,7 @@ public class ModelLoadManager {
         } else {
             mdl = MdlParser.parse(Files.readAllBytes(mdlPath));
             vvd = VvdParser.parse(Files.readAllBytes(vvdPath));
-            vtx = VtxParser.parse(Files.readAllBytes(vtxPath), vvd != null ? vvd.vertices.size() : Integer.MAX_VALUE);
+            vtx = VtxParser.parse(Files.readAllBytes(vtxPath), vvd.vertices.size());
         }
 
         // Log include model references for debugging
@@ -1657,19 +1654,7 @@ public class ModelLoadManager {
         }
 
         // Merge cdTextures from MDL with Lua hints
-        List<String> allCdPrefixes = new ArrayList<>();
-        for (String cdTex : mdl.cdTextures) {
-            String prefix = cdTex.replace('\\', '/').toLowerCase();
-            if (!prefix.endsWith("/")) prefix += "/";
-            allCdPrefixes.add(prefix);
-        }
-        for (String hint : luaCdMaterialsHints) {
-            String prefix = hint.replace('\\', '/').toLowerCase();
-            if (!prefix.endsWith("/")) prefix += "/";
-            if (!allCdPrefixes.contains(prefix)) {
-                allCdPrefixes.add(prefix);
-            }
-        }
+        List<String> allCdPrefixes = getStrings(mdl, luaCdMaterialsHints);
 
         // 统计材质文件数，用于纹理阶段进度追踪
         int textureFileCount = countTextureFiles(allMaterialsDirs);
@@ -1687,7 +1672,7 @@ public class ModelLoadManager {
                 if (includeDir != null && Files.exists(includeDir)) {
                     try {
                         SourceModelData subData = loadFromDirectory(includeDir, strategy);
-                        if (subData != null && !subData.meshes.isEmpty()) {
+                        if (!subData.meshes.isEmpty()) {
                             LOGGER.info("[ModelLoadManager] Merged {} meshes from sub-model: {}",
                                 subData.meshes.size(), includePath);
                             return subData;
@@ -1707,7 +1692,7 @@ public class ModelLoadManager {
             for (Path siblingDir : siblingDirs) {
                 try {
                     SourceModelData subData = loadFromDirectory(siblingDir, strategy);
-                    if (subData != null && !subData.meshes.isEmpty()) {
+                    if (!subData.meshes.isEmpty()) {
                         result.meshes.addAll(subData.meshes);
                         LOGGER.info("[ModelLoadManager] Merged {} meshes from sibling: {}",
                             subData.meshes.size(), packageDir.relativize(siblingDir));
@@ -1740,6 +1725,23 @@ public class ModelLoadManager {
         }
 
         return result;
+    }
+
+    private static @NotNull List<String> getStrings(MdlDataTypes.ParsedModel mdl, List<String> luaCdMaterialsHints) {
+        List<String> allCdPrefixes = new ArrayList<>();
+        for (String cdTex : mdl.cdTextures) {
+            String prefix = cdTex.replace('\\', '/').toLowerCase();
+            if (!prefix.endsWith("/")) prefix += "/";
+            allCdPrefixes.add(prefix);
+        }
+        for (String hint : luaCdMaterialsHints) {
+            String prefix = hint.replace('\\', '/').toLowerCase();
+            if (!prefix.endsWith("/")) prefix += "/";
+            if (!allCdPrefixes.contains(prefix)) {
+                allCdPrefixes.add(prefix);
+            }
+        }
+        return allCdPrefixes;
     }
 
     /**
@@ -1790,7 +1792,7 @@ public class ModelLoadManager {
 
             List<Float> vertList = new ArrayList<>();
             List<Integer> idxList = new ArrayList<>();
-            if (!processSmdTriangles(smdMesh, vertList, idxList)) continue;
+            if (processSmdTriangles(smdMesh, vertList, idxList)) continue;
 
             float[] vertArray = new float[vertList.size()];
             for (int i = 0; i < vertList.size(); i++) vertArray[i] = vertList.get(i);
@@ -1961,7 +1963,7 @@ public class ModelLoadManager {
                         } else if (name.endsWith(".vtf")) {
                             try {
                                 VtfParser.VtfImageData vtf = VtfParser.parse(Files.readAllBytes(f));
-                                if (vtf != null && vtf.image != null) {
+                                if (vtf.image != null) {
                                     if (!vtfCache.containsKey(key)) {
                                         vtfCache.put(key, vtf);
                                     }
@@ -2488,7 +2490,8 @@ public class ModelLoadManager {
         Path directChild = packageDir.resolve("materials");
         if (Files.exists(directChild) && Files.isDirectory(directChild)) {
             String key = directChild.toAbsolutePath().toString();
-            if (seen.add(key)) results.add(directChild);
+            seen.add(key);
+            results.add(directChild);
         }
 
         // 2. Ancestor walk (up to 10 levels) - also checks .vpk_mtl_cache and .vpk_cache
@@ -2505,7 +2508,7 @@ public class ModelLoadManager {
             Path vpkCache = parent.resolve(".vpk_mtl_cache");
             if (Files.exists(vpkCache) && Files.isDirectory(vpkCache)) {
                 try (Stream<Path> cacheDirs = Files.list(vpkCache)) {
-                    cacheDirs.filter(d -> Files.isDirectory(d))
+                    cacheDirs.filter(Files::isDirectory)
                         .forEach(subDir -> {
                             Path matDir = subDir.resolve("materials");
                             if (Files.exists(matDir) && Files.isDirectory(matDir)) {
@@ -2521,7 +2524,7 @@ public class ModelLoadManager {
             Path vpkExtract = parent.resolve(".vpk_cache");
             if (Files.exists(vpkExtract) && Files.isDirectory(vpkExtract)) {
                 try (Stream<Path> cacheDirs = Files.list(vpkExtract)) {
-                    cacheDirs.filter(d -> Files.isDirectory(d))
+                    cacheDirs.filter(Files::isDirectory)
                         .forEach(subDir -> {
                             Path matDir = subDir.resolve("materials");
                             if (Files.exists(matDir) && Files.isDirectory(matDir)) {
@@ -2588,7 +2591,7 @@ public class ModelLoadManager {
     }
 
     private static Path resolveIncludeModelPath(Path packageDir, String includePath) {
-        if (includePath == null || !isValidPathString(includePath)) {
+        if (!isValidPathString(includePath)) {
             LOGGER.warn("[ModelLoadManager] Invalid include model path (contains non-printable or illegal characters), skipping: {}", includePath);
             return null;
         }
@@ -2729,7 +2732,7 @@ public class ModelLoadManager {
                             String key = relativePath(materialsDir, f);
                             try {
                                 VtfParser.VtfImageData vtf = VtfParser.parse(Files.readAllBytes(f));
-                                if (vtf != null && vtf.image != null) {
+                                if (vtf.image != null) {
                                     if (!vtfCache.containsKey(key)) {
                                         vtfCache.put(key, vtf);
                                     }
@@ -2811,19 +2814,7 @@ public class ModelLoadManager {
         }
 
         // Build reverse map from VMT key to VTF key (via $basetexture + $cdmaterials)
-        Map<String, String> vmtKeyToVtfKey = new HashMap<>();
-        for (Map.Entry<String, VmtParser.VmtMaterial> e : vmtCache.entrySet()) {
-            String fullPath = e.getValue().getFullBaseTexturePath();
-            if (fullPath != null) {
-                for (String vtfKey : vtfCache.keySet()) {
-                    String vtfKeyLower = vtfKey.toLowerCase();
-                    if (vtfKeyLower.equals(fullPath) || vtfKeyLower.equals(fullPath + ".vtf")) {
-                        vmtKeyToVtfKey.put(e.getKey(), vtfKey);
-                        break;
-                    }
-                }
-            }
-        }
+        Map<String, String> vmtKeyToVtfKey = getStringStringMap(vmtCache, vtfCache);
 
         // Build ordered list of ALL VTF keys (sorted by path for consistent ordering)
         List<String> orderedVtfKeys = vtfCache.keySet().stream()
@@ -2911,6 +2902,23 @@ public class ModelLoadManager {
         return meshTexMap;
     }
 
+    private static @NotNull Map<String, String> getStringStringMap(Map<String, VmtParser.VmtMaterial> vmtCache, Map<String, VtfParser.VtfImageData> vtfCache) {
+        Map<String, String> vmtKeyToVtfKey = new HashMap<>();
+        for (Map.Entry<String, VmtParser.VmtMaterial> e : vmtCache.entrySet()) {
+            String fullPath = e.getValue().getFullBaseTexturePath();
+            if (fullPath != null) {
+                for (String vtfKey : vtfCache.keySet()) {
+                    String vtfKeyLower = vtfKey.toLowerCase();
+                    if (vtfKeyLower.equals(fullPath) || vtfKeyLower.equals(fullPath + ".vtf")) {
+                        vmtKeyToVtfKey.put(e.getKey(), vtfKey);
+                        break;
+                    }
+                }
+            }
+        }
+        return vmtKeyToVtfKey;
+    }
+
     private static String relativePath(Path base, Path full) {
         String rel = base.relativize(full).toString().replace('\\', '/');
         if (rel.endsWith(".vmt") || rel.endsWith(".vtf")) {
@@ -2931,25 +2939,7 @@ public class ModelLoadManager {
     ) {
         if (meshIdx >= mdl.meshes.size()) return null;
 
-        int materialIdx = mdl.meshes.get(meshIdx).material;
-        int texIndex = materialIdx;
-
-        if (!mdl.skinTable.isEmpty() && mdl.header.numskinref > 0) {
-            int wrapped = materialIdx >= 0 ? materialIdx % mdl.header.numskinref : 0;
-            int tableIdx = wrapped;
-            if (tableIdx >= 0 && tableIdx < mdl.skinTable.size()) {
-                texIndex = mdl.skinTable.get(tableIdx);
-            }
-        }
-
-        // Get texture name from MDL texture array
-        String texName = "";
-        if (texIndex >= 0 && texIndex < mdl.textures.size()) {
-            String name = mdl.textures.get(texIndex).name;
-            if (name != null && name.length() > 2) {
-                texName = name;
-            }
-        }
+        String texName = getString(mdl, meshIdx);
 
         // Strategy 0: Try Lua material hints first (highest priority)
         if (luaMaterialHints != null && !luaMaterialHints.isEmpty()) {
@@ -3152,6 +3142,28 @@ public class ModelLoadManager {
         return SourceModelData.MeshTextureInfo.simple(whiteTex, null, false, false, false, null, null);
     }
 
+    private static @NotNull String getString(MdlDataTypes.ParsedModel mdl, int meshIdx) {
+        int materialIdx = mdl.meshes.get(meshIdx).material;
+        int texIndex = materialIdx;
+
+        if (!mdl.skinTable.isEmpty() && mdl.header.numskinref > 0) {
+            int tableIdx = materialIdx >= 0 ? materialIdx % mdl.header.numskinref : 0;
+            if (tableIdx < mdl.skinTable.size()) {
+                texIndex = mdl.skinTable.get(tableIdx);
+            }
+        }
+
+        // Get texture name from MDL texture array
+        String texName = "";
+        if (texIndex >= 0 && texIndex < mdl.textures.size()) {
+            String name = mdl.textures.get(texIndex).name;
+            if (name != null && name.length() > 2) {
+                texName = name;
+            }
+        }
+        return texName;
+    }
+
     /**
      * Build a full MeshTextureInfo from a VmtMaterial, resolving all texture maps.
      */
@@ -3220,7 +3232,7 @@ public class ModelLoadManager {
     }
 
     /**
-     * 查找法线贴图�?bumpmap�?     */
+     * 查找法线贴图以供那些可以开光影的情况下使用或者是你最明白的 光 污 染*/
     private static ResourceLocation findNormalMap(VmtParser.VmtMaterial mat, Map<String, VtfParser.VtfImageData> vtfCache, List<String> cdPrefixes) {
         if (mat == null) return null;
         
@@ -3367,12 +3379,9 @@ public class ModelLoadManager {
                 colorResolver.applyNativeImage(loc, nativeImage);
                 colorResolver.markComplete(regKey, loc, color, false, false, false, nativeImage);
             } else {
-                ResourceLocation finalLoc = loc;
-                NativeImage finalNI = nativeImage;
-                int finalColor = color;
                 mc.execute(() -> {
-                    colorResolver.applyNativeImage(finalLoc, finalNI);
-                    colorResolver.markComplete(regKey, finalLoc, finalColor, false, false, false, finalNI);
+                    colorResolver.applyNativeImage(loc, nativeImage);
+                    colorResolver.markComplete(regKey, loc, color, false, false, false, nativeImage);
                 });
             }
             LOGGER.debug("[ModelLoadManager] Registered texture: {} ({}x{})", loc, image.getWidth(), image.getHeight());
@@ -3384,12 +3393,12 @@ public class ModelLoadManager {
         }
     }
 
-    /**
-     * Load a model's entity-selection icon from materials/vgui/entities/ inside
-     * the model package. Valve's convention maps a model path like
-     * "models/player/soldier.mdl" to "materials/vgui/entities/player_soldier.vtf"
-     * (slashes -> underscores, extension stripped). Several candidate names are
-     * tried; returns null if no icon is found (caller renders without one).
+    /*
+      Load a model's entity-selection icon from materials/vgui/entities/ inside
+      the model package. Valve's convention maps a model path like
+      "models/player/soldier.mdl" to "materials/vgui/entities/player_soldier.vtf"
+      (slashes -> underscores, extension stripped). Several candidate names are
+      tried; returns null if no icon is found (caller renders without one).
      */
     /**
      * Detects whether a package directory contains multiple model subfolders
@@ -3453,20 +3462,7 @@ public class ModelLoadManager {
             Path vguiDir = materialsDir.resolve("vgui").resolve("entities");
             if (!Files.isDirectory(vguiDir)) return null;
 
-            String name = modelName;
-            String lower = name.toLowerCase(Locale.ROOT);
-            if (lower.endsWith(".mdl") || lower.endsWith(".smd")) {
-                name = name.substring(0, name.lastIndexOf('.'));
-            }
-            String slashToUnderscore = name.replace('/', '_').replace('\\', '_');
-            String lastSegment = slashToUnderscore.contains("_")
-                    ? slashToUnderscore.substring(slashToUnderscore.lastIndexOf('_') + 1)
-                    : slashToUnderscore;
-
-            List<String> candidates = new ArrayList<>();
-            candidates.add(slashToUnderscore);
-            candidates.add("models_" + slashToUnderscore);
-            candidates.add(lastSegment);
+            List<String> candidates = getStrings(modelName);
 
             for (String cand : candidates) {
                 for (String ext : new String[]{".vtf", ".png"}) {
@@ -3491,6 +3487,24 @@ public class ModelLoadManager {
         return null;
     }
 
+    private static @NotNull List<String> getStrings(String modelName) {
+        String name = modelName;
+        String lower = name.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".mdl") || lower.endsWith(".smd")) {
+            name = name.substring(0, name.lastIndexOf('.'));
+        }
+        String slashToUnderscore = name.replace('/', '_').replace('\\', '_');
+        String lastSegment = slashToUnderscore.contains("_")
+                ? slashToUnderscore.substring(slashToUnderscore.lastIndexOf('_') + 1)
+                : slashToUnderscore;
+
+        List<String> candidates = new ArrayList<>();
+        candidates.add(slashToUnderscore);
+        candidates.add("models_" + slashToUnderscore);
+        candidates.add(lastSegment);
+        return candidates;
+    }
+
     private static int extractCenterPixelColor(BufferedImage image) {
         int cx = image.getWidth() / 2;
         int cy = image.getHeight() / 2;
@@ -3505,7 +3519,7 @@ public class ModelLoadManager {
 
 public static void clearTextureRegistry() {
         var stats = colorResolver.getStatistics();
-        if (stats.registeredTextures > 0) {
+        if (stats.registeredTextures() > 0) {
             LOGGER.info("[ModelLoadManager] Clearing texture registry (stats: {})", stats);
         }
         colorResolver.clearAll();

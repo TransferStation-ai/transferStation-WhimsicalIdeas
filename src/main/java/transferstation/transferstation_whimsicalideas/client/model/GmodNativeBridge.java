@@ -64,7 +64,7 @@ public class GmodNativeBridge {
                     // Relative to game dir
                     Path resolved = FMLPaths.GAMEDIR.get().resolve(path);
                     if (!resolved.toString().endsWith(".dll")) {
-                        resolved = Path.of(resolved.toString() + ".dll");
+                        resolved = Path.of(resolved + ".dll");
                     }
                     if (Files.exists(resolved)) {
                         System.load(resolved.toAbsolutePath().toString());
@@ -74,7 +74,7 @@ public class GmodNativeBridge {
                     // Relative to working directory
                     resolved = Path.of(path);
                     if (!resolved.toString().endsWith(".dll")) {
-                        resolved = Path.of(resolved.toString() + ".dll");
+                        resolved = Path.of(resolved + ".dll");
                     }
                     if (Files.exists(resolved)) {
                         System.load(resolved.toAbsolutePath().toString());
@@ -154,15 +154,6 @@ public class GmodNativeBridge {
                     extractedDllPath = tempDir.resolve(mainDllName);
                     Files.copy(in, extractedDllPath, StandardCopyOption.REPLACE_EXISTING);
                     extractedDllPath.toFile().deleteOnExit();
-                    for (String dep : knownDeps) {
-                        try (InputStream depIn = GmodNativeBridge.class.getResourceAsStream(dir + dep)) {
-                            if (depIn != null) {
-                                Path depPath = tempDir.resolve(dep);
-                                Files.copy(depIn, depPath, StandardCopyOption.REPLACE_EXISTING);
-                                depPath.toFile().deleteOnExit();
-                            }
-                        }
-                    }
                     // Load with absolute path - dependencies in same dir will be found by Windows loader
                     try {
                         System.load(extractedDllPath.toAbsolutePath().toString());

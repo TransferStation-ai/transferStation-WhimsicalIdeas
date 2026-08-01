@@ -2,9 +2,9 @@ package transferstation.transferstation_whimsicalideas.client;
 
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
+import transferstation.transferstation_whimsicalideas.client.model.MdlModelRenderer;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadProgress;
-import transferstation.transferstation_whimsicalideas.client.model.MdlModelRenderer;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

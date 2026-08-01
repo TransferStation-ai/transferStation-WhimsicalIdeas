@@ -57,7 +57,7 @@ public class BodyHitboxSystem {
             default -> {
                 // Try bone name
                 if (boneIndex >= 0 && boneIndex < modelData.bones.size()) {
-                    String boneName = modelData.bones.get(boneIndex).name.toLowerCase();
+                    String boneName = modelData.bones.get(boneIndex).name().toLowerCase();
                     if (boneName.contains("head") || boneName.contains("neck")) yield InjurySystem.BodyPart.HEAD;
                     if (boneName.contains("chest") || boneName.contains("spine") || boneName.contains("upper")) yield InjurySystem.BodyPart.CHEST;
                     if (boneName.contains("stomach") || boneName.contains("pelvis") || boneName.contains("hip")) yield InjurySystem.BodyPart.STOMACH;

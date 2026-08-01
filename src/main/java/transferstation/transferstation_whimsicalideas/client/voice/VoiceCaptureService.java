@@ -6,7 +6,6 @@ import org.slf4j.Logger;
 import javax.sound.sampled.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 /**
@@ -101,7 +100,7 @@ public class VoiceCaptureService {
                 } finally {
                     byte[] audioData = buffer.toByteArray();
                     if (onRecordingComplete != null && audioData.length > 0) {
-                        byte[] wavData = createWavFile(audioData, (int) SAMPLE_RATE);
+                        byte[] wavData = createWavFile(audioData);
                         onRecordingComplete.accept(wavData);
                     }
                 }
@@ -137,12 +136,12 @@ public class VoiceCaptureService {
     /**
      * Creates a WAV byte array from raw PCM data.
      */
-    private static byte[] createWavFile(byte[] pcmData, int sampleRate) {
+    private static byte[] createWavFile(byte[] pcmData) {
         ByteArrayOutputStream wav = new ByteArrayOutputStream();
         int dataSize = pcmData.length;
         int channels = CHANNELS;
         int bitsPerSample = SAMPLE_BITS;
-        int byteRate = sampleRate * channels * bitsPerSample / 8;
+        int byteRate = 16000 * channels * bitsPerSample / 8;
         int blockAlign = channels * bitsPerSample / 8;
 
         try {
@@ -156,7 +155,7 @@ public class VoiceCaptureService {
             writeInt(wav, 16);                  // chunk size
             writeShort(wav, 1);                  // PCM format
             writeShort(wav, channels);           // channels
-            writeInt(wav, sampleRate);           // sample rate
+            writeInt(wav, 16000);           // sample rate
             writeInt(wav, byteRate);             // byte rate
             writeShort(wav, blockAlign);         // block align
             writeShort(wav, bitsPerSample);      // bits per sample

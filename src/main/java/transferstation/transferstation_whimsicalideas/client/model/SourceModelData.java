@@ -1,31 +1,18 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
 import net.minecraft.resources.ResourceLocation;
+
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class SourceModelData {
 
-    public static class BoneInfo {
-        public final String name;
-        public final float[] pos;
-        public final float[] quat;
-        public final float[] rot;
-        public final int parent;
-
-        public BoneInfo(String name, float[] pos, float[] quat, float[] rot, int parent) {
-            this.name = name;
-            this.pos = pos;
-            this.quat = quat;
-            this.rot = rot;
-            this.parent = parent;
-        }
+    public record BoneInfo(String name, float[] pos, float[] quat, float[] rot, int parent) {
 
         public BoneInfo(String name, float[] pos, int parent) {
-            this(name, pos, null, null, parent);
+                this(name, pos, null, null, parent);
+            }
         }
-    }
 
     public static class BodyPartInfo {
         public final String name;

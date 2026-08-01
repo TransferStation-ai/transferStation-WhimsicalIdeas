@@ -2,6 +2,7 @@ package transferstation.transferstation_whimsicalideas.client.model;
 
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
+
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Locale;
@@ -50,7 +51,7 @@ public class LinuxNativeModelParserStrategy implements ModelParserStrategy {
     }
 
     @Override
-    public MdlDataTypes.ParsedModel parseMdl(byte[] data) throws IOException {
+    public MdlDataTypes.ParsedModel parseMdl(byte[] data) {
         if (!isAvailable()) {
             return fallback.parseMdl(data);
         }
@@ -74,7 +75,7 @@ public class LinuxNativeModelParserStrategy implements ModelParserStrategy {
     }
 
     @Override
-    public VvdParser.ParsedVvd parseVvd(byte[] data) throws IOException {
+    public VvdParser.ParsedVvd parseVvd(byte[] data) {
         if (!isAvailable()) {
             return fallback.parseVvd(data);
         }
@@ -97,7 +98,7 @@ public class LinuxNativeModelParserStrategy implements ModelParserStrategy {
     }
 
     @Override
-    public VtxParser.ParsedVtx parseVtx(byte[] data) throws IOException {
+    public VtxParser.ParsedVtx parseVtx(byte[] data) {
         if (!isAvailable()) {
             return fallback.parseVtx(data);
         }

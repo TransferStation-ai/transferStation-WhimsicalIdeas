@@ -219,8 +219,7 @@ public class VtxParser {
 
                         List<VtxTriangle> meshTris = new ArrayList<>();
 
-                        int stripGroupLimit = Math.min(numStripGroups, 256);
-                        for (int sg = 0; sg < stripGroupLimit; sg++) {
+                        for (int sg = 0; sg < numStripGroups; sg++) {
                             int sgHdrAddr = sgAddr + sg * STRIP_GROUP_HEADER_SIZE;
                             if (sgHdrAddr + STRIP_GROUP_HEADER_SIZE > data.length) break;
 
@@ -286,8 +285,7 @@ public class VtxParser {
                             }
                             int triListCount = 0, triStripCount = 0;
 
-                            int stripLimit = Math.min(numStrips, 256);
-                            for (int s = 0; s < stripLimit; s++) {
+                            for (int s = 0; s < numStrips; s++) {
                                 int sAddr = stripHeadersAddr + s * STRIP_HEADER_SIZE;
                                 if (sAddr + STRIP_HEADER_SIZE > data.length) break;
 
@@ -371,10 +369,11 @@ public class VtxParser {
                                         // even stripRel -> (ci0, ci1, ci2), odd stripRel -> (ci1, ci0, ci2).
                                         int tri0, tri1, tri2;
                                         if ((stripRel & 1) == 0) {
-                                            tri0 = ci0; tri1 = ci1; tri2 = ci2;
+                                            tri0 = ci0; tri1 = ci1;
                                         } else {
-                                            tri0 = ci1; tri1 = ci0; tri2 = ci2;
+                                            tri0 = ci1; tri1 = ci0;
                                         }
+                                        tri2 = ci2;
 
                                         if (tri0 >= vvdVertexCount || tri1 >= vvdVertexCount || tri2 >= vvdVertexCount) continue;
                                         // Guard against malformed index buffers: triN is an index into
@@ -389,7 +388,7 @@ public class VtxParser {
                             }
 
                             if (triListCount == 0 && triStripCount == 0) {
-                                if (numStrips == 0 && maxIndices >= 3) {
+                                if (numStrips == 0) {
                                     // No strip headers defined: treat the entire index buffer as a raw triangle list.
                                     for (int i = 0; i + 2 < maxIndices; i += 3) {
                                         int ci0 = cacheIndices[i];
@@ -405,7 +404,7 @@ public class VtxParser {
                                         meshTris.add(new VtxTriangle(
                                             origMeshVertIDs[ci0], origMeshVertIDs[ci1], origMeshVertIDs[ci2]));
                                     }
-                                } else if (numStrips > 0) {
+                                } else {
                                     LOGGER.warn("[VtxParser] StripGroup[{}] has {} strips but none produced triangles; skipping fallback to avoid garbage geometry",
                                         sg, numStrips);
                                 }
@@ -415,7 +414,7 @@ public class VtxParser {
                         if (l == 0) {
                             if (LOG_VERBOSE) {
                                 LOGGER.info("[VtxParser] BP={} Model={} LOD={} Mesh={}: {} strip groups, {} triangles",
-                                    bp, m, l, meshIdx, stripGroupLimit, meshTris.size());
+                                    bp, m, l, meshIdx, numStripGroups, meshTris.size());
                             }
                             result.meshTriangles.add(meshTris);
                             totalMeshes++;
@@ -442,13 +441,12 @@ public class VtxParser {
         List<List<VtxTriangle>> result = new ArrayList<>();
 
         int vtxMeshCount = vtx.meshTriangles.size();
-        int vvdCount = vvdVertexCount;
 
         if (mdl == null || mdl.meshes.isEmpty()) {
             for (int i = 0; i < vtxMeshCount; i++) {
                 result.add(new ArrayList<>());
                 for (VtxTriangle tri : vtx.meshTriangles.get(i)) {
-                    if (tri.v0 < vvdCount && tri.v1 < vvdCount && tri.v2 < vvdCount) {
+                    if (tri.v0 < vvdVertexCount && tri.v1 < vvdVertexCount && tri.v2 < vvdVertexCount) {
                         result.get(i).add(tri);
                     }
                 }
@@ -464,14 +462,14 @@ public class VtxParser {
             List<VtxTriangle> adjusted = new ArrayList<>();
             int oobCount = 0;
             for (VtxTriangle tri : vtx.meshTriangles.get(i)) {
-                if (tri.v0 < vvdCount && tri.v1 < vvdCount && tri.v2 < vvdCount) {
+                if (tri.v0 < vvdVertexCount && tri.v1 < vvdVertexCount && tri.v2 < vvdVertexCount) {
                     adjusted.add(new VtxTriangle(tri.v0, tri.v1, tri.v2));
                 } else {
                     oobCount++;
                 }
             }
             if (oobCount > 0) {
-                LOGGER.warn("[VtxParser] Mesh[{}] filtered {} OOB triangles (vvdVerts={})", i, oobCount, vvdCount);
+                LOGGER.warn("[VtxParser] Mesh[{}] filtered {} OOB triangles (vvdVerts={})", i, oobCount, vvdVertexCount);
             }
             result.add(adjusted);
         }
@@ -479,7 +477,7 @@ public class VtxParser {
         for (int i = meshCount; i < vtxMeshCount; i++) {
             result.add(new ArrayList<>());
             for (VtxTriangle tri : vtx.meshTriangles.get(i)) {
-                if (tri.v0 < vvdCount && tri.v1 < vvdCount && tri.v2 < vvdCount) {
+                if (tri.v0 < vvdVertexCount && tri.v1 < vvdVertexCount && tri.v2 < vvdVertexCount) {
                     result.get(result.size() - 1).add(tri);
                 }
             }

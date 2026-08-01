@@ -2,9 +2,6 @@
 package transferstation.transferstation_whimsicalideas.client.animation;
 
 import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import java.lang.reflect.Type;
-import java.util.List;
 
 public class JsonAnimationLoader {
 
@@ -24,7 +21,6 @@ public class JsonAnimationLoader {
     }
 
     public static AnimationData createDefaultAnimation(String name, int durationTicks) {
-        AnimationData animation = new AnimationData(name, 20.0f, durationTicks, true);
-        return animation;
+        return new AnimationData(name, 20.0f, durationTicks, true);
     }
 }

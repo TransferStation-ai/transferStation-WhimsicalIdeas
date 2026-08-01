@@ -14,17 +14,19 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
+import transferstation.transferstation_whimsicalideas.item.AttachmentItem;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
-
-import transferstation.transferstation_whimsicalideas.item.AttachmentItem;
 
 public class NpcModelRegistry {
 
@@ -216,7 +218,7 @@ public class NpcModelRegistry {
         // runtime (e.g. via /npc reload) throws IllegalStateException. The entity
         // type was already registered during the initial scan, so at runtime we
         // only need to ensure the in-memory model list is up to date.
-        RegistryObject<EntityType<?>> entityType = null;
+        RegistryObject<EntityType<?>> entityType;
         try {
             entityType = ENTITY_TYPES.register(entityId, () ->
                     EntityType.Builder.<Mob>of((type, world) -> new NpcEntity(type, world, modelName), MobCategory.CREATURE)
@@ -238,11 +240,16 @@ public class NpcModelRegistry {
         String displayName = modelName.contains("/") ?
                 modelName.substring(modelName.lastIndexOf('/') + 1) : modelName;
 
-        RegistryObject<Item> egg = null;
+        RegistryObject<Item> egg;
         try {
             RegistryObject<EntityType<?>> finalEntityType = entityType;
             egg = ITEMS.register(entityId + "_spawn_egg", () ->
-                    new NpcSpawnEggItem(() -> (EntityType<? extends Mob>) (EntityType<?>) finalEntityType.get(),
+                    new NpcSpawnEggItem(() -> {
+                        if (finalEntityType != null) {
+                            return (EntityType<? extends Mob>) finalEntityType.get();
+                        }
+                        return null;
+                    },
                             primaryColor, secondaryColor, new Item.Properties(), displayName));
         } catch (IllegalStateException e) {
             LOGGER.warn("[NpcModelRegistry] DeferredRegister already frozen; skipping spawn egg re-registration for {}", entityId);
@@ -362,7 +369,7 @@ public class NpcModelRegistry {
         }
 
         @Override
-        public Component getName(ItemStack stack) {
+        public @NotNull Component getName(@NotNull ItemStack stack) {
             return Component.translatable("item.transferstation_whimsicalideas.npc_spawn_egg", displayName);
         }
     }

@@ -9,16 +9,16 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.jetbrains.annotations.NotNull;
 import transferstation.transferstation_whimsicalideas.client.GmodModelConfig;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
 
 import java.nio.file.Path;
-import java.util.List;
 
 /**
  * In-game 3D model editor for Source/MDL models.
- *
+ * <p>
  * Features:
  *  - Orbit/zoom/pan viewport (see {@link ModelViewport})
  *  - Bone list + select; edit selected bone local position/rotation
@@ -29,7 +29,7 @@ import java.util.List;
 public class ModelEditorScreen extends Screen {
 
     private final Screen parent;
-    private ModelViewport viewport = new ModelViewport();
+    private final ModelViewport viewport = new ModelViewport();
     private SourceModelData model;
     private String modelName;
 
@@ -45,7 +45,6 @@ public class ModelEditorScreen extends Screen {
     private EditBox tintR, tintG, tintB, tintA;
 
     private boolean dragging = false;
-    private double lastMouseX, lastMouseY;
     private boolean panning = false;
 
     private Component statusMsg = null;
@@ -128,9 +127,9 @@ public class ModelEditorScreen extends Screen {
     private void refreshBoneFields() {
         if (model == null || selectedBone < 0 || selectedBone >= model.bones.size()) return;
         SourceModelData.BoneInfo bone = model.bones.get(selectedBone);
-        float[] p = bone.pos != null ? bone.pos : new float[]{0, 0, 0};
+        float[] p = bone.pos() != null ? bone.pos() : new float[]{0, 0, 0};
         bonePosX.setValue(fmt(p[0])); bonePosY.setValue(fmt(p[1])); bonePosZ.setValue(fmt(p[2]));
-        float[] r = bone.rot != null ? bone.rot : new float[]{0, 0, 0};
+        float[] r = bone.rot() != null ? bone.rot() : new float[]{0, 0, 0};
         boneRotX.setValue(fmt(r[0])); boneRotY.setValue(fmt(r[1])); boneRotZ.setValue(fmt(r[2]));
     }
 
@@ -140,7 +139,7 @@ public class ModelEditorScreen extends Screen {
         float[] t = mesh.colorTint != null && mesh.colorTint.length >= 4
                 ? mesh.colorTint : new float[]{1, 1, 1, mesh.alpha};
         tintR.setValue(fmt(t[0])); tintG.setValue(fmt(t[1])); tintB.setValue(fmt(t[2]));
-        tintA.setValue(fmt(t.length >= 4 ? t[3] : mesh.alpha));
+        tintA.setValue(fmt(t[3]));
     }
 
     private static String fmt(float v) {
@@ -153,7 +152,7 @@ public class ModelEditorScreen extends Screen {
         float[] r = new float[]{parse(boneRotX), parse(boneRotY), parse(boneRotZ)};
         viewport.setBoneOverride(selectedBone, new ModelViewport.BoneOverride(p, r));
         setStatus(Component.translatable("gui.transferstation_whimsicalideas.editor_bone_applied",
-                model.bones.get(selectedBone).name));
+                model.bones.get(selectedBone).name()));
     }
 
     private void applyMaterialEdit() {
@@ -200,7 +199,7 @@ public class ModelEditorScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
+    public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         renderBackground(graphics);
 
         if (model == null) {
@@ -229,7 +228,7 @@ public class ModelEditorScreen extends Screen {
             int ry = listY + 14 + (i - start) * rowH;
             boolean sel = i == selectedBone;
             if (sel) graphics.fillGradient(panelX + 2, ry, panelX + panelW - 2, ry + rowH - 1, 0xFF_5A5A5A, 0xFF_5A5A5A);
-            String name = model.bones.get(i).name;
+            String name = model.bones.get(i).name();
             if (name.length() > 28) name = name.substring(0, 28);
             graphics.drawString(font, name, panelX + 6, ry + 2, sel ? 0xFFFFFF : 0xCCCCCC);
         }
@@ -290,6 +289,8 @@ public class ModelEditorScreen extends Screen {
                 refreshBoneFields();
                 return true;
             }
+            double lastMouseX;
+            double lastMouseY;
             if (button == 1) { panning = true; lastMouseX = mouseX; lastMouseY = mouseY; return true; }
             dragging = true; lastMouseX = mouseX; lastMouseY = mouseY;
             return true;

@@ -12,10 +12,12 @@ import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.animation.AnimationProcessor;
 
 import java.io.IOException;
-import java.lang.ref.WeakReference;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class MdlModelRenderer {
@@ -40,7 +42,6 @@ public class MdlModelRenderer {
 
     private static volatile String currentModelName = null;
     private static Path modelsDir = null;
-    private static Path cacheDir = null;
 
     // Use WeakHashMap to prevent entity memory leak
     private static final Map<LivingEntity, String> entityModelMap = new WeakHashMap<>();
@@ -73,7 +74,6 @@ public class MdlModelRenderer {
     }
 
     public static void setCacheDir(Path dir) {
-        cacheDir = dir;
         ModelLoadManager.setCacheDir(dir);
     }
 
@@ -199,8 +199,6 @@ public class MdlModelRenderer {
         return JavaModelRenderer.hasModel();
     }
 
-    private static ModelParserStrategy currentParserStrategy = null;
-
     private static final Set<String> modelLoadInProgress = ConcurrentHashMap.newKeySet();
 
     public static void loadModel(Path modelsDir, String modelName) throws IOException {
@@ -222,7 +220,7 @@ public class MdlModelRenderer {
                 transferstation.transferstation_whimsicalideas.client.ClientNotifications.showModelLoadStarted(modelName);
             } catch (Exception ignored) {}
 
-            currentParserStrategy = ModelParserProvider.getStrategy();
+            ModelParserStrategy currentParserStrategy = ModelParserProvider.getStrategy();
             LOGGER.info("[MdlModelRenderer] Loading model '{}' using parser: {}", modelName, currentParserStrategy.getPlatformName());
 
             if (currentParserStrategy instanceof WindowsNativeModelParserStrategy
@@ -260,7 +258,7 @@ public class MdlModelRenderer {
                                 .findFirst().orElse(null);
                             if (phyFile != null && java.nio.file.Files.exists(phyFile)) {
                                 var phyResult = PhyParser.parse(java.nio.file.Files.readAllBytes(phyFile));
-                                if (phyResult != null && phyResult.valid && !phyResult.solids.isEmpty()) {
+                                if (phyResult.valid && !phyResult.solids.isEmpty()) {
                                     String simId = transferstation.transferstation_whimsicalideas.client.physics.PhysicsSimulationManager.registerSimulation(
                                         transferstation.transferstation_whimsicalideas.client.physics.SoftBodySimulation.createClothSimulation(
                                             new Vector3f(0, 1.5f, 0), 8, 8, 0.05f));
@@ -323,12 +321,11 @@ public class MdlModelRenderer {
 
     private static boolean isEntityVisible(LivingEntity entity) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.player == null || mc.levelRenderer == null) return true;
+        if (mc.player == null) return true;
         try {
             var frustum = mc.levelRenderer.getFrustum();
-            if (frustum == null) return true;
             AABB aabb = entity.getBoundingBox();
-            if (aabb == null || aabb.getSize() == 0) {
+            if (aabb.getSize() == 0) {
                 aabb = new AABB(entity.blockPosition()).inflate(0.5);
             }
             return frustum.isVisible(aabb);
@@ -402,7 +399,7 @@ public class MdlModelRenderer {
         }
 
         // 模型名已知但数据不存在时（如 CleanupHandler 清除了数据后重连），触发异步重新加载
-        if (modelName != null && modelsDir != null) {
+        if (modelsDir != null) {
             loadModelIfNotPending(modelName);
         }
 
@@ -418,7 +415,7 @@ public class MdlModelRenderer {
                 try {
                     loadModel(modelsDir, modelName);
                 } catch (Exception e) {
-                    LOGGER.error("[MdlModelRenderer] Failed to load model: " + modelName, e);
+                    LOGGER.error("[MdlModelRenderer] Failed to load model: {}", modelName, e);
                 }
             }, LOADING_EXECUTOR);
             future.whenComplete((v, t) -> pendingLoads.remove(k));

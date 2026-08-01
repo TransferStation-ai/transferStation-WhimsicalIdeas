@@ -49,7 +49,7 @@ public class BBModelWriter {
             List<List<Integer>> children = new ArrayList<>();
             for (int i = 0; i < model.bones.size(); i++) children.add(new ArrayList<>());
             for (int i = 0; i < model.bones.size(); i++) {
-                int p = model.bones.get(i).parent;
+                int p = model.bones.get(i).parent();
                 if (p >= 0 && p < model.bones.size()) children.get(p).add(i);
             }
             int[] added = new int[model.bones.size()];
@@ -72,13 +72,13 @@ public class BBModelWriter {
         for (int i = 0; i < model.bones.size(); i++) {
             SourceModelData.BoneInfo bone = model.bones.get(i);
             JsonObject bg = new JsonObject();
-            bg.addProperty("name", bone.name);
-            bg.addProperty("parent", bone.parent);
+            bg.addProperty("name", bone.name());
+            bg.addProperty("parent", bone.parent());
             JsonArray pos = new JsonArray();
-            if (bone.pos != null) {
-                pos.add((double) bone.pos[0]);
-                pos.add((double) bone.pos[1]);
-                pos.add((double) bone.pos[2]);
+            if (bone.pos() != null) {
+                pos.add((double) bone.pos()[0]);
+                pos.add((double) bone.pos()[1]);
+                pos.add((double) bone.pos()[2]);
             } else {
                 pos.add(0); pos.add(0); pos.add(0);
             }
@@ -166,7 +166,7 @@ public class BBModelWriter {
     }
 
     private static boolean isRootBone(int idx, List<SourceModelData.BoneInfo> bones) {
-        int p = bones.get(idx).parent;
+        int p = bones.get(idx).parent();
         return p < 0 || p >= bones.size();
     }
 
@@ -174,7 +174,7 @@ public class BBModelWriter {
                                              List<List<Integer>> children, int[] added) {
         added[idx] = 1;
         JsonObject node = new JsonObject();
-        node.addProperty("name", model.bones.get(idx).name);
+        node.addProperty("name", model.bones.get(idx).name());
         JsonArray ch = new JsonArray();
         for (int child : children.get(idx)) {
             ch.add(buildBoneTree(child, model, children, added));

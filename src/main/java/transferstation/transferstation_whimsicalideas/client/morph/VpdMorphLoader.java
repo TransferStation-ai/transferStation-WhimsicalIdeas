@@ -5,8 +5,6 @@ import org.joml.Vector3f;
 import org.slf4j.Logger;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -97,7 +95,7 @@ public class VpdMorphLoader {
                     while (i + 1 < lines.length) {
                         i++;
                         boneBlock.append("\n").append(lines[i]);
-                        if (lines[i].contains("}") && lines[i].contains("}")) break;
+                        if (lines[i].contains("}") ) break;
                         if (lines[i].contains("}") && i + 1 < lines.length) {
                             String next = lines[i + 1].trim();
                             if (next.contains("}") || next.isEmpty() || next.matches("^\\d+\\s*\\{") || boneNamePattern.matcher(next).find()) {
@@ -126,12 +124,8 @@ public class VpdMorphLoader {
                         }
                     }
                 }
-                continue;
             }
 
-            if (line.contains("}") && line.contains("}")) {
-                continue;
-            }
         }
 
         LOGGER.info("[VpdMorphLoader] Loaded morph '{}' with {} bones", morphName, morph.boneDataList.size());

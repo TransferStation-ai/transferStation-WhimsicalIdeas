@@ -17,10 +17,11 @@ import org.jetbrains.annotations.NotNull;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.ModelPackage;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 public class GmodModelScreen extends Screen {
 

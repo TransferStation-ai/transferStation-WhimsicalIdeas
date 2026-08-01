@@ -12,8 +12,6 @@ import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -40,7 +38,7 @@ public class JavaModelRenderer {
      */
     public static float MODEL_FACING_YAW = (float) Math.PI;
 
-    private static boolean FACING_DEBUG_LOG = true;
+    private static final boolean FACING_DEBUG_LOG = true;
     private static boolean facingDebugLogged = false;
 
     /**

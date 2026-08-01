@@ -41,7 +41,7 @@ public class ModelDiagnostics {
 
     public static List<ModelGroup> findModelGroups(Path rootDir) throws IOException {
         Map<String, ModelGroup> groups = new LinkedHashMap<>();
-        List<Path> modelFiles = new ArrayList<>();
+        List<Path> modelFiles;
 
         try (Stream<Path> files = Files.walk(rootDir, 16)) {
             modelFiles = files.filter(Files::isRegularFile).toList();
@@ -56,11 +56,10 @@ public class ModelDiagnostics {
             String key = relDir.toString().isEmpty() ? base : relDir + "/" + base;
             key = key.replace('\\', '/');
 
-            String effectiveBase = base;
             ModelGroup g = groups.computeIfAbsent(key, k -> {
                 ModelGroup mg = new ModelGroup();
                 mg.dir = f.getParent();
-                mg.baseName = effectiveBase;
+                mg.baseName = base;
                 return mg;
             });
 
@@ -75,16 +74,17 @@ public class ModelDiagnostics {
     }
 
     private static String extractBaseName(String lower) {
+        String substring = lower.substring(0, lower.length() - 4);
         if (lower.endsWith(".mdl")) {
-            return lower.substring(0, lower.length() - 4);
+            return substring;
         } else if (lower.endsWith(".vvd")) {
-            return lower.substring(0, lower.length() - 4);
+            return substring;
         } else if (lower.endsWith(".dx90.vtx")) {
             return lower.substring(0, lower.length() - 9);
         } else if (lower.endsWith(".phy")) {
-            return lower.substring(0, lower.length() - 4);
+            return substring;
         } else if (lower.endsWith(".smd")) {
-            return lower.substring(0, lower.length() - 4);
+            return substring;
         }
         return null;
     }

@@ -1,25 +1,21 @@
 // AnimationProcessor.java - core animation processing class for managing models
 package transferstation.transferstation_whimsicalideas.client.animation;
 
-import com.mojang.logging.LogUtils;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.client.renderer.MultiBufferSource;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.logging.LogUtils;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.world.entity.LivingEntity;
+import org.jetbrains.annotations.NotNull;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.GmodModelRenderer;
-import transferstation.transferstation_whimsicalideas.client.morph.MorphManager;
-import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
 import transferstation.transferstation_whimsicalideas.client.model.MdlDataTypes;
+import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
+import transferstation.transferstation_whimsicalideas.client.morph.MorphManager;
 
 import java.nio.file.Path;
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.Set;
-import java.util.HashSet;
+import java.util.*;
 
 public class AnimationProcessor {
 
@@ -193,7 +189,7 @@ public class AnimationProcessor {
     /**
      * Returns per-bone transformation matrices for the given entity at the current animation frame.
      * Used by the skinned renderer for per-vertex skinning.
-     * 
+     * <p> 
      * The transforms are computed as: bindPose * animationDelta
      * where bindPose comes from the MDL's reference pose (srcBoneTransforms).
      */
@@ -227,14 +223,9 @@ public class AnimationProcessor {
             Map<Integer, float[]> overlayDeltas = sampleAnimationDeltas(entity, overlay.anim, modelData, partialTicks);
             for (Map.Entry<Integer, float[]> entry : overlayDeltas.entrySet()) {
                 int boneIdx = entry.getKey();
-                String boneName = modelData.bones.get(boneIdx).name;
+                String boneName = modelData.bones.get(boneIdx).name();
                 if (AnimationLayers.isMaskedOut(entity, AnimationLayers.OVERLAY, boneName)) continue;
-                float[] base = deltas.get(boneIdx);
-                if (base == null) {
-                    deltas.put(boneIdx, blendDeltas(toIdentityDelta(), entry.getValue(), layerWeight));
-                } else {
-                    deltas.put(boneIdx, blendDeltas(base, entry.getValue(), layerWeight));
-                }
+                deltas.compute(boneIdx, (k, base) -> blendDeltas(Objects.requireNonNullElseGet(base, AnimationProcessor::toIdentityDelta), entry.getValue(), layerWeight));
             }
         }
 
@@ -262,18 +253,7 @@ public class AnimationProcessor {
                 int boneIdx = findBoneIndex(modelData, entry.getKey());
                 if (boneIdx < 0) continue;
 
-                float[] t = entry.getValue();
-                org.joml.Matrix4f morphMat = new org.joml.Matrix4f();
-                morphMat.identity();
-                morphMat.translate(t[0], t[1], t[2]);
-                if (t.length >= 7) {
-                    float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, t[6]))));
-                    float s = (float) Math.sqrt(1.0 - t[6] * t[6]);
-                    if (s > 0.001f) {
-                        float invS = 1.0f / s;
-                        morphMat.rotate(angle, t[3] * invS, t[4] * invS, t[5] * invS);
-                    }
-                }
+                Matrix4f morphMat = getMatrix4f(entry);
 
                 org.joml.Matrix4f existing = new org.joml.Matrix4f();
                 existing.set(localTransforms[boneIdx]);
@@ -285,6 +265,22 @@ public class AnimationProcessor {
         return localTransforms;
     }
 
+    private static @NotNull Matrix4f getMatrix4f(Map.Entry<String, float[]> entry) {
+        float[] t = entry.getValue();
+        Matrix4f morphMat = new Matrix4f();
+        morphMat.identity();
+        morphMat.translate(t[0], t[1], t[2]);
+        if (t.length >= 7) {
+            float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, t[6]))));
+            float s = (float) Math.sqrt(1.0 - t[6] * t[6]);
+            if (s > 0.001f) {
+                float invS = 1.0f / s;
+                morphMat.rotate(angle, t[3] * invS, t[4] * invS, t[5] * invS);
+            }
+        }
+        return morphMat;
+    }
+
     /**
      * Compute the world-space transform for bone {@code index}, recursively
      * ensuring its parent is computed first. {@code computed} guards against
@@ -293,7 +289,7 @@ public class AnimationProcessor {
     private static void computeWorldBone(int index, SourceModelData modelData,
                                          float[][] localTransforms, Set<Integer> computed) {
         if (index < 0 || index >= modelData.bones.size() || computed.contains(index)) return;
-        int parent = modelData.bones.get(index).parent;
+        int parent = modelData.bones.get(index).parent();
         if (parent >= 0 && parent < modelData.bones.size() && !computed.contains(parent)) {
             computeWorldBone(parent, modelData, localTransforms, computed);
         }
@@ -328,23 +324,7 @@ public class AnimationProcessor {
                     0f,  0f, 1f, 0f,
                     1f,  0f, 0f, 0f,
                     0f,  0f, 0f, 1f);
-                org.joml.Matrix4f mSrc = new org.joml.Matrix4f();
-                mSrc.identity();
-                if (bt.pos != null) {
-                    mSrc.translate(bt.pos[0], bt.pos[1], bt.pos[2]);
-                }
-                if (bt.quat != null) {
-                    // quat is [x, y, z, w]
-                    float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, bt.quat[3]))));
-                    float s = (float) Math.sqrt(1.0 - bt.quat[3] * bt.quat[3]);
-                    if (s > 0.001f) {
-                        float invS = 1.0f / s;
-                        mSrc.rotate(angle, bt.quat[0] * invS, bt.quat[1] * invS, bt.quat[2] * invS);
-                    }
-                }
-                if (bt.scale != null) {
-                    mSrc.scale(bt.scale[0], bt.scale[1], bt.scale[2]);
-                }
+                Matrix4f mSrc = getMatrix4f(bt);
                 org.joml.Matrix4f mat = new org.joml.Matrix4f(S).mul(mSrc).mul(S.transpose());
                 mat.get(localTransforms[i]);
             }
@@ -361,27 +341,53 @@ public class AnimationProcessor {
             1f,  0f, 0f, 0f,
             0f,  0f, 0f, 1f);
         for (int i = 0; i < modelData.bones.size(); i++) {
-            SourceModelData.BoneInfo bone = modelData.bones.get(i);
-            org.joml.Matrix4f mSrc = new org.joml.Matrix4f();
-            mSrc.identity();
-            if (bone.pos != null) {
-                mSrc.translate(bone.pos[0], bone.pos[1], bone.pos[2]);
-            }
-            if (bone.quat != null) {
-                float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, bone.quat[3]))));
-                float s = (float) Math.sqrt(1.0 - bone.quat[3] * bone.quat[3]);
-                if (s > 0.001f) {
-                    float invS = 1.0f / s;
-                    mSrc.rotate(angle, bone.quat[0] * invS, bone.quat[1] * invS, bone.quat[2] * invS);
-                }
-            }
-            if (bone.rot != null) {
-                // Euler rotation fallback (radians)
-                mSrc.rotateXYZ(bone.rot[0], bone.rot[1], bone.rot[2]);
-            }
+            Matrix4f mSrc = getMatrix4f(modelData, i);
             org.joml.Matrix4f mat = new org.joml.Matrix4f(S).mul(mSrc).mul(S.transpose());
             mat.get(localTransforms[i]);
         }
+    }
+
+    private static @NotNull Matrix4f getMatrix4f(MdlDataTypes.SrcBoneTransform bt) {
+        Matrix4f mSrc = new Matrix4f();
+        mSrc.identity();
+        if (bt.pos != null) {
+            mSrc.translate(bt.pos[0], bt.pos[1], bt.pos[2]);
+        }
+        if (bt.quat != null) {
+            // quat is [x, y, z, w]
+            float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, bt.quat[3]))));
+            float s = (float) Math.sqrt(1.0 - bt.quat[3] * bt.quat[3]);
+            if (s > 0.001f) {
+                float invS = 1.0f / s;
+                mSrc.rotate(angle, bt.quat[0] * invS, bt.quat[1] * invS, bt.quat[2] * invS);
+            }
+        }
+        if (bt.scale != null) {
+            mSrc.scale(bt.scale[0], bt.scale[1], bt.scale[2]);
+        }
+        return mSrc;
+    }
+
+    private static @NotNull Matrix4f getMatrix4f(SourceModelData modelData, int i) {
+        SourceModelData.BoneInfo bone = modelData.bones.get(i);
+        Matrix4f mSrc = new Matrix4f();
+        mSrc.identity();
+        if (bone.pos() != null) {
+            mSrc.translate(bone.pos()[0], bone.pos()[1], bone.pos()[2]);
+        }
+        if (bone.quat() != null) {
+            float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, bone.quat()[3]))));
+            float s = (float) Math.sqrt(1.0 - bone.quat()[3] * bone.quat()[3]);
+            if (s > 0.001f) {
+                float invS = 1.0f / s;
+                mSrc.rotate(angle, bone.quat()[0] * invS, bone.quat()[1] * invS, bone.quat()[2] * invS);
+            }
+        }
+        if (bone.rot() != null) {
+            // Euler rotation fallback (radians)
+            mSrc.rotateXYZ(bone.rot()[0], bone.rot()[1], bone.rot()[2]);
+        }
+        return mSrc;
     }
 
     /**
@@ -434,7 +440,7 @@ public class AnimationProcessor {
         // 关键帧按 frame 升序（VMD 解析保证，防御性拷贝排序避免改坏原始数据）
         if (kfs.size() > 1 && kfs.get(0).frame > kfs.get(1).frame) {
             kfs = new ArrayList<>(kfs);
-            kfs.sort((a, b) -> Integer.compare(a.frame, b.frame));
+            kfs.sort(Comparator.comparingInt(a -> a.frame));
         }
 
         AnimationData.KeyFrame first = kfs.get(0);
@@ -560,8 +566,8 @@ public class AnimationProcessor {
 
         // First try exact match
         for (SourceModelData.BoneInfo bone : modelData.bones) {
-            if (bone.name.equalsIgnoreCase(vmdName)) {
-                return bone.name;
+            if (bone.name().equalsIgnoreCase(vmdName)) {
+                return bone.name();
             }
         }
 
@@ -577,8 +583,8 @@ public class AnimationProcessor {
 
         for (String pattern : patterns) {
             for (SourceModelData.BoneInfo bone : modelData.bones) {
-                if (bone.name.equalsIgnoreCase(pattern)) {
-                    return bone.name;
+                if (bone.name().equalsIgnoreCase(pattern)) {
+                    return bone.name();
                 }
             }
         }
@@ -586,7 +592,7 @@ public class AnimationProcessor {
         // Fuzzy match: check if MDL bone name contains VMD bone name parts
         String[] vmdParts = vmdName.toLowerCase().split("[ _]");
         for (SourceModelData.BoneInfo bone : modelData.bones) {
-            String mdlLower = bone.name.toLowerCase();
+            String mdlLower = bone.name().toLowerCase();
             int matches = 0;
             for (String part : vmdParts) {
                 if (part.length() > 2 && mdlLower.contains(part)) {
@@ -594,7 +600,7 @@ public class AnimationProcessor {
                 }
             }
             if (matches >= 2) { // At least 2 parts match
-                return bone.name;
+                return bone.name();
             }
         }
 
@@ -603,7 +609,7 @@ public class AnimationProcessor {
 
     private static int findBoneIndex(SourceModelData modelData, String boneName) {
         for (int i = 0; i < modelData.bones.size(); i++) {
-            if (modelData.bones.get(i).name.equalsIgnoreCase(boneName)) {
+            if (modelData.bones.get(i).name().equalsIgnoreCase(boneName)) {
                 return i;
             }
         }

@@ -36,7 +36,7 @@ public class AttachmentItemManager {
 
     /** Called when a model is loaded to register attachment items */
     public static void registerAttachments(String modelName, SourceModelData modelData) {
-        if (modelData.attachments == null || modelData.attachments.isEmpty()) return;
+        if (modelData.attachments.isEmpty()) return;
 
         List<AttachmentItemInfo> items = new ArrayList<>();
         for (MdlDataTypes.Attachment att : modelData.attachments) {

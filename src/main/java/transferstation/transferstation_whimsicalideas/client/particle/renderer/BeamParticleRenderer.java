@@ -11,7 +11,7 @@ import org.joml.Vector3f;
 import transferstation.transferstation_whimsicalideas.client.particle.Particle;
 import transferstation.transferstation_whimsicalideas.client.particle.ParticleEmitter;
 
-import java.util.*;
+import java.util.List;
 
 /**
  * Renders beam/line particles as connected segments between particle pairs

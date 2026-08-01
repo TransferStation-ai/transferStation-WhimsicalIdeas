@@ -3,9 +3,10 @@ package transferstation.transferstation_whimsicalideas.client.particle;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 
-import java.io.*;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class PcfParser {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -41,13 +42,13 @@ public class PcfParser {
         return systemDefs;
     }
 
-    private static KvNode parseKeyValues(PcfBuffer buf) throws IOException {
+    private static KvNode parseKeyValues(PcfBuffer buf) {
         var root = new KvNode("root", KvType.NULL, null);
         parseChildren(buf, root);
         return root;
     }
 
-    private static void parseChildren(PcfBuffer buf, KvNode parent) throws IOException {
+    private static void parseChildren(PcfBuffer buf, KvNode parent) {
         while (buf.hasRemaining()) {
             int type = buf.readUInt8();
             if (type == KV_TYPE_OBJECT_CLOSE || type == KV_TYPE_ARRAY_CLOSE) {
@@ -129,7 +130,6 @@ public class PcfParser {
         for (var prop : node.children) {
             switch (prop.name) {
                 case "m_nRendererType" -> renderer.type = switch (prop.intValue()) {
-                    case 0 -> PcfParticleSystemDef.RendererType.SPRITE;
                     case 1 -> PcfParticleSystemDef.RendererType.MODEL;
                     case 2 -> PcfParticleSystemDef.RendererType.BEAM;
                     case 3 -> PcfParticleSystemDef.RendererType.TRAIL;

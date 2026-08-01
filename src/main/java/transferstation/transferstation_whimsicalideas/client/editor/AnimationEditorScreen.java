@@ -9,6 +9,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.jetbrains.annotations.NotNull;
 import transferstation.transferstation_whimsicalideas.client.GmodModelConfig;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
@@ -22,11 +23,9 @@ import java.util.Map;
 
 /**
  * In-game 3D model animation editor.
- *
  * Two editing modes (tabs):
  *  - BONE: keyframe bone local transforms on a timeline (pos + euler rot)
  *  - MORPH: blend expression/morph clips with per-track weights over time
- *
  * The result can be played back in the viewport and exported to a custom
  * animation JSON (loaded by {@link AnimationEditorIO}).
  */
@@ -34,7 +33,7 @@ import java.util.Map;
 public class AnimationEditorScreen extends Screen {
 
     private final Screen parent;
-    private ModelViewport viewport = new ModelViewport();
+    private final ModelViewport viewport = new ModelViewport();
     private SourceModelData model;
     private String modelName;
 
@@ -54,7 +53,6 @@ public class AnimationEditorScreen extends Screen {
     private EditBox morphWeightBox;
 
     private boolean dragging = false;
-    private double lastMouseX, lastMouseY;
     private boolean panning = false;
 
     private Component statusMsg = null;
@@ -134,8 +132,8 @@ public class AnimationEditorScreen extends Screen {
         if (model == null || selectedBone < 0) return;
         BoneKey k = new BoneKey(selectedBone, currentFrame);
         EditableAnimation.BoneKeyframe kf = anim.boneKeys.get(k);
-        float[] p = kf != null ? kf.pos : (model.bones.get(selectedBone).pos != null ? model.bones.get(selectedBone).pos : new float[]{0,0,0});
-        float[] r = kf != null ? kf.rot : (model.bones.get(selectedBone).rot != null ? model.bones.get(selectedBone).rot : new float[]{0,0,0});
+        float[] p = kf != null ? kf.pos : (model.bones.get(selectedBone).pos() != null ? model.bones.get(selectedBone).pos() : new float[]{0,0,0});
+        float[] r = kf != null ? kf.rot : (model.bones.get(selectedBone).rot() != null ? model.bones.get(selectedBone).rot() : new float[]{0,0,0});
         kfPosX.setValue(f(p[0])); kfPosY.setValue(f(p[1])); kfPosZ.setValue(f(p[2]));
         kfRotX.setValue(f(r[0])); kfRotY.setValue(f(r[1])); kfRotZ.setValue(f(r[2]));
     }
@@ -151,7 +149,7 @@ public class AnimationEditorScreen extends Screen {
                     new float[]{pf(kfPosX), pf(kfPosY), pf(kfPosZ)},
                     new float[]{pf(kfRotX), pf(kfRotY), pf(kfRotZ)}));
             setStatus(Component.translatable("gui.transferstation_whimsicalideas.editor_kf_added",
-                    model.bones.get(selectedBone).name, currentFrame));
+                    model.bones.get(selectedBone).name(), currentFrame));
         } else {
             if (selectedMorph < 0 || selectedMorph >= morphNames.size()) { setStatus(err("gui.transferstation_whimsicalideas.editor_no_morph")); return; }
             MorphKey k = new MorphKey(morphNames.get(selectedMorph), currentFrame);
@@ -190,8 +188,8 @@ public class AnimationEditorScreen extends Screen {
         viewport.clearBoneOverrides();
         if (model == null) return;
         for (int bi = 0; bi < model.bones.size(); bi++) {
-            float[] basePos = model.bones.get(bi).pos != null ? model.bones.get(bi).pos : new float[]{0,0,0};
-            float[] baseRot = model.bones.get(bi).rot != null ? model.bones.get(bi).rot : new float[]{0,0,0};
+            float[] basePos = model.bones.get(bi).pos() != null ? model.bones.get(bi).pos() : new float[]{0,0,0};
+            float[] baseRot = model.bones.get(bi).rot() != null ? model.bones.get(bi).rot() : new float[]{0,0,0};
             EditableAnimation.BoneKeyframe a = anim.boneKeys.get(new BoneKey(bi, nearestKeyBelow(bi, currentFrame)));
             EditableAnimation.BoneKeyframe b = anim.boneKeys.get(new BoneKey(bi, nearestKeyAbove(bi, currentFrame)));
             float[] pos = lerp(a != null ? a.pos : basePos, b != null ? b.pos : basePos, bi, currentFrame);
@@ -219,8 +217,8 @@ public class AnimationEditorScreen extends Screen {
             int bi = boneIndexByName(bd.boneName);
             if (bi < 0) continue;
             var ov = viewport.getBoneOverride(bi);
-            float[] p = ov != null ? ov.pos.clone() : (model.bones.get(bi).pos != null ? model.bones.get(bi).pos.clone() : new float[]{0,0,0});
-            float[] r = ov != null ? ov.rot.clone() : (model.bones.get(bi).rot != null ? model.bones.get(bi).rot.clone() : new float[]{0,0,0});
+            float[] p = ov != null ? ov.pos().clone() : (model.bones.get(bi).pos() != null ? model.bones.get(bi).pos().clone() : new float[]{0,0,0});
+            float[] r = ov != null ? ov.rot().clone() : (model.bones.get(bi).rot() != null ? model.bones.get(bi).rot().clone() : new float[]{0,0,0});
             p[0] += bd.translation.x * weight; p[1] += bd.translation.y * weight; p[2] += bd.translation.z * weight;
             r[0] += bd.rotation[0] * weight; r[1] += bd.rotation[1] * weight; r[2] += bd.rotation[2] * weight;
             viewport.setBoneOverride(bi, new ModelViewport.BoneOverride(p, r));
@@ -228,7 +226,7 @@ public class AnimationEditorScreen extends Screen {
     }
 
     private int boneIndexByName(String name) {
-        for (int i = 0; i < model.bones.size(); i++) if (model.bones.get(i).name.equals(name)) return i;
+        for (int i = 0; i < model.bones.size(); i++) if (model.bones.get(i).name().equals(name)) return i;
         return -1;
     }
 
@@ -260,7 +258,7 @@ public class AnimationEditorScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
+    public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         renderBackground(graphics);
         if (model == null) {
             graphics.drawCenteredString(font, Component.translatable("gui.transferstation_whimsicalideas.editor_no_model"),
@@ -283,7 +281,7 @@ public class AnimationEditorScreen extends Screen {
                 int ry = listY + 14 + i * 13;
                 boolean sel = i == selectedBone;
                 if (sel) graphics.fillGradient(panelX + 2, ry, panelX + panelW - 2, ry + 12, 0xFF_5A5A5A, 0xFF_5A5A5A);
-                String nm = model.bones.get(i).name;
+                String nm = model.bones.get(i).name();
                 if (nm.length() > 26) nm = nm.substring(0, 26);
                 graphics.drawString(font, nm, panelX + 6, ry + 2, sel ? 0xFFFFFF : 0xCCCCCC);
             }
@@ -378,6 +376,8 @@ public class AnimationEditorScreen extends Screen {
                 && mouseY >= viewport.getY() && mouseY <= viewport.getY() + viewport.getHeight()) {
             int hit = pickBone((int) mouseX, (int) mouseY);
             if (hit >= 0 && tab == Tab.BONE) { selectedBone = hit; refreshBoneFields(); return true; }
+            double lastMouseX;
+            double lastMouseY;
             if (button == 1) { panning = true; lastMouseX = mouseX; lastMouseY = mouseY; return true; }
             dragging = true; lastMouseX = mouseX; lastMouseY = mouseY; return true;
         }
@@ -449,20 +449,18 @@ public class AnimationEditorScreen extends Screen {
     @Override
     public void onClose() { Minecraft.getInstance().setScreen(parent); }
 
-    public static class BoneKey {
-        public final int bone;
-        public final int frame;
-        public BoneKey(int bone, int frame) { this.bone = bone; this.frame = frame; }
-        @Override public boolean equals(Object o) { return o instanceof BoneKey k && k.bone == bone && k.frame == frame; }
-        @Override public int hashCode() { return bone * 31 + frame; }
+    public record BoneKey(int bone, int frame) {
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof BoneKey k && k.bone == bone && k.frame == frame;
+        }
     }
 
-    public static class MorphKey {
-        public final String morph;
-        public final int frame;
-        public MorphKey(String morph, int frame) { this.morph = morph; this.frame = frame; }
-        @Override public boolean equals(Object o) { return o instanceof MorphKey k && k.morph.equals(morph) && k.frame == frame; }
-        @Override public int hashCode() { return morph.hashCode() * 31 + frame; }
+    public record MorphKey(String morph, int frame) {
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof MorphKey k && k.morph.equals(morph) && k.frame == frame;
+        }
     }
 
     public static class EditableAnimation {
@@ -472,10 +470,7 @@ public class AnimationEditorScreen extends Screen {
         public final Map<BoneKey, BoneKeyframe> boneKeys = new LinkedHashMap<>();
         public final Map<MorphKey, Float> morphKeys = new LinkedHashMap<>();
 
-        public static class BoneKeyframe {
-            public final float[] pos;
-            public final float[] rot;
-            public BoneKeyframe(float[] pos, float[] rot) { this.pos = pos; this.rot = rot; }
+        public record BoneKeyframe(float[] pos, float[] rot) {
         }
     }
 

@@ -5,13 +5,9 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.NotNull;
 import org.joml.Matrix4f;
-import transferstation.transferstation_whimsicalideas.client.model.JavaModelRenderer;
-import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
-import transferstation.transferstation_whimsicalideas.client.model.MdlModelRenderer;
-import transferstation.transferstation_whimsicalideas.client.model.NpcRagdoll;
-import transferstation.transferstation_whimsicalideas.client.model.PhysicsBridge;
-import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
+import transferstation.transferstation_whimsicalideas.client.model.*;
 
 import java.nio.file.Path;
 
@@ -23,7 +19,7 @@ public class NpcRagdollRenderer extends EntityRenderer<NpcRagdoll> {
 
     @Override
     public void render(NpcRagdoll entity, float entityYaw, float partialTicks,
-                       PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
+                       @NotNull PoseStack poseStack, @NotNull MultiBufferSource bufferSource, int packedLight) {
         String modelName = entity.getModelName();
         if (modelName == null || modelName.isEmpty()) return;
 
@@ -57,7 +53,7 @@ public class NpcRagdollRenderer extends EntityRenderer<NpcRagdoll> {
                         && (rot == null || (rot[0] == 0 && rot[1] == 0 && rot[2] == 0 && rot[3] == 0));
                 boolean invalidQuat = (rot != null && rot.length >= 4 && rot[3] == 0.0f);
                 if (zeroed || invalidQuat) continue;
-                if (!zeroed && pos != null) {
+                if (pos != null) {
                     boneMat.translate(pos[0], pos[1], pos[2]);
                     if (rot != null && rot.length >= 4) {
                         float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, rot[3]))));
@@ -92,7 +88,7 @@ public class NpcRagdollRenderer extends EntityRenderer<NpcRagdoll> {
     }
 
     @Override
-    public ResourceLocation getTextureLocation(NpcRagdoll entity) {
+    public @NotNull ResourceLocation getTextureLocation(@NotNull NpcRagdoll entity) {
         return ResourceLocation.parse("minecraft:textures/entity/steve.png");
     }
 }

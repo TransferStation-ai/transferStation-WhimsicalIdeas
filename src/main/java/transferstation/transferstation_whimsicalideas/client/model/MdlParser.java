@@ -6,7 +6,6 @@ import org.slf4j.Logger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 
 import static transferstation.transferstation_whimsicalideas.client.model.MdlDataTypes.*;
@@ -259,7 +258,7 @@ public class MdlParser {
         h.id = buf.getInt();
         h.version = buf.getInt();
         h.checksum = buf.getInt();
-        h.name = readFixedString(buf, 64);
+        h.name = readFixedString(buf);
         h.dataLength = buf.getInt();
         h.eyeposition = readFloat3(buf);
         h.illumposition = readFloat3(buf);
@@ -371,7 +370,7 @@ public class MdlParser {
                 Model m = new Model();
                 m.fileOffset = currentAddr;
                 m.bodypartIndex = bpIdx;
-                m.name = readFixedString(buf, 64);
+                m.name = readFixedString(buf);
                 m.type = buf.getInt();
                 m.boundingradius = buf.getFloat();
                 m.nummeshes = buf.getInt();
@@ -432,7 +431,7 @@ public class MdlParser {
 
         for (int i = 0; i < numVertices; i++) {
             long pos = (long) baseVertexOffset + (long) meshOffset + (long) i * VERTEX_SIZE;
-            if (pos < 0 || (long) pos + VERTEX_SIZE > bufferLimit) {
+            if (pos < 0 || pos + VERTEX_SIZE > bufferLimit) {
                 throw new RuntimeException(String.format(
                         "MDL parse error: vertex[%d] position %d exceeds buffer limit %d", i, pos, bufferLimit));
             }
@@ -614,7 +613,7 @@ public class MdlParser {
                 // Heuristic: small nameOff (< 256 or < cdIndex) is likely relative;
                 // large nameOff is likely absolute.
                 boolean likelyRelative = nameOff < 256 || nameOff < cdIndex;
-                String path = "";
+                String path;
                 if (likelyRelative) {
                     path = readNullTerminatedString(buf, cdIndex + nameOff, bufferLimit);
                     if (path.isEmpty()) {
@@ -807,13 +806,11 @@ public class MdlParser {
             if (seqdescSize >= SEQDESC_SIZE_V49) {
                 seq.szactivitynameindex = buf.getInt();
                 int activityFlags = buf.getInt();
-                seq.activity = buf.getInt();
-                seq.actweight = buf.getInt();
             } else {
                 seq.szactivitynameindex = 0;
-                seq.activity = buf.getInt();
-                seq.actweight = buf.getInt();
             }
+            seq.activity = buf.getInt();
+            seq.actweight = buf.getInt();
             seq.events = new int[]{buf.getInt(), buf.getInt()};
             seq.numevents = buf.getInt();
             seq.eventindex = buf.getInt();
@@ -1286,8 +1283,8 @@ public class MdlParser {
         return f;
     }
 
-    private static String readFixedString(ByteBuffer buf, int length) {
-        byte[] bytes = new byte[length];
+    private static String readFixedString(ByteBuffer buf) {
+        byte[] bytes = new byte[64];
         buf.get(bytes);
         int nullTerm = 0;
         while (nullTerm < bytes.length && bytes[nullTerm] != 0) nullTerm++;
@@ -1375,7 +1372,7 @@ public class MdlParser {
         if (bestScore > 0) {
             if (utf8Result != null && utf8Score == bestScore) return utf8Result;
             if (cp932Result != null && cp932Score == bestScore) return cp932Result;
-            if (cp1252Result != null && cp1252Score == bestScore) return cp1252Result;
+            return cp1252Result;
         }
 
         String fallback = pickBestFallback(utf8Result, cp1252Result, cp932Result);

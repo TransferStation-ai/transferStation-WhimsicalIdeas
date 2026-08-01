@@ -1,6 +1,9 @@
 // VtfParser.java - jsonContract
 package transferstation.transferstation_whimsicalideas.client.model;
 
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
+
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -8,9 +11,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.List;
 import java.util.zip.Inflater;
-import com.mojang.logging.LogUtils;
-import org.slf4j.Logger;
-import transferstation.transferstation_whimsicalideas.client.ColorUtils;
 
 public class VtfParser {
 
@@ -51,7 +51,6 @@ public class VtfParser {
 
     public static BufferedImage parseToBufferedImage(byte[] data) throws IOException {
         VtfImageData imageData = parse(data);
-        if (imageData == null) return null;
         return imageData.image;
     }
 
@@ -93,10 +92,10 @@ public class VtfParser {
         int lowResImageHeight = buf.get() & 0xFF;
         int depth = buf.getShort() & 0xFFFF;
 
-        if (width <= 0 || width > MAX_DIMENSION || height <= 0 || height > MAX_DIMENSION) {
+        if (width == 0 || width > MAX_DIMENSION || height == 0 || height > MAX_DIMENSION) {
             throw new IOException("Invalid VTF dimensions: " + width + "x" + height);
         }
-        if (depth <= 0) depth = 1;
+        if (depth == 0) depth = 1;
 
         buf.position(headerSize);
 
@@ -211,10 +210,9 @@ public class VtfParser {
         if (isCubemap) {
             result.cubemapFaces = new BufferedImage[6];
             result.cubemapFaces[0] = image;
-            int faceDataSize = dataSize;
             for (int face = 1; face < 6; face++) {
-                if (buf.remaining() < faceDataSize) break;
-                byte[] faceData = new byte[faceDataSize];
+                if (buf.remaining() < dataSize) break;
+                byte[] faceData = new byte[dataSize];
                 buf.get(faceData);
                 if (faceData.length > 2 && isZlibHeader(faceData[0], faceData[1])) {
                     byte[] decompressed = decompressZlib(faceData);
@@ -269,54 +267,22 @@ public class VtfParser {
     }
 
     private static int getBlockSize(int format) {
-        switch (format) {
-            case FORMAT_DXT1:
-            case FORMAT_DXT1_ONEBITALPHA:
-            case FORMAT_ATI1N:
-                return 8;
-            case FORMAT_DXT3:
-            case FORMAT_DXT5:
-            case FORMAT_ATI2N:
-            case FORMAT_BC6H:
-            case FORMAT_BC7:
-                return 16;
-            default:
-                return 4;
-        }
+        return switch (format) {
+            case FORMAT_DXT1, FORMAT_DXT1_ONEBITALPHA, FORMAT_ATI1N -> 8;
+            case FORMAT_DXT3, FORMAT_DXT5, FORMAT_ATI2N, FORMAT_BC6H, FORMAT_BC7 -> 16;
+            default -> 4;
+        };
     }
 
     private static int getBytesPerPixel(int format) {
-        switch (format) {
-            case FORMAT_RGB888:
-            case FORMAT_BGR888:
-                return 3;
-            case FORMAT_RGBA8888:
-            case FORMAT_ABGR8888:
-            case FORMAT_BGRX8888:
-            case FORMAT_RGBA16161616F:
-            case FORMAT_RGBA16F:
-            case FORMAT_RGB32F:
-                return 4;
-            case FORMAT_RG1616F:
-            case FORMAT_RG32F:
-                return 8;
-            case FORMAT_RGB161616F:
-                return 6;
-            case FORMAT_BGRA4444:
-                return 2;
-            case FORMAT_RGB565:
-            case FORMAT_BGR565:
-            case FORMAT_BGRA5551:
-                return 2;
-            case FORMAT_I8:
-            case FORMAT_A8:
-            case FORMAT_P8:
-                return 1;
-            case FORMAT_IA88:
-                return 2;
-            default:
-                return 4;
-        }
+        return switch (format) {
+            case FORMAT_RGB888, FORMAT_BGR888 -> 3;
+            case FORMAT_RG1616F, FORMAT_RG32F -> 8;
+            case FORMAT_RGB161616F -> 6;
+            case FORMAT_BGRA4444, FORMAT_RGB565, FORMAT_BGR565, FORMAT_BGRA5551, FORMAT_IA88 -> 2;
+            case FORMAT_I8, FORMAT_A8, FORMAT_P8 -> 1;
+            default -> 4;
+        };
     }
 
     private static boolean isZlibHeader(byte b0, byte b1) {
@@ -402,10 +368,7 @@ public class VtfParser {
             case FORMAT_BGRA4444:
                 decodeBGRA4444(data, width, height, pixels);
                 break;
-            case FORMAT_RGBA16161616F:
-                decodeRGBA16F(data, width, height, pixels);
-                break;
-            case FORMAT_RGBA16F:
+            case FORMAT_RGBA16161616F, FORMAT_RGBA16F:
                 decodeRGBA16F(data, width, height, pixels);
                 break;
             case FORMAT_RGB32F:
@@ -434,23 +397,20 @@ public class VtfParser {
                 break;
             default:
                 boolean swapBR;
-                boolean hasAlpha;
-                switch (format) {
-                    case FORMAT_BGR888:
-                    case FORMAT_BGRX8888:
-                    case FORMAT_BGRA4444:
+                boolean hasAlpha = switch (format) {
+                    case FORMAT_BGR888, FORMAT_BGRX8888 -> {
                         swapBR = true;
-                        hasAlpha = (format != FORMAT_BGRX8888);
-                        break;
-                    case FORMAT_ABGR8888:
+                        yield (format != FORMAT_BGRX8888);
+                    }
+                    case FORMAT_ABGR8888 -> {
                         swapBR = true;
-                        hasAlpha = true;
-                        break;
-                    default:
+                        yield true;
+                    }
+                    default -> {
                         swapBR = false;
-                        hasAlpha = true;
-                        break;
-                }
+                        yield true;
+                    }
+                };
                 decodeRawRGBA(data, width, height, pixels, getBytesPerPixel(format), swapBR, hasAlpha);
                 break;
         }
@@ -650,7 +610,7 @@ public class VtfParser {
                 float g = halfToFloat((data[idx + 2] & 0xFF) | ((data[idx + 3] & 0xFF) << 8));
                 int ri = Math.min(255, Math.max(0, (int)(r * 255.0f)));
                 int gi = Math.min(255, Math.max(0, (int)(g * 255.0f)));
-                pixels[i] = 0xFF000000 | (ri << 16) | (gi << 8) | 0;
+                pixels[i] = 0xFF000000 | (ri << 16) | (gi << 8);
                 idx += 4;
             } else {
                 pixels[i] = 0xFFFFFFFF;
@@ -667,7 +627,7 @@ public class VtfParser {
                 float g = bb.getFloat();
                 int ri = Math.min(255, Math.max(0, (int)(r * 255.0f)));
                 int gi = Math.min(255, Math.max(0, (int)(g * 255.0f)));
-                pixels[i] = 0xFF000000 | (ri << 16) | (gi << 8) | 0;
+                pixels[i] = 0xFF000000 | (ri << 16) | (gi << 8);
                 idx += 8;
             } else {
                 pixels[i] = 0xFFFFFFFF;
@@ -834,7 +794,7 @@ public class VtfParser {
 
     private static int[] decodeBC6HBlock(byte[] data, int blockOff) {
         int[] out = new int[16];
-        int bitPos = 0;
+        int bitPos;
         int modeCode = (int) readBits(data, blockOff, 0, 2);
         if (modeCode != 0 && modeCode != 1) {
             modeCode = ((int) readBits(data, blockOff, 2, 3) << 2) | modeCode;
@@ -857,22 +817,20 @@ public class VtfParser {
                     case 'D':
                         shape |= 1 << Integer.parseInt(tok.substring(1));
                         break;
-                    case 'N':
-                        return bc6hErrorColors(out);
                     case 'R':
                     case 'G':
                     case 'B': {
-                        int epIdx;
-                        switch (tok.charAt(1)) {
-                            case 'W': epIdx = 0; break;
-                            case 'X': epIdx = 1; break;
-                            case 'Y': epIdx = 2; break;
-                            default: epIdx = 3; break;
-                        }
+                        int epIdx = switch (tok.charAt(1)) {
+                            case 'W' -> 0;
+                            case 'X' -> 1;
+                            case 'Y' -> 2;
+                            default -> 3;
+                        };
                         int ch = tok.charAt(0) == 'R' ? 0 : (tok.charAt(0) == 'G' ? 1 : 2);
                         ep[epIdx * 3 + ch] |= 1 << Integer.parseInt(tok.substring(2));
                         break;
                     }
+                    case 'N':
                     default:
                         return bc6hErrorColors(out);
                 }
@@ -920,7 +878,7 @@ public class VtfParser {
             }
             int region = BC6H_PARTITIONS[mode] > 0 ? BC7_P2_TABLE[shape][i] : 0;
             int w = weights[index];
-            int r1 = unquantizeBC6H(ep[region * 6 + 0], prec00[0]);
+            int r1 = unquantizeBC6H(ep[region * 6], prec00[0]);
             int g1 = unquantizeBC6H(ep[region * 6 + 1], prec00[1]);
             int b1 = unquantizeBC6H(ep[region * 6 + 2], prec00[2]);
             int r2 = unquantizeBC6H(ep[region * 6 + 3], prec00[0]);
@@ -1085,7 +1043,7 @@ public class VtfParser {
                 wcPrec = idxPrec2;
                 waPrec = idxPrec;
             }
-            int r = interpolateBC7(endPts[c0 * 4 + 0], endPts[c1 * 4 + 0], wc, wcPrec);
+            int r = interpolateBC7(endPts[c0 * 4], endPts[c1 * 4], wc, wcPrec);
             int g = interpolateBC7(endPts[c0 * 4 + 1], endPts[c1 * 4 + 1], wc, wcPrec);
             int b = interpolateBC7(endPts[c0 * 4 + 2], endPts[c1 * 4 + 2], wc, wcPrec);
             int a = interpolateBC7(endPts[c0 * 4 + 3], endPts[c1 * 4 + 3], wa, waPrec);
@@ -1446,7 +1404,7 @@ public class VtfParser {
                     colors[2] = lerpColorDXTHalf(colors[0], colors[1]);
                     // Transparent (alpha 0) for the 1-bit-alpha case. rgb565to888 forces A=0xFF,
                     // so build the int explicitly with alpha 0.
-                    colors[3] = (0 << 24) | (rgb565to888(c0) & 0x00FFFFFF);
+                    colors[3] = (0) | (rgb565to888(c0) & 0x00FFFFFF);
                 }
                 for (int py = 0; py < 4; py++) {
                     for (int px = 0; px < 4; px++) {
@@ -1482,7 +1440,7 @@ public class VtfParser {
                 } else {
                     colors[2] = lerpColorDXTHalf(colors[0], colors[1]);
                     // 1-bit alpha: color index 3 is fully transparent (alpha 0).
-                    colors[3] = (0 << 24) | (rgb565to888(c0) & 0x00FFFFFF);
+                    colors[3] = (0) | (rgb565to888(c0) & 0x00FFFFFF);
                 }
                 for (int py = 0; py < 4; py++) {
                     for (int px = 0; px < 4; px++) {

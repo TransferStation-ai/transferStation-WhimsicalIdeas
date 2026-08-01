@@ -1,16 +1,21 @@
 package transferstation.transferstation_whimsicalideas.client.morph;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.*;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.jetbrains.annotations.NotNull;
 import transferstation.transferstation_whimsicalideas.client.animation.AnimationProcessor;
+
 import java.util.List;
 
 @OnlyIn(Dist.CLIENT)
@@ -21,7 +26,6 @@ public class ExpressionWheelScreen extends Screen {
     private static final float SLOT_ANGLE = (float) (Math.PI / 4);
 
     private final List<String> morphNames;
-    private int selectedSlot = -1;
     private String activeMorph = null;
 
     protected ExpressionWheelScreen() {
@@ -35,7 +39,7 @@ public class ExpressionWheelScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+    public void render(@NotNull GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
         RenderSystem.enableBlend();
@@ -58,7 +62,7 @@ public class ExpressionWheelScreen extends Screen {
     }
 
     @Override
-    public void renderBackground(GuiGraphics guiGraphics) {
+    public void renderBackground(@NotNull GuiGraphics guiGraphics) {
     }
 
     private void fillRadialBackground(GuiGraphics guiGraphics, int cx, int cy) {
@@ -92,7 +96,7 @@ public class ExpressionWheelScreen extends Screen {
 
     private void drawSlotLabels(GuiGraphics guiGraphics, int cx, int cy, int mouseX, int mouseY) {
         int slotCount = Math.min(morphNames.size(), 8);
-        selectedSlot = -1;
+        int selectedSlot = -1;
 
         for (int i = 0; i < slotCount; i++) {
             float angle = (float) (i * 2 * Math.PI / slotCount - Math.PI / 2);
@@ -136,8 +140,8 @@ public class ExpressionWheelScreen extends Screen {
         for (int i = 0; i < slotCount; i++) {
             float slotAngle = (float) (i * 2 * Math.PI / slotCount - Math.PI / 2);
             float diff = mouseAngle - slotAngle;
-            while (diff > Math.PI) diff -= 2 * Math.PI;
-            while (diff < -Math.PI) diff += 2 * Math.PI;
+            while (diff > Math.PI) diff -= (float) (2 * Math.PI);
+            while (diff < -Math.PI) diff += (float) (2 * Math.PI);
             if (Math.abs(diff) <= Math.PI / slotCount) {
                 return i;
             }

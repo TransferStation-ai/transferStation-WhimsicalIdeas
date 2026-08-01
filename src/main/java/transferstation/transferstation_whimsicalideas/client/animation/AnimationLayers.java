@@ -4,17 +4,11 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.world.entity.LivingEntity;
 import org.slf4j.Logger;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Map;
-import java.util.WeakHashMap;
+import java.util.*;
 
 /**
  * 动画层混合系统。
- * base 层由 GameStateAnimationMapper 驱动（走 AnimationProcessor 原路径），
- * overlay 层承载手势/表情动画。渲染端在 AnimationProcessor.getBoneTransforms
- * 内按 per-bone 权重（layer.weight × boneMask）nlerp 混合两层 delta。
+  混合两套执行方式以便让aI和玩家都具有多个肢体反馈和动作
  */
 public class AnimationLayers {
 
@@ -42,18 +36,13 @@ public class AnimationLayers {
     public static boolean matches(BoneMaskType mask, String mdlBoneName) {
         if (mask == null || mask == BoneMaskType.ALL || mdlBoneName == null) return true;
         String name = mdlBoneName.toLowerCase(Locale.ROOT);
-        switch (mask) {
-            case UPPER_BODY:
-                return containsAny(name, "spine", "chest", "neck", "head", "arm", "hand", "clavicle", "finger");
-            case LOWER_BODY:
-                return containsAny(name, "hip", "pelvis", "leg", "foot", "thigh");
-            case HEAD:
-                return containsAny(name, "neck", "head");
-            case ARMS:
-                return containsAny(name, "arm", "hand", "clavicle", "finger");
-            default:
-                return true;
-        }
+        return switch (mask) {
+            case UPPER_BODY -> containsAny(name, "spine", "chest", "neck", "head", "arm", "hand", "clavicle", "finger");
+            case LOWER_BODY -> containsAny(name, "hip", "pelvis", "leg", "foot", "thigh");
+            case HEAD -> containsAny(name, "neck", "head");
+            case ARMS -> containsAny(name, "arm", "hand", "clavicle", "finger");
+            default -> true;
+        };
     }
 
     private static boolean containsAny(String name, String... keys) {
@@ -99,11 +88,7 @@ public class AnimationLayers {
             return;
         }
         Map<String, LayerState> layers = layerStates.computeIfAbsent(entity, k -> new HashMap<>());
-        LayerState s = layers.get(layerId);
-        if (s == null) {
-            s = new LayerState(layerId);
-            layers.put(layerId, s);
-        }
+        LayerState s = layers.computeIfAbsent(layerId, LayerState::new);
         s.anim = anim;
         s.weight = Math.max(0.0f, Math.min(1.0f, weight));
         s.mask = mask != null ? mask : BoneMaskType.ALL;

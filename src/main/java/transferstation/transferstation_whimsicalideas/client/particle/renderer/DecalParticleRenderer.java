@@ -20,7 +20,7 @@ import java.util.List;
  * Decals face upward (+Y) by default, simulating a projected decal on the ground.
  */
 public class DecalParticleRenderer implements ParticleRenderer {
-    private ResourceLocation texture;
+    private final ResourceLocation texture;
 
     public DecalParticleRenderer(ResourceLocation texture) {
         this.texture = texture;
@@ -69,11 +69,10 @@ public class DecalParticleRenderer implements ParticleRenderer {
             float dy = ry + yOffset;
 
             // Build quad in the XZ plane (square decal: hx == hz)
-            float hz = hx;
-            builder.vertex(matrix, rx - hx, dy, rz + hz).uv(1f, 1f).color(p.color.x, p.color.y, p.color.z, alpha).uv2(light).endVertex();
-            builder.vertex(matrix, rx + hx, dy, rz + hz).uv(0f, 1f).color(p.color.x, p.color.y, p.color.z, alpha).uv2(light).endVertex();
-            builder.vertex(matrix, rx + hx, dy, rz - hz).uv(0f, 0f).color(p.color.x, p.color.y, p.color.z, alpha).uv2(light).endVertex();
-            builder.vertex(matrix, rx - hx, dy, rz - hz).uv(1f, 0f).color(p.color.x, p.color.y, p.color.z, alpha).uv2(light).endVertex();
+            builder.vertex(matrix, rx - hx, dy, rz + hx).uv(1f, 1f).color(p.color.x, p.color.y, p.color.z, alpha).uv2(light).endVertex();
+            builder.vertex(matrix, rx + hx, dy, rz + hx).uv(0f, 1f).color(p.color.x, p.color.y, p.color.z, alpha).uv2(light).endVertex();
+            builder.vertex(matrix, rx + hx, dy, rz - hx).uv(0f, 0f).color(p.color.x, p.color.y, p.color.z, alpha).uv2(light).endVertex();
+            builder.vertex(matrix, rx - hx, dy, rz - hx).uv(1f, 0f).color(p.color.x, p.color.y, p.color.z, alpha).uv2(light).endVertex();
         }
 
         BufferUploader.drawWithShader(builder.end());

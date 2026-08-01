@@ -3,9 +3,11 @@ package transferstation.transferstation_whimsicalideas.client.particle;
 import net.minecraft.world.level.Level;
 import org.joml.Math;
 import org.joml.Vector3f;
-import org.joml.Vector4f;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 public class ParticleEmitter {
@@ -80,7 +82,7 @@ public class ParticleEmitter {
             case "position_sphere" -> {
                 float radius = getFloatParam(init.params, "m_flRadius", 16f);
                 float theta = rand.nextFloat() * (float) (org.joml.Math.PI * 2);
-                float phi = (float) Math.acos(2 * rand.nextFloat() - 1);
+                float phi = Math.acos(2 * rand.nextFloat() - 1);
                 float r = radius * (float) java.lang.Math.cbrt(rand.nextFloat());
                 p.position.x += r * org.joml.Math.sin(phi) * org.joml.Math.cos(theta);
                 p.position.y += r * org.joml.Math.sin(phi) * org.joml.Math.sin(theta);
@@ -99,7 +101,7 @@ public class ParticleEmitter {
                 float maxSpeed = getFloatParam(init.params, "m_flMaxSpeed", 100f);
                 float speed = minSpeed + rand.nextFloat() * (maxSpeed - minSpeed);
                 float theta = rand.nextFloat() * (float) (org.joml.Math.PI * 2);
-                float phi = (float) Math.acos(2 * rand.nextFloat() - 1);
+                float phi = Math.acos(2 * rand.nextFloat() - 1);
                 p.velocity.x = speed * org.joml.Math.sin(phi) * org.joml.Math.cos(theta);
                 p.velocity.y = speed * org.joml.Math.sin(phi) * org.joml.Math.sin(theta);
                 p.velocity.z = speed * org.joml.Math.cos(phi);
@@ -163,9 +165,9 @@ public class ParticleEmitter {
                     float strength = getFloatParam(op.params, "m_flStrength", 10f);
                     float freq = getFloatParam(op.params, "m_flFrequency", 1f);
                     float phase = p.age * freq;
-                    float noiseX = (float) Math.sin(phase + p.position.x * 0.1f);
-                    float noiseY = (float) Math.cos(phase + p.position.y * 0.1f);
-                    float noiseZ = (float) Math.sin(phase + p.position.z * 0.1f);
+                    float noiseX = Math.sin(phase + p.position.x * 0.1f);
+                    float noiseY = Math.cos(phase + p.position.y * 0.1f);
+                    float noiseZ = Math.sin(phase + p.position.z * 0.1f);
                     p.velocity.x += noiseX * strength * dt;
                     p.velocity.y += noiseY * strength * dt;
                     p.velocity.z += noiseZ * strength * dt;

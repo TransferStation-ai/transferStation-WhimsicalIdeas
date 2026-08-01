@@ -7,11 +7,10 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
-import org.joml.Vector3f;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -43,9 +42,7 @@ public class NpcRagdoll extends Entity {
     private float deathVelocityX = 0;
     private float deathVelocityY = 0.2f;
     private float deathVelocityZ = 0;
-    private float deathAngularVelX = 0;
-    private float deathAngularVelY = 0;
-    private float deathAngularVelZ = 0;
+    private final float deathAngularVelY = 0;
 
     public NpcRagdoll(EntityType<? extends NpcRagdoll> entityType, Level level) {
         super(entityType, level);
@@ -62,8 +59,8 @@ public class NpcRagdoll extends Entity {
         this.deathVelocityX = dvx;
         this.deathVelocityY = dvy;
         this.deathVelocityZ = dvz;
-        this.deathAngularVelX = (float) (Math.random() * 2 - 1) * 0.3f;
-        this.deathAngularVelZ = (float) (Math.random() * 2 - 1) * 0.3f;
+        float deathAngularVelX = (float) (Math.random() * 2 - 1) * 0.3f;
+        float deathAngularVelZ = (float) (Math.random() * 2 - 1) * 0.3f;
         this.blocksBuilding = true;
     }
 
@@ -219,20 +216,7 @@ public class NpcRagdoll extends Entity {
             float worldY = baseY + by;
 
             // Mass: root bones (depth 0) are heaviest, leaves are lightest
-            float mass;
-            if (boneDepths[i] <= 1) {
-                mass = 4.0f;
-            } else if (boneDepths[i] <= 3) {
-                mass = 2.0f;
-            } else {
-                mass = 1.0f;
-            }
-            // Adjust mass based on bone name hints
-            String name = bone.name != null ? bone.name.toLowerCase() : "";
-            if (name.contains("head")) mass = 3.0f;
-            else if (name.contains("pelvis") || name.contains("spine")) mass = 5.0f;
-            else if (name.contains("upperarm") || name.contains("thigh") || name.contains("calf")) mass = 3.0f;
-            else if (name.contains("foot") || name.contains("hand") || name.contains("forearm")) mass = 1.5f;
+            float mass = getMass(boneDepths, i, bone);
 
             boneBodyIds[i] = PhysicsBridge.createRigidBody(worldX, worldY, worldZ, mass);
             PhysicsBridge.setVelocity(boneBodyIds[i],
@@ -256,12 +240,30 @@ public class NpcRagdoll extends Entity {
         }
     }
 
+    private static float getMass(int[] boneDepths, int i, MdlDataTypes.Bone bone) {
+        float mass;
+        if (boneDepths[i] <= 1) {
+            mass = 4.0f;
+        } else if (boneDepths[i] <= 3) {
+            mass = 2.0f;
+        } else {
+            mass = 1.0f;
+        }
+        // Adjust mass based on bone name hints
+        String name = bone.name != null ? bone.name.toLowerCase() : "";
+        if (name.contains("head")) mass = 3.0f;
+        else if (name.contains("pelvis") || name.contains("spine")) mass = 5.0f;
+        else if (name.contains("upperarm") || name.contains("thigh") || name.contains("calf")) mass = 3.0f;
+        else if (name.contains("foot") || name.contains("hand") || name.contains("forearm")) mass = 1.5f;
+        return mass;
+    }
+
     private List<MdlDataTypes.Bone> loadModelBones() {
         String modelName = entityData.get(DATA_MODEL_NAME);
-        if (modelName == null || modelName.isEmpty()) return null;
+        if (modelName.isEmpty()) return null;
 
         // Try cached model data first (client-side)
-        String cacheKey = null;
+        String cacheKey;
         Path modelsDir = MdlModelRenderer.getModelsDir();
         if (modelsDir != null) {
             Path packageDir = modelsDir.resolve(modelName);
@@ -297,9 +299,9 @@ public class NpcRagdoll extends Entity {
         List<MdlDataTypes.Bone> bones = new ArrayList<>();
         for (SourceModelData.BoneInfo info : boneInfos) {
             MdlDataTypes.Bone b = new MdlDataTypes.Bone();
-            b.name = info.name;
-            b.pos = info.pos;
-            b.parent = info.parent;
+            b.name = info.name();
+            b.pos = info.pos();
+            b.parent = info.parent();
             bones.add(b);
         }
         return bones;
@@ -406,7 +408,7 @@ public class NpcRagdoll extends Entity {
     }
 
     @Override
-    public void remove(RemovalReason reason) {
+    public void remove(@NotNull RemovalReason reason) {
         cleanupPhysics();
         super.remove(reason);
     }

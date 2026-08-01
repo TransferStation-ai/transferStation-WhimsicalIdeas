@@ -4,12 +4,10 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import transferstation.transferstation_whimsicalideas.client.GmodModelConfig;
-import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
-import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import transferstation.transferstation_whimsicalideas.client.GmodModelConfig;
+import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,12 +38,12 @@ public final class ModelEditorIO {
             ModelViewport.BoneOverride ov = entry.getValue();
             if (idx < 0 || idx >= model.bones.size()) continue;
             JsonObject b = new JsonObject();
-            b.addProperty("bone", model.bones.get(idx).name);
+            b.addProperty("bone", model.bones.get(idx).name());
             JsonArray pos = new JsonArray();
-            pos.add(ov.pos[0]); pos.add(ov.pos[1]); pos.add(ov.pos[2]);
+            pos.add(ov.pos()[0]); pos.add(ov.pos()[1]); pos.add(ov.pos()[2]);
             b.add("pos", pos);
             JsonArray rot = new JsonArray();
-            rot.add(ov.rot[0]); rot.add(ov.rot[1]); rot.add(ov.rot[2]);
+            rot.add(ov.rot()[0]); rot.add(ov.rot()[1]); rot.add(ov.rot()[2]);
             b.add("rot", rot);
             bones.add(b);
         }
@@ -88,7 +86,7 @@ public final class ModelEditorIO {
                     String boneName = b.get("bone").getAsString();
                     int idx = -1;
                     for (int j = 0; j < model.bones.size(); j++) {
-                        if (model.bones.get(j).name.equals(boneName)) { idx = j; break; }
+                        if (model.bones.get(j).name().equals(boneName)) { idx = j; break; }
                     }
                     if (idx < 0) continue;
                     float[] pos = arr(b.getAsJsonArray("pos"), 3);

@@ -16,15 +16,15 @@ public class ModelPackage {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    private String name;
-    private Path packageDir;
+    private final String name;
+    private final Path packageDir;
     private String displayName;
     private String author;
     private float modelScale = 1.0f;
-    private List<String> tags = new ArrayList<>();
-    private List<String> modelPaths = new ArrayList<>();
-    private List<String> materialPaths = new ArrayList<>();
-    private List<String> cdMaterialsHints = new ArrayList<>();
+    private final List<String> tags = new ArrayList<>();
+    private final List<String> modelPaths = new ArrayList<>();
+    private final List<String> materialPaths = new ArrayList<>();
+    private final List<String> cdMaterialsHints = new ArrayList<>();
     private String addonDescription;
     private String addonVersion;
     private boolean hasAddonJson;
@@ -101,9 +101,7 @@ public class ModelPackage {
                     }
                 }
             }
-            if (json.has("ignore")) {
-                // Skip ignored patterns - not needed for model loading
-            }
+            json.has("ignore");// Skip ignored patterns - not needed for model loading
             if (json.has("addons")) {
                 var addonsArray = json.getAsJsonArray("addons");
                 for (var element : addonsArray) {
@@ -216,7 +214,7 @@ public class ModelPackage {
         if (modelFieldIdx >= 0) {
             String rest = line.substring(modelFieldIdx + modelPatternLen).trim();
             if (rest.startsWith("\"")) {
-                int endIdx = findClosingQuote(rest, 0);
+                int endIdx = findClosingQuote(rest);
                 if (endIdx > 0) {
                     String modelPath = rest.substring(1, endIdx).trim();
                     String mpLower = modelPath.toLowerCase();
@@ -329,7 +327,7 @@ public class ModelPackage {
         s = s.trim();
         if (s.isEmpty()) return null;
         if (s.startsWith("\"")) {
-            int end = findClosingQuote(s, 0);
+            int end = findClosingQuote(s);
             if (end > 0) return s.substring(1, end);
             return s.substring(1);
         }
@@ -356,8 +354,8 @@ public class ModelPackage {
         }
         return -1;
     }
-
-    private static int findClosingQuote(String s, int start) {
+//这里形参的值始终为0于是我们便直接内联
+    private static int findClosingQuote(String s) {
         for (int i = 1; i < s.length(); i++) {
             if (s.charAt(i) == '\\' && i + 1 < s.length()) { i++; continue; }
             if (s.charAt(i) == '"') return i;

@@ -13,7 +13,7 @@ import java.util.List;
 /**
  * Debug utility that exports all of a model package's GMod textures (VTF, plus
  * PNG/JPG fallbacks) to PNG files on disk so developers can inspect them.
- *
+ * <p>
  * Self-contained: only uses java.awt.image, java.io, java.nio.file,
  * javax.imageio, java.util and org.slf4j. No Minecraft client classes required.
  */
@@ -69,7 +69,7 @@ public final class TextureDebugExporter {
                     if (lower.endsWith(".vtf")) {
                         try {
                             VtfParser.VtfImageData result = VtfParser.parse(Files.readAllBytes(f));
-                            if (result != null && result.image != null) {
+                            if (result.image != null) {
                                 String relPath = sanitizeRelPath(materialsDir.relativize(f).toString())
                                         .replaceAll("\\.vtf$", "");
                                 Path target = outputDir.resolve(relPath + ".png");
@@ -153,7 +153,7 @@ public final class TextureDebugExporter {
         StringBuilder sb = new StringBuilder(normalized.length());
         for (int i = 0; i < normalized.length(); i++) {
             char c = normalized.charAt(i);
-            if (c == '/' || c == ':' || (c >= 32 && c != '<' && c != '>' && c != '"'
+            if ((c >= 32 && c != '<' && c != '>' && c != '"'
                     && c != '|' && c != '?' && c != '*')) {
                 sb.append(c);
             } else {

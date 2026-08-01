@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 模型加载进度追踪器。
  * 轻量级静态状态机，ModelLoadManager 在加载的关键阶段更新状态，
  * ModelLoadProgressOverlay 读取状态并渲染 HUD 进度条。
- *
+ *以防止出现玩家觉得模型正在加载但实际未被加载的情况
  * 新增多模型批处理支持：prewarmModelCaches 等批量加载场景可调用
  * beginBatch/advanceBatch 追踪"模型 X/Y"整体进度，与当前模型的
  * 子阶段（PARSING/TEXTURING/BUILDING）叠加显示。

@@ -427,13 +427,13 @@ public class MdlDataTypes {
     public static SequenceType classifySequence(SeqDesc seq) {
         if (seq.label == null || seq.label.isEmpty()) return SequenceType.NORMAL;
         String name = seq.label.toLowerCase().trim();
-        if (name.equals("ref") || name.equals("reference") || name.equals("bindpose")
-            || name.equals("bind_pose") || name.startsWith("ref_") || name.contains("_ref")
-            || name.contains("reference") || name.equals("default")) {
+        if (name.equals("ref") || name.equals("bindpose")
+                || name.equals("bind_pose") || name.startsWith("ref_") || name.contains("_ref")
+                || name.contains("reference") || name.equals("default")) {
             return SequenceType.REFERENCE;
         }
-        if (name.equals("a_pose") || name.equals("apose") || name.equals("a-pose")
-            || name.startsWith("a_pose") || name.contains("_apose")) {
+        if (name.equals("apose") || name.equals("a-pose")
+                || name.startsWith("a_pose") || name.contains("_apose")) {
             return SequenceType.A_POSE;
         }
         return SequenceType.NORMAL;

@@ -1,9 +1,12 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
-import java.io.*;
-import java.nio.*;
-import java.nio.charset.*;
-import java.util.*;
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Standalone raw-binary diagnostic for Source Engine MDL/VVD/VTX files.
@@ -74,10 +77,10 @@ public class RawMdlDiagnostic {
         }
 
         System.out.println("\n--- Header fields ---");
-        String name = readFixedString(buf, 12, 64);
+        String name = readFixedString(buf, 12);
         System.out.println("name='" + name + "'");
         System.out.println("dataLength=" + buf.getInt(76));
-        float[] eye = readFloat3(buf, 80);
+        float[] eye = readFloat3(buf);
         System.out.println("eyeposition=(" + eye[0] + "," + eye[1] + "," + eye[2] + ")");
         System.out.println("flags=0x" + Integer.toHexString(buf.getInt(152)));
 
@@ -163,7 +166,7 @@ public class RawMdlDiagnostic {
             for (int m = 0; m < numModels; m++) {
                 int mOff = modelAddr + m * modelSize;
                 if (mOff + 64 > limit) break;
-                String mName = readFixedString(buf, mOff, 64);
+                String mName = readFixedString(buf, mOff);
                 int mType = buf.getInt(mOff + 64);
                 float mBounds = buf.getFloat(mOff + 68);
                 int mNumMeshes = buf.getInt(mOff + 72);
@@ -357,12 +360,11 @@ public class RawMdlDiagnostic {
         int vertexStride = (version >= 7) ? maxBonesPerVert * 2 + 3 : 8;
         System.out.println("meshHeaderSize=" + meshHeaderSize + " vertexStride=" + vertexStride);
 
-        int bpAddr = bodyPartOff;
         int totalMeshes = 0;
         int totalTris = 0;
 
         for (int bp = 0; bp < numBodyParts; bp++) {
-            int bhAddr = bpAddr + bp * 8;
+            int bhAddr = bodyPartOff + bp * 8;
             if (bhAddr + 8 > limit) break;
             int numModels = buf.getInt(bhAddr);
             int modelOff = buf.getInt(bhAddr + 4);
@@ -436,9 +438,9 @@ public class RawMdlDiagnostic {
 
     // ======================== Utilities ========================
 
-    static String readFixedString(ByteBuffer buf, int offset, int len) {
+    static String readFixedString(ByteBuffer buf, int offset) {
         if (offset < 0) return "";
-        int safeLen = Math.min(len, buf.limit() - offset);
+        int safeLen = Math.min(64, buf.limit() - offset);
         if (safeLen <= 0) return "";
         int saved = buf.position();
         try {
@@ -472,8 +474,8 @@ public class RawMdlDiagnostic {
         }
     }
 
-    static float[] readFloat3(ByteBuffer buf, int offset) {
-        return new float[]{buf.getFloat(offset), buf.getFloat(offset + 4), buf.getFloat(offset + 8)};
+    static float[] readFloat3(ByteBuffer buf) {
+        return new float[]{buf.getFloat(80), buf.getFloat(80 + 4), buf.getFloat(80 + 8)};
     }
 
     static String decodeString(byte[] bytes, int len) {
