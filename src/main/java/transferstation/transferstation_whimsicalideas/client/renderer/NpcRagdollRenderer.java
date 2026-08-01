@@ -78,7 +78,7 @@ public class NpcRagdollRenderer extends EntityRenderer<NpcRagdoll> {
         // applies its own model centering, so do NOT pre-translate by world coords here
         // (that double-translated the ragdoll away from the entity).
 
-        JavaModelRenderer.renderWithSkinning(entity, poseStack, bufferSource, packedLight, partialTicks, boneMatrices);
+        JavaModelRenderer.renderWithSkinning(entity, poseStack, bufferSource, packedLight, boneMatrices);
 
         poseStack.popPose();
 

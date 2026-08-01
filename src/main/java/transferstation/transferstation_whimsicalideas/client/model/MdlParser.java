@@ -6,7 +6,6 @@ import org.slf4j.Logger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 import static transferstation.transferstation_whimsicalideas.client.model.MdlDataTypes.*;
 
@@ -100,7 +99,6 @@ public class MdlParser {
             }
         }
 
-        safeRun(() -> parseIndices(buf, result), "indices");
         safeRun(() -> parseBones(buf, result, bufferLimit), "bones");
         safeRun(() -> parseEyeballs(buf, result, bufferLimit), "eyeballs");
         safeRun(() -> parseAttachments(buf, result, bufferLimit), "attachments");
@@ -245,10 +243,6 @@ public class MdlParser {
                     "MDL parse error: %s count %d exceeds maximum %d", fieldName, count, max));
         }
         return count;
-    }
-
-    private static long mulAddSafe(int a, int b, int c) {
-        return (long) a + (long) b * (long) c;
     }
 
     private static Header parseHeader(ByteBuffer buf, int bufferLimit) {
@@ -449,35 +443,6 @@ public class MdlParser {
         }
     }
 
-    public static void linkVtxTriangles(ParsedModel mdl, VtxParser.ParsedVtx vtx, VvdParser.ParsedVvd vvd) {
-        mdl.vvdVertexCount = vvd != null ? vvd.vertices.size() : 0;
-        int vvdCount = mdl.vvdVertexCount;
-        mdl.indices.clear();
-
-        List<List<VtxParser.VtxTriangle>> triangles = VtxParser.buildTrianglesPerMdlMesh(vtx, mdl, vvdCount);
-        mdl.vtxTriangles = triangles;
-
-        for (List<VtxParser.VtxTriangle> meshTris : triangles) {
-            for (VtxParser.VtxTriangle tri : meshTris) {
-                if (tri.v0 < vvdCount && tri.v1 < vvdCount && tri.v2 < vvdCount) {
-                    mdl.indices.add(tri.v0);
-                    mdl.indices.add(tri.v1);
-                    mdl.indices.add(tri.v2);
-                }
-            }
-        }
-    }
-
-    private static void parseIndices(ByteBuffer buf, ParsedModel result) {
-        // NOTE: mdl.vtxTriangles is only populated by linkVtxTriangles (unused path).
-        // Geometry is actually built from VtxParser.meshTriangles in ModelLoadManager.buildMeshes,
-        // so an empty mdl.vtxTriangles here is expected and NOT an error.
-        if (!result.vtxTriangles.isEmpty()) {
-            return;
-        }
-        LOGGER.debug("[MdlParser] mdl.vtxTriangles empty (expected; geometry uses VtxParser.meshTriangles)");
-    }
-
     private static void parseBones(ByteBuffer buf, ParsedModel result, int bufferLimit) {
         int numBones = sanitizeCount(result.header.numbones, 512, "numbones");
         if (numBones == 0) return;
@@ -582,8 +547,8 @@ public class MdlParser {
             tex.flags = buf.getInt();
             tex.width = buf.getInt();
             tex.height = buf.getInt();
-            int viewportX = buf.getInt();
-            int viewportY = buf.getInt();
+            buf.getInt();
+            buf.getInt();
 
             if (nameOff > 0) {
                 int absNameOff = entryOff + nameOff;
@@ -766,8 +731,7 @@ public class MdlParser {
                     bbox.bbmin = readFloat3(buf);
                     bbox.bbmax = readFloat3(buf);
                     bbox.sznameindex = buf.getInt();
-                    int total = 0;
-                    for (int j = 0; j < 8; j++) total += buf.getInt();
+                    for (int j = 0; j < 8; j++) buf.getInt();
                     if (bbox.sznameindex > 0) {
                         int absNameOff = hOff + bbox.sznameindex;
                         bbox.name = readNullTerminatedString(buf, absNameOff, bufferLimit);
@@ -788,7 +752,6 @@ public class MdlParser {
         if (numLocalSeq > 1024) return;
 
         int seqdescSize = result.seqdescSize;
-        int ANIMEVENT_SIZE = 76;
         assertInBounds(localSeqIndex, (long) numLocalSeq * seqdescSize, bufferLimit, "localseqindex");
 
         for (int i = 0; i < numLocalSeq; i++) {
@@ -805,7 +768,7 @@ public class MdlParser {
             }
             if (seqdescSize >= SEQDESC_SIZE_V49) {
                 seq.szactivitynameindex = buf.getInt();
-                int activityFlags = buf.getInt();
+                buf.getInt();
             } else {
                 seq.szactivitynameindex = 0;
             }
@@ -1205,7 +1168,7 @@ public class MdlParser {
                     if (entryOff + 8 > bufferLimit) break;
 
                     short boneIdx = buf.getShort(entryOff);
-                    short flags = buf.getShort(entryOff + 2);
+                    buf.getShort(entryOff + 2);
                     int nextoffset = buf.getInt(entryOff + 4);
 
                     if (boneIdx < 0) break;

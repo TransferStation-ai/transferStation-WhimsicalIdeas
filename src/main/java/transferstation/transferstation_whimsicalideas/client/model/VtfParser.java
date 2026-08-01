@@ -19,7 +19,6 @@ public class VtfParser {
     private static final int MAX_FILE_SIZE = 256 * 1024 * 1024;
     private static final int MAX_DIMENSION = 8192;
 
-    private static final int FORMAT_RGBA8888 = 0;
     private static final int FORMAT_ABGR8888 = 1;
     private static final int FORMAT_RGB888 = 2;
     private static final int FORMAT_BGR888 = 3;
@@ -68,34 +67,33 @@ public class VtfParser {
         }
 
         int majorVersion = buf.getInt();
-        int minorVersion = buf.getInt();
+        buf.getInt();
         int headerSize = buf.getInt();
         int width = buf.getShort() & 0xFFFF;
         int height = buf.getShort() & 0xFFFF;
         int flags = buf.getInt();
         int frames = buf.getShort() & 0xFFFF;
-        int firstFrame = buf.getShort() & 0xFFFF;
+        buf.getShort();
 
         buf.position(buf.position() + 4);
 
-        float reflectivity0 = buf.getFloat();
-        float reflectivity1 = buf.getFloat();
-        float reflectivity2 = buf.getFloat();
+        buf.getFloat();
+        buf.getFloat();
+        buf.getFloat();
 
         buf.position(buf.position() + 4);
 
-        float bumpmapScale = buf.getFloat();
+        buf.getFloat();
         int imageFormat = buf.getInt();
         int mipmapCount = buf.get() & 0xFF;
         int lowResImageFormat = buf.getInt();
         int lowResImageWidth = buf.get() & 0xFF;
         int lowResImageHeight = buf.get() & 0xFF;
-        int depth = buf.getShort() & 0xFFFF;
+        buf.getShort();
 
         if (width == 0 || width > MAX_DIMENSION || height == 0 || height > MAX_DIMENSION) {
             throw new IOException("Invalid VTF dimensions: " + width + "x" + height);
         }
-        if (depth == 0) depth = 1;
 
         buf.position(headerSize);
 
@@ -317,10 +315,6 @@ public class VtfParser {
             return width * height * bytesPerPixel;
         }
         return 0;
-    }
-
-    private static BufferedImage decodeToImage(byte[] data, int width, int height, int format) {
-        return decodeToImage(data, width, height, format, null);
     }
 
     private static BufferedImage decodeToImage(byte[] data, int width, int height, int format, byte[] palette) {
@@ -575,27 +569,6 @@ public class VtfParser {
                 int bi = Math.min(255, Math.max(0, (int)(b * 255.0f)));
                 pixels[i] = 0xFF000000 | (ri << 16) | (gi << 8) | bi;
                 idx += 12;
-            } else {
-                pixels[i] = 0xFFFFFFFF;
-            }
-        }
-    }
-
-    private static void decodeRGBA16161616F(byte[] data, int width, int height, int[] pixels) {
-        int idx = 0;
-        for (int i = 0; i < width * height; i++) {
-            if (idx + 15 < data.length) {
-                ByteBuffer bb = ByteBuffer.wrap(data, idx, 16).order(ByteOrder.LITTLE_ENDIAN);
-                float r = bb.getFloat();
-                float g = bb.getFloat();
-                float b = bb.getFloat();
-                float a = bb.getFloat();
-                int ri = Math.min(255, Math.max(0, (int)(r * 255.0f)));
-                int gi = Math.min(255, Math.max(0, (int)(g * 255.0f)));
-                int bi = Math.min(255, Math.max(0, (int)(b * 255.0f)));
-                int ai = Math.min(255, Math.max(0, (int)(a * 255.0f)));
-                pixels[i] = (ai << 24) | (ri << 16) | (gi << 8) | bi;
-                idx += 16;
             } else {
                 pixels[i] = 0xFFFFFFFF;
             }
@@ -1134,10 +1107,11 @@ public class VtfParser {
         "0,3,15|0,3,8|0,15,8|0,15,3|0,8,15|0,3,15|0,15,3|0,15,8|0,8,15|0,8,15|0,6,15|0,6,15|0,6,15|0,5,15|0,3,15|0,3,8|0,3,15|0,3,8|0,8,15|0,15,3|0,3,15|0,3,8|0,6,15|0,10,8|0,5,3|0,8,15|0,8,6|0,6,10|0,8,15|0,5,15|0,15,10|0,15,8|0,8,15|0,15,3|0,3,15|0,5,10|0,6,10|0,10,8|0,8,9|0,15,10|0,15,6|0,3,15|0,15,8|0,5,15|0,15,3|0,15,6|0,15,6|0,15,8|0,3,15|0,15,3|0,5,15|0,5,15|0,5,15|0,8,15|0,5,15|0,10,15|0,5,15|0,10,15|0,8,15|0,13,15|0,15,3|0,12,15|0,3,15|0,3,8",
     };
 
-    private static final String[][] BC6H_DESC = parseBC6HDesc(BC6H_DESC_RAW);
-    private static final int[][][] BC6H_BC7_FIXUP = parseFixupTable(BC6H_BC7_FIXUP_RAW);
+    private static final String[][] BC6H_DESC = parseBC6HDesc();
+    private static final int[][][] BC6H_BC7_FIXUP = parseFixupTable();
 
-    private static String[][] parseBC6HDesc(String[] raw) {
+    private static String[][] parseBC6HDesc() {
+        String[] raw = BC6H_DESC_RAW;
         String[][] desc = new String[raw.length][82];
         for (int m = 0; m < raw.length; m++) {
             String[] toks = raw[m].split(",");
@@ -1148,7 +1122,8 @@ public class VtfParser {
         return desc;
     }
 
-    private static int[][][] parseFixupTable(String[] raw) {
+    private static int[][][] parseFixupTable() {
+        String[] raw = BC6H_BC7_FIXUP_RAW;
         int[][][] table = new int[raw.length][64][3];
         for (int p = 0; p < raw.length; p++) {
             String[] rows = raw[p].split("\\|");
@@ -1310,10 +1285,10 @@ public class VtfParser {
         "0,1,0,1,2,2,2,2,2,2,2,2,2,2,2,2|" +
         "0,1,1,1,2,0,1,1,2,2,0,1,2,2,2,0";
 
-    private static final int[][] BC7_P2_TABLE = parseBC7PartitionTable(BC7_P2_RAW, 2);
-    private static final int[][] BC7_P3_TABLE = parseBC7PartitionTable(BC7_P3_RAW, 3);
+    private static final int[][] BC7_P2_TABLE = parseBC7PartitionTable(BC7_P2_RAW);
+    private static final int[][] BC7_P3_TABLE = parseBC7PartitionTable(BC7_P3_RAW);
 
-    private static int[][] parseBC7PartitionTable(String raw, int maxSubset) {
+    private static int[][] parseBC7PartitionTable(String raw) {
         int[][] table = new int[64][16];
         String[] rows = raw.split("\\|");
         for (int i = 0; i < 64 && i < rows.length; i++) {
@@ -1324,18 +1299,6 @@ public class VtfParser {
         }
         return table;
     }
-
-    private static int computeBC7Partition(int partition, int numSubsets, int px, int py) {
-        if (numSubsets <= 1) return 0;
-        int idx = py * 4 + px;
-        if (partition < 0 || partition >= 64) partition = 0;
-        if (numSubsets == 2) {
-            return BC7_P2_TABLE[partition][idx];
-        } else {
-            return BC7_P3_TABLE[partition][idx];
-        }
-    }
-
 
 
     // Read a range of bits from a byte array at the given bit offset
@@ -1565,19 +1528,9 @@ public class VtfParser {
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
-    private static int lerpColor(int c0, int c1, int t) {
-        int a0 = (c0 >> 24) & 0xFF, r0 = (c0 >> 16) & 0xFF, g0 = (c0 >> 8) & 0xFF, b0 = c0 & 0xFF;
-        int a1 = (c1 >> 24) & 0xFF, r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF;
-        int a = ((a0 * (4 - t) + a1 * t) / 4) & 0xFF;
-        int r = ((r0 * (4 - t) + r1 * t) / 4) & 0xFF;
-        int g = ((g0 * (4 - t) + g1 * t) / 4) & 0xFF;
-        int b = ((b0 * (4 - t) + b1 * t) / 4) & 0xFF;
-        return (a << 24) | (r << 16) | (g << 8) | b;
-    }
-
     private static int lerpColorDXT(int c0, int c1, int t) {
-        int a0 = (c0 >> 24) & 0xFF, r0 = (c0 >> 16) & 0xFF, g0 = (c0 >> 8) & 0xFF, b0 = c0 & 0xFF;
-        int a1 = (c1 >> 24) & 0xFF, r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF;
+        int r0 = (c0 >> 16) & 0xFF, g0 = (c0 >> 8) & 0xFF, b0 = c0 & 0xFF;
+        int r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF;
         int r = ((r0 * (3 - t) + r1 * t) / 3) & 0xFF;
         int g = ((g0 * (3 - t) + g1 * t) / 3) & 0xFF;
         int b = ((b0 * (3 - t) + b1 * t) / 3) & 0xFF;

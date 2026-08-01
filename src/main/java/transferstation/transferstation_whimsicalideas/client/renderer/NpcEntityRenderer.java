@@ -126,10 +126,10 @@ public class NpcEntityRenderer extends EntityRenderer<NpcEntity> {
                 }
             }
 
-            JavaModelRenderer.renderWithSkinning(entity, poseStack, bufferSource, packedLight, partialTicks, boneMatrices);
+            JavaModelRenderer.renderWithSkinning(entity, poseStack, bufferSource, packedLight, boneMatrices);
         } else {
             // No bones - render as static mesh using per-entity model data
-            JavaModelRenderer.renderModel(entity, poseStack, bufferSource, packedLight, partialTicks);
+            JavaModelRenderer.renderModel(entity, poseStack, bufferSource, packedLight);
         }
 
         poseStack.popPose();

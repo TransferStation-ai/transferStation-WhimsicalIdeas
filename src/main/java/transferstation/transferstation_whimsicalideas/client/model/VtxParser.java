@@ -87,13 +87,13 @@ public class VtxParser {
         int fileBaseAddr = 0;
 
         int version = buf.getInt();
-        int vertCacheSize = buf.getInt();
-        int maxBonesPerStrip = buf.getShort() & 0xFFFF;
-        int maxBonesPerTri = buf.getShort() & 0xFFFF;
+        buf.getInt();
+        buf.getShort();
+        buf.getShort();
         int maxBonesPerVert = buf.getInt();
         int checksum = buf.getInt();
         int numLODs = buf.getInt();
-        int materialReplacementListOffset = buf.getInt();
+        buf.getInt();
         int numBodyParts = buf.getInt();
         int bodyPartOffset = buf.getInt();
 
@@ -301,7 +301,6 @@ public class VtxParser {
                                 }
 
                                 boolean isTriList = (sFlags & 0x01) != 0;
-                                int step = isTriList ? 3 : 1;
 
                                 if (isTriList) {
                                     // ---------- TRIANGLE LIST ----------
@@ -435,66 +434,6 @@ public class VtxParser {
         }
         LOGGER.info("[VtxParser] Parsed: bodyParts={} totalMeshes={} totalTris={}", numBodyParts, totalMeshes, totalTris);
         return result;
-    }
-
-    public static List<List<VtxTriangle>> buildTrianglesPerMdlMesh(ParsedVtx vtx, MdlDataTypes.ParsedModel mdl, int vvdVertexCount) {
-        List<List<VtxTriangle>> result = new ArrayList<>();
-
-        int vtxMeshCount = vtx.meshTriangles.size();
-
-        if (mdl == null || mdl.meshes.isEmpty()) {
-            for (int i = 0; i < vtxMeshCount; i++) {
-                result.add(new ArrayList<>());
-                for (VtxTriangle tri : vtx.meshTriangles.get(i)) {
-                    if (tri.v0 < vvdVertexCount && tri.v1 < vvdVertexCount && tri.v2 < vvdVertexCount) {
-                        result.get(i).add(tri);
-                    }
-                }
-            }
-            if (result.isEmpty()) result.add(new ArrayList<>());
-            return result;
-        }
-
-        int mdlMeshCount = mdl.meshes.size();
-        int meshCount = Math.min(vtxMeshCount, mdlMeshCount);
-
-        for (int i = 0; i < meshCount; i++) {
-            List<VtxTriangle> adjusted = new ArrayList<>();
-            int oobCount = 0;
-            for (VtxTriangle tri : vtx.meshTriangles.get(i)) {
-                if (tri.v0 < vvdVertexCount && tri.v1 < vvdVertexCount && tri.v2 < vvdVertexCount) {
-                    adjusted.add(new VtxTriangle(tri.v0, tri.v1, tri.v2));
-                } else {
-                    oobCount++;
-                }
-            }
-            if (oobCount > 0) {
-                LOGGER.warn("[VtxParser] Mesh[{}] filtered {} OOB triangles (vvdVerts={})", i, oobCount, vvdVertexCount);
-            }
-            result.add(adjusted);
-        }
-
-        for (int i = meshCount; i < vtxMeshCount; i++) {
-            result.add(new ArrayList<>());
-            for (VtxTriangle tri : vtx.meshTriangles.get(i)) {
-                if (tri.v0 < vvdVertexCount && tri.v1 < vvdVertexCount && tri.v2 < vvdVertexCount) {
-                    result.get(result.size() - 1).add(tri);
-                }
-            }
-        }
-
-        LOGGER.info("[VtxParser] buildTrianglesPerMdlMesh: vtxMeshes={} mdlMeshes={} resultMeshes={}", vtxMeshCount, mdlMeshCount, result.size());
-
-        return result;
-    }
-
-    private static void checkBounds(int offset, long size, int bufferLimit, String fieldName) {
-        if (offset < 0 || (long) offset + size > bufferLimit) {
-            long endPos = (long) offset + size;
-            throw new RuntimeException(String.format(
-                    "VTX parse error: %s at offset %d (size %d) exceeds buffer limit %d",
-                    fieldName, offset, size, bufferLimit));
-        }
     }
 
     private static int resolveOffset(int baseAddr, int relOffset, long dataSize, int bufferLimit) {

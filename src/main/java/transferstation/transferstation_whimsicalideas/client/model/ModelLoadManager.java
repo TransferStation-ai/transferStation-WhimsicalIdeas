@@ -19,7 +19,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -27,7 +26,6 @@ import java.util.zip.GZIPOutputStream;
 public class ModelLoadManager {
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final int VERTEX_FLOAT_SIZE = 8;
     private static final int VVD_VERTEX_SIZE = 48;
     // Bump this whenever parsing logic changes to invalidate old caches
     // 25: 在磁盘缓存中持久化解码后的纹理像素，命中时无需重新解析 VTF
@@ -47,17 +45,6 @@ public class ModelLoadManager {
 
     private static final List<ModelLoadCallback> callbacks = Collections.synchronizedList(new ArrayList<>());
 
-    /**
-     * 通知 ModelLoadManager 所有已注册的 DynamicTexture 可能在资源重载后被关闭/失效。
-     * 递增 TextureColorResolver 的世代计数器，使所有纹理条目在下一次渲染时重新注册。
-     * 使用世代计数器替代 boolean flag，避免多线程竞态条件：
-     * - 旧方案：boolean 在第一个缓存命中后被消耗为 false，后续纹理被遗漏
-     * - 新方案：世代只增不减，每个条目独立追踪最后注册世代
-     */
-    public static void markTexturesStale() {
-        TextureColorResolver.incrementGeneration();
-    }
-
     public static void setCacheDir(Path dir) {
         cacheDir = dir;
     }
@@ -76,16 +63,6 @@ public class ModelLoadManager {
         modelCache.clear();
         loadingFutures.clear();
         colorResolver.clearAll();
-    }
-
-    public static void registerModelLoadCallback(ModelLoadCallback callback) {
-        if (callback != null) {
-            callbacks.add(callback);
-        }
-    }
-
-    public static void unregisterModelLoadCallback(ModelLoadCallback callback) {
-        callbacks.remove(callback);
     }
 
     private static void fireModelLoadedCallbacks(String cacheKey, SourceModelData data,
@@ -215,15 +192,6 @@ public class ModelLoadManager {
             LOGGER.error("[ModelLoadManager] Failed to load model from {} using {}", packageDir, strategy.getPlatformName(), e);
             return null;
         }
-    }
-
-    public static SourceModelData loadModelForLod(Path packageDir, int lodLevel) {
-        SourceModelData data = loadModel(packageDir);
-        if (data == null) return null;
-        
-        SourceModelData result = data.getMeshesForLod(lodLevel);
-        LOGGER.info("[ModelLoadManager] Loaded model for LOD {}: {} meshes", lodLevel, result.meshes.size());
-        return result;
     }
 
     /**
@@ -372,9 +340,6 @@ public class ModelLoadManager {
         }
 
         // Build meshes from SMD triangles
-        List<String> luaMaterialHints = new ArrayList<>();
-        List<String> luaCdMaterialsHints = new ArrayList<>();
-
         Map<String, VtfParser.VtfImageData> vtfCache = new HashMap<>();
         Map<String, VmtParser.VmtMaterial> vmtCache = new HashMap<>();
         Map<String, BufferedImage> commonImageCache = new HashMap<>();
@@ -396,7 +361,7 @@ public class ModelLoadManager {
             int[] idxArray = new int[idxList.size()];
             for (int i = 0; i < idxList.size(); i++) idxArray[i] = idxList.get(i);
 
-            ResourceLocation texture = resolveSmdMaterialTexture(smdMesh.materialName, vtfCache, vmtCache);
+            ResourceLocation texture = resolveSmdMaterialTexture(smdMesh.materialName, vtfCache);
             String vtfKey = texture != null ? extractVtfKey(texture) : null;
 
             result.meshes.add(new SourceModelData.MeshData.Builder()
@@ -412,8 +377,7 @@ public class ModelLoadManager {
     }
 
     private static ResourceLocation resolveSmdMaterialTexture(String materialName,
-            Map<String, VtfParser.VtfImageData> vtfCache,
-            Map<String, VmtParser.VmtMaterial> vmtCache) {
+            Map<String, VtfParser.VtfImageData> vtfCache) {
         if (materialName == null || materialName.isEmpty()) return null;
 
         String matNorm = materialName.replace('\\', '/').toLowerCase();
@@ -1124,20 +1088,6 @@ public class ModelLoadManager {
         }
     }
 
-    private static Path findAnyModelFile(Path packageDir) {
-        try (Stream<Path> files = Files.walk(packageDir, 4)) {
-            return files.filter(Files::isRegularFile)
-                .filter(f -> {
-                    String name = f.getFileName().toString().toLowerCase();
-                    return name.endsWith(".mdl") || name.endsWith(".smd") || name.endsWith(".bbmodel");
-                })
-                .findFirst()
-                .orElse(null);
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
     private static void saveToDiskCache(Path packageDir, SourceModelData data) {
         if (cacheDir == null || data == null || data.meshes.isEmpty()) return;
         Path cacheFile = getCacheFilePath(packageDir);
@@ -1378,27 +1328,6 @@ public class ModelLoadManager {
         return null;
     }
 
-    public static void clearAllCaches() {
-        modelCache.clear();
-        colorResolver.clearAll();
-        JavaModelRenderer.clearAllEntityModels();
-        if (cacheDir != null) {
-            try (Stream<Path> files = Files.list(cacheDir)) {
-                files.forEach(f -> {
-                    try { Files.deleteIfExists(f); } catch (IOException ignored) {}
-                });
-            } catch (IOException ignored) {}
-            LOGGER.info("[ModelLoadManager] Cleared in-memory and disk model caches");
-        }
-        ModelParserStrategy strategy = ModelParserProvider.getStrategy();
-        strategy.clearCache();
-    }
-
-    public static void unloadModelByDir(Path packageDir) {
-        String cacheKey = packageDir.toAbsolutePath().toString();
-        unloadModel(cacheKey);
-    }
-
     public static void unloadModel(String cacheKey) {
         SourceModelData data = modelCache.remove(cacheKey);
         if (data != null) {
@@ -1444,10 +1373,6 @@ public class ModelLoadManager {
 
     public static TextureColorResolver getColorResolver() {
         return colorResolver;
-    }
-
-    private static SourceModelData loadFromDirectory(Path packageDir) throws IOException {
-        return loadFromDirectory(packageDir, ModelParserProvider.getStrategy());
     }
 
     private static SourceModelData loadFromDirectory(Path packageDir, ModelParserStrategy strategy) throws IOException {
@@ -1600,7 +1525,6 @@ public class ModelLoadManager {
 
         ModelLoadProgress.setPhase(ModelLoadProgress.Phase.PARSING);
 
-        boolean nativeParseUsed = false;
         MdlDataTypes.ParsedModel mdl;
         VvdParser.ParsedVvd vvd;
         VtxParser.ParsedVtx vtx;
@@ -1609,7 +1533,6 @@ public class ModelLoadManager {
             mdl = strategy.parseMdl(Files.readAllBytes(mdlPath));
             vvd = strategy.parseVvd(Files.readAllBytes(vvdPath));
             vtx = strategy.parseVtx(Files.readAllBytes(vtxPath));
-            nativeParseUsed = true;
             LOGGER.info("[ModelLoadManager] Native parsing used for {} (parser: {})", packageDir, strategy.getPlatformName());
         } else {
             mdl = MdlParser.parse(Files.readAllBytes(mdlPath));
@@ -1774,7 +1697,6 @@ public class ModelLoadManager {
 
         // Find materials directories and scan VMT/VTF files
         List<Path> allMaterialsDirs = findAllMaterialsDirs(packageDir);
-        Path primaryMaterialsDir = allMaterialsDirs.isEmpty() ? null : allMaterialsDirs.get(0);
 
         Map<String, VtfParser.VtfImageData> vtfCache = new HashMap<>();
         Map<String, VmtParser.VmtMaterial> vmtCache = new HashMap<>();
@@ -2164,7 +2086,6 @@ public class ModelLoadManager {
         // lockstep, but mesh output is skipped for non-primary bodygroup models.
         boolean[] bodygroupActiveModelSeen = new boolean[mdl.bodyParts.size()];
         for (int bpIdx = 0; bpIdx < mdl.bodyParts.size(); bpIdx++) {
-            MdlDataTypes.BodyPart bp = mdl.bodyParts.get(bpIdx);
             for (int modelIdx = 0; modelIdx < mdlModelCount; modelIdx++) {
                 MdlDataTypes.Model model = mdl.models.get(modelIdx);
                 if (model.bodypartIndex != bpIdx) continue;
@@ -2674,14 +2595,13 @@ public class ModelLoadManager {
         for (Path dir : materialsDirs) {
             if (dir == null || !Files.exists(dir)) continue;
             try (Stream<Path> walk = Files.walk(dir, 8)) {
-                for (Path f : (Iterable<Path>) walk.filter(Files::isRegularFile)
-                        .filter(p -> {
-                            String n = p.getFileName().toString().toLowerCase();
-                            return n.endsWith(".vmt") || n.endsWith(".vtf")
-                                || n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg");
-                        })::iterator) {
-                    count++;
-                }
+                count += (int) walk.filter(Files::isRegularFile)
+                    .filter(p -> {
+                        String n = p.getFileName().toString().toLowerCase();
+                        return n.endsWith(".vmt") || n.endsWith(".vtf")
+                            || n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg");
+                    })
+                    .count();
             } catch (IOException ignored) {
             }
         }
@@ -2804,24 +2724,14 @@ public class ModelLoadManager {
         }
         LOGGER.info("[ModelLoadManager] cdtexture prefixes: {}", allCdPrefixes);
 
-        // Build a map from $basetexture (VMT reference, with $cdmaterials) to VMT key
-        Map<String, String> baseTexToVmtKey = new HashMap<>();
-        for (Map.Entry<String, VmtParser.VmtMaterial> e : vmtCache.entrySet()) {
-            String fullPath = e.getValue().getFullBaseTexturePath();
-            if (fullPath != null) {
-                baseTexToVmtKey.put(fullPath, e.getKey());
-            }
-        }
-
         // Build reverse map from VMT key to VTF key (via $basetexture + $cdmaterials)
         Map<String, String> vmtKeyToVtfKey = getStringStringMap(vmtCache, vtfCache);
 
-        // Build ordered list of ALL VTF keys (sorted by path for consistent ordering)
-        List<String> orderedVtfKeys = vtfCache.keySet().stream()
+        // Count renderable VTFs (excluding vgui) for progress reporting
+        long renderableVtfCount = vtfCache.keySet().stream()
             .filter(k -> !k.contains("vgui"))  // Skip UI textures
-            .sorted()
-            .collect(Collectors.toList());
-        LOGGER.info("[ModelLoadManager] Found {} renderable VTFs (excluding vgui)", orderedVtfKeys.size());
+            .count();
+        LOGGER.info("[ModelLoadManager] Found {} renderable VTFs (excluding vgui)", renderableVtfCount);
 
         // Log skin table info
         LOGGER.info("[ModelLoadManager] Skin table: {} entries, numskinref={}, numskinfamilies={}",
@@ -2848,7 +2758,7 @@ public class ModelLoadManager {
         for (int meshIdx = 0; meshIdx < mdl.meshes.size(); meshIdx++) {
             SourceModelData.MeshTextureInfo info = resolveMeshTexture(
                 mdl, meshIdx, vmtCache, vtfCache,
-                    allCdPrefixes, orderedVtfKeys, baseTexToVmtKey,
+                    allCdPrefixes,
                 vmtKeyToVtfKey, luaMaterialHints
             );
             if (info != null && info.texture != null) {
@@ -2932,8 +2842,6 @@ public class ModelLoadManager {
         Map<String, VmtParser.VmtMaterial> vmtCache,
         Map<String, VtfParser.VtfImageData> vtfCache,
         List<String> cdPrefixes,
-        List<String> orderedVtfKeys,
-        Map<String, String> baseTexToVmtKey,
         Map<String, String> vmtKeyToVtfKey,
         List<String> luaMaterialHints
     ) {
@@ -3515,13 +3423,5 @@ public class ModelLoadManager {
         int b = pixel & 0xFF;
         if (a == 0) a = 255;
         return transferstation.transferstation_whimsicalideas.client.ColorUtils.argb(a, r, g, b);
-    }
-
-public static void clearTextureRegistry() {
-        var stats = colorResolver.getStatistics();
-        if (stats.registeredTextures() > 0) {
-            LOGGER.info("[ModelLoadManager] Clearing texture registry (stats: {})", stats);
-        }
-        colorResolver.clearAll();
     }
 }

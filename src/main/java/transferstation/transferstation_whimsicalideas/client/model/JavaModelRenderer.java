@@ -38,7 +38,6 @@ public class JavaModelRenderer {
      */
     public static float MODEL_FACING_YAW = (float) Math.PI;
 
-    private static final boolean FACING_DEBUG_LOG = true;
     private static boolean facingDebugLogged = false;
 
     /**
@@ -88,15 +87,6 @@ public class JavaModelRenderer {
         return currentModelData != null && !currentModelData.meshes.isEmpty();
     }
 
-    public static boolean hasModel(Entity entity) {
-        return entityModelData.containsKey(entity);
-    }
-
-    public static void clearEntityModel(Entity entity) {
-        entityModelData.remove(entity);
-        entityLodData.remove(entity);
-    }
-
     public static void clearAllEntityModels() {
         entityModelData.clear();
         entityLodData.clear();
@@ -138,20 +128,19 @@ public class JavaModelRenderer {
     }
 
     public static void renderModel(LivingEntity entity, PoseStack poseStack,
-                                    MultiBufferSource bufferSource, int packedLight,
-                                    float partialTicks) {
-        renderWithData(entity, poseStack, bufferSource, packedLight, partialTicks, resolveModelData(entity));
+                                    MultiBufferSource bufferSource, int packedLight) {
+        renderWithData(entity, poseStack, bufferSource, packedLight, resolveModelData(entity));
     }
 
     public static void renderModelLOD(LivingEntity entity, PoseStack poseStack,
                                        MultiBufferSource bufferSource, int packedLight,
-                                       float partialTicks, int lodLevel) {
-        renderWithData(entity, poseStack, bufferSource, packedLight, partialTicks, resolveLodData(entity, lodLevel));
+                                       int lodLevel) {
+        renderWithData(entity, poseStack, bufferSource, packedLight, resolveLodData(entity, lodLevel));
     }
 
     private static void renderWithData(LivingEntity entity, PoseStack poseStack,
                                         MultiBufferSource bufferSource, int packedLight,
-                                        float partialTicks, SourceModelData data) {
+                                        SourceModelData data) {
         if (data == null || data.meshes.isEmpty()) return;
 
         poseStack.pushPose();
@@ -181,17 +170,13 @@ public class JavaModelRenderer {
         Matrix3f normalMatrix = pose.normal();
 
         for (SourceModelData.MeshData mesh : data.meshes) {
-            renderMeshWithEmissiveSupport(mesh, matrix, normalMatrix, bufferSource, packedLight, partialTicks);
+            renderMeshWithEmissiveSupport(mesh, matrix, normalMatrix, bufferSource, packedLight);
         }
 
         poseStack.popPose();
     }
 
-    private static int fullbrightLight = 0xF000F0;
-
-    public static void setFullbrightLight(int light) {
-        fullbrightLight = light;
-    }
+    private static final int fullbrightLight = 0xF000F0;
 
     private static RenderType selectRenderType(ResourceLocation texture, boolean translucent,
                                                  boolean alphaTest, boolean selfIllum, boolean noCull) {
@@ -218,7 +203,7 @@ public class JavaModelRenderer {
 
     private static void renderMeshWithEmissiveSupport(SourceModelData.MeshData mesh, Matrix4f matrix,
                                                         Matrix3f normalMatrix, MultiBufferSource bufferSource,
-                                                        int packedLight, float partialTicks) {
+                                                        int packedLight) {
         if (mesh.indices.length < 3) return;
 
         ResourceLocation texture = mesh.texture;
@@ -286,7 +271,7 @@ public class JavaModelRenderer {
 
     public static void renderWithSkinning(Entity entity, PoseStack poseStack,
                                             MultiBufferSource bufferSource, int packedLight,
-                                            float partialTicks, float[][] boneMatrices) {
+                                            float[][] boneMatrices) {
         SourceModelData data = resolveModelData(entity instanceof LivingEntity le ? le : null);
         if (data == null || data.meshes.isEmpty()) return;
 
@@ -310,7 +295,7 @@ public class JavaModelRenderer {
         Matrix3f normalMatrix = pose.normal();
 
         for (SourceModelData.MeshData mesh : data.meshes) {
-            renderMeshSkinned(mesh, matrix, normalMatrix, bufferSource, packedLight, partialTicks, boneMatrices);
+            renderMeshSkinned(mesh, matrix, normalMatrix, bufferSource, packedLight, boneMatrices);
         }
 
         poseStack.popPose();
@@ -332,7 +317,7 @@ public class JavaModelRenderer {
                                             Matrix4f modelMatrix,
                                             Matrix3f normalMatrix,
                                             MultiBufferSource bufferSource, int packedLight,
-                                            float partialTicks, float[][] boneMatrices) {
+                                            float[][] boneMatrices) {
         if (mesh.indices.length < 3) return;
 
         ResourceLocation texture = mesh.texture;

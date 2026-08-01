@@ -152,10 +152,6 @@ public class MdlDataTypes {
         public int surfacepropidx;
         public int contents;
         public int[] unused;
-
-        public float[] getWorldPos() {
-            return new float[]{pos[0], pos[1], pos[2]};
-        }
     }
 
     public static class Eyeball {
@@ -278,20 +274,9 @@ public class MdlDataTypes {
         public int nextSeq;
         public int pose;
         public float[] poseKey;
-        public int numIKLocks;
-        public int IKLockIndex;
         public float[] keyValueIndex;
         public int keyValueSize;
         public int paramValue;
-    }
-
-    public static class AnimEvent {
-        public int cycle;
-        public int eventIndex;
-        public int eventType;
-        public byte[] options;
-        public int sznameindex;
-        public String name;
     }
 
     public static class IKChain {
@@ -439,18 +424,6 @@ public class MdlDataTypes {
         return SequenceType.NORMAL;
     }
 
-    public static boolean nameMatches(String name, String... keywords) {
-        if (name == null) return false;
-        String lower = name.toLowerCase().trim();
-        for (String kw : keywords) {
-            if (lower.equals(kw) || lower.startsWith(kw + "_") || lower.contains("_" + kw)
-                || lower.startsWith(kw + "-") || lower.endsWith("_" + kw) || lower.endsWith("-" + kw)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     public static class ParsedModel {
         public Header header;
         public Hdr2 hdr2;
@@ -461,12 +434,9 @@ public class MdlDataTypes {
         public List<Integer> indices = new ArrayList<>();
         public List<Bone> bones = new ArrayList<>();
         public List<Eyeball> eyeballs = new ArrayList<>();
-        public List<Integer> meshTrianglesOffset = new ArrayList<>();
         public List<Texture> textures = new ArrayList<>();
         public List<String> cdTextures = new ArrayList<>();
         public List<Integer> skinTable = new ArrayList<>();
-        public int vvdVertexCount;
-        public List<List<VtxParser.VtxTriangle>> vtxTriangles = new ArrayList<>();
         public List<String> includeModels = new ArrayList<>();
         public List<Attachment> attachments = new ArrayList<>();
         public List<BoneController> boneControllers = new ArrayList<>();

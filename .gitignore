@@ -32,7 +32,8 @@ net/
 run
 #  这东西不该被提交
 .superpowers
-
+# 我觉得这玩意不应该被追踪
+logs
 # BEGIN oh-my-opencode-slim worktrees
 .slim/worktrees/
 .slim/worktrees.json

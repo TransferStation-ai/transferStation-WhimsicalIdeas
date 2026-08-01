@@ -1,13 +1,11 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
-import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class VmtParser {
@@ -490,7 +488,6 @@ public class VmtParser {
             // Format: "center [0.5 0.5] scale [1 1] rotate 0 translate [0 0]"
             float[] result = new float[]{1.0f, 1.0f, 0.0f, 0.0f, 0.0f};
             try {
-                int ci = val.toLowerCase().indexOf("center");
                 int si = val.toLowerCase().indexOf("scale");
                 int ri = val.toLowerCase().indexOf("rotate");
                 int ti = val.toLowerCase().indexOf("translate");
@@ -545,40 +542,6 @@ public class VmtParser {
                 return inner.split("\\s+");
             }
             return null;
-        }
-
-        private static int[] extractTopColors(BufferedImage image, int count) {
-            if (image == null || count <= 0) return null;
-            int width = image.getWidth();
-            int height = image.getHeight();
-            if (width <= 0 || height <= 0) return null;
-
-            // 使用HashMap统计颜色频率，O(n)复杂度
-            java.util.Map<Integer, Integer> colorFrequency = new java.util.HashMap<>();
-            int step = Math.max(1, Math.min(width, height) / 32);
-
-            for (int y = 0; y < height; y += step) {
-                for (int x = 0; x < width; x += step) {
-                    int argb = image.getRGB(x, y);
-                    int r = (argb >> 16) & 0xFF;
-                    int g = (argb >> 8) & 0xFF;
-                    int b = argb & 0xFF;
-                    int color = (r << 16) | (g << 8) | b;
-                    colorFrequency.put(color, colorFrequency.getOrDefault(color, 0) + 1);
-                }
-            }
-
-            // 按频率排序，取前count个
-            List<Map.Entry<Integer, Integer>> sorted = colorFrequency.entrySet().stream()
-                .sorted((a, b) -> b.getValue() - a.getValue())
-                .limit(count)
-                .toList();
-
-            int[] topColors = new int[Math.min(count, sorted.size())];
-            for (int i = 0; i < topColors.length; i++) {
-                topColors[i] = sorted.get(i).getKey() | 0xFF000000;
-            }
-            return topColors;
         }
 
         private float[] parseColor(String key) {

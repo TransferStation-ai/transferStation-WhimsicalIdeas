@@ -380,7 +380,7 @@ public class MdlModelRenderer {
                     float[][] boneMatrices = AnimationProcessor.getBoneTransforms(entity, modelData, partialTicks);
                     if (boneMatrices != null) {
                         // 蒙皮动画渲染：每顶点骨骼混合 + 动画变换
-                        JavaModelRenderer.renderWithSkinning(entity, poseStack, bufferSource, packedLight, partialTicks, boneMatrices);
+                        JavaModelRenderer.renderWithSkinning(entity, poseStack, bufferSource, packedLight, boneMatrices);
                         return;
                     }
                 } catch (Exception e) {
@@ -391,9 +391,9 @@ public class MdlModelRenderer {
             // 无动画数据时降级为静态网格渲染
             int lod = getLodLevel(entity);
             if (lod > 0) {
-                JavaModelRenderer.renderModelLOD(entity, poseStack, bufferSource, packedLight, partialTicks, lod);
+                JavaModelRenderer.renderModelLOD(entity, poseStack, bufferSource, packedLight, lod);
             } else {
-                JavaModelRenderer.renderModel(entity, poseStack, bufferSource, packedLight, partialTicks);
+                JavaModelRenderer.renderModel(entity, poseStack, bufferSource, packedLight);
             }
             return;
         }
