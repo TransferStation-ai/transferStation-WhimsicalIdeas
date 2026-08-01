@@ -448,7 +448,7 @@ public class MdlModelRenderer {
                 net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera();
             GmodNativeBridge.nativeSetCameraPosition(
                 (float) cam.getPosition().x, (float) cam.getPosition().y, (float) cam.getPosition().z);
-        } catch (Exception ignored) {}
+        } catch (Throwable ignored) {}
         float[] matArray = new float[16];
         matrix.get(matArray);
 
