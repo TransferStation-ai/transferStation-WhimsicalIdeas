@@ -14,6 +14,14 @@ public class NpcBoneController {
     private static final Map<String, BoneState> boneStates = new ConcurrentHashMap<>();
     private static final Map<String, List<BoneKeyframe>> animationQueues = new ConcurrentHashMap<>();
 
+    /** AI 骨骼指令钳制：每轴 ±120°（2.094 rad） */
+    private static final float MAX_POSE_ANGLE = (float) (120.0 * Math.PI / 180.0);
+    /** AI pose 到期后的淡出时长（秒） */
+    private static final float POSE_FADE_OUT_SEC = 0.3f;
+
+    /** 每实体最近一次渲染注册的骨骼列表（供 AI 骨名解析） */
+    private static final Map<String, List<SourceModelData.BoneInfo>> entityBones = new ConcurrentHashMap<>();
+
     // Source engine bone name patterns for animation targeting
     private static final Map<String, List<String>> BONE_NAME_PATTERNS = new LinkedHashMap<>();
     static {
@@ -39,8 +47,8 @@ public class NpcBoneController {
 
         // Check if friendlyName already exists in the model's bones
         for (SourceModelData.BoneInfo bone : modelBones) {
-            if (bone.name.equalsIgnoreCase(friendlyName)) {
-                return bone.name;
+            if (bone.name().equalsIgnoreCase(friendlyName)) {
+                return bone.name();
             }
         }
 
@@ -49,18 +57,18 @@ public class NpcBoneController {
         if (patterns != null) {
             for (String pattern : patterns) {
                 for (SourceModelData.BoneInfo bone : modelBones) {
-                    if (bone.name.toLowerCase().contains(pattern.toLowerCase())) {
-                        return bone.name;
+                    if (bone.name().toLowerCase().contains(pattern.toLowerCase())) {
+                        return bone.name();
                     }
                 }
             }
         }
 
-        // Fallback: try substring match
-        String lower = friendlyName.toLowerCase();
+        // Fallback: try substring match (underscore/whitespace 归一化，兼容 "Bip01 Head" -> "Bip01_Head")
+        String lower = friendlyName.toLowerCase().replace("_", "").replace(" ", "");
         for (SourceModelData.BoneInfo bone : modelBones) {
-            if (bone.name.toLowerCase().contains(lower)) {
-                return bone.name;
+            if (bone.name().toLowerCase().replace("_", "").replace(" ", "").contains(lower)) {
+                return bone.name();
             }
         }
 
@@ -74,30 +82,31 @@ public class NpcBoneController {
         public Vector3f targetPosition = null;
         public Vector3f targetRotation = null;
         public float interpolationSpeed = 0.15f;
+        /** AI pose 到期 tick（-1 = 永不自动过期，程序化手势用） */
+        public long expireTick = -1;
+        /** 淡出开始 tick（-1 = 未开始） */
+        public long fadeOutTick = -1;
 
         public Matrix4f toMatrix() {
             Matrix4f matrix = new Matrix4f();
             matrix.identity();
             matrix.translate(position);
-            matrix.rotateXYZ(rotation);
+            // AI pose 立即生效：存在目标旋转时直接用目标；淡出阶段回落 rotation 插值
+            Vector3f effRotation = (targetRotation != null) ? targetRotation : rotation;
+            matrix.rotateXYZ(effRotation);
             matrix.scale(scale);
             return matrix;
         }
     }
 
-    public static class BoneKeyframe {
-        public final int tick;
-        public final Vector3f position;
-        public final Vector3f rotation;
-        public final Vector3f scale;
-
-        public BoneKeyframe(int tick, Vector3f position, Vector3f rotation, Vector3f scale) {
-            this.tick = tick;
-            this.position = position != null ? position : new Vector3f(0, 0, 0);
-            this.rotation = rotation != null ? rotation : new Vector3f(0, 0, 0);
-            this.scale = scale != null ? scale : new Vector3f(1, 1, 1);
+    public record BoneKeyframe(int tick, Vector3f position, Vector3f rotation, Vector3f scale) {
+            public BoneKeyframe(int tick, Vector3f position, Vector3f rotation, Vector3f scale) {
+                this.tick = tick;
+                this.position = position != null ? position : new Vector3f(0, 0, 0);
+                this.rotation = rotation != null ? rotation : new Vector3f(0, 0, 0);
+                this.scale = scale != null ? scale : new Vector3f(1, 1, 1);
+            }
         }
-    }
 
     public static void setBonePosition(String entityId, String boneName, Vector3f position) {
         String key = entityId + ":" + boneName;
@@ -136,6 +145,7 @@ public class NpcBoneController {
         String prefix = entityId + ":";
         boneStates.keySet().removeIf(k -> k.startsWith(prefix));
         animationQueues.keySet().removeIf(k -> k.startsWith(prefix));
+        entityBones.remove(entityId);
     }
 
     /**
@@ -210,9 +220,80 @@ public class NpcBoneController {
         queueAnimation(entityId + ":" + boneName, keyframes);
     }
 
+    /** 渲染器每帧调用：注册实体骨骼列表，供 AI 骨名模糊匹配。 */
+    public static void registerBones(String entityId, List<SourceModelData.BoneInfo> bones) {
+        if (bones == null || bones.isEmpty()) {
+            entityBones.remove(entityId);
+            return;
+        }
+        entityBones.put(entityId, bones);
+    }
+
+    /** 角度钳制到 ±120°。 */
+    public static float clampAngle(float angle) {
+        return Math.max(-MAX_POSE_ANGLE, Math.min(MAX_POSE_ANGLE, angle));
+    }
+
+    /** 测试辅助：按 key 取状态。 */
+    static BoneState getBoneState(String entityId, String boneName) {
+        return boneStates.get(entityId + ":" + boneName);
+    }
+
+    /**
+     * AI 骨骼指令：设置目标旋转（自动 clamp），duration 秒后淡出清除。
+     * 骨骼名经 resolveBoneName 映射；已知骨骼列表内找不到时拒绝。
+     * @return 1 = 接受，0 = 拒绝
+     */
+    public static int applyAiPose(String entityId, String boneName,
+                                  float rx, float ry, float rz, float durationSec, long currentTick) {
+        if (boneName == null || boneName.isEmpty()) return 0;
+
+        List<SourceModelData.BoneInfo> bones = entityBones.get(entityId);
+        if (bones != null && !bones.isEmpty()) {
+            String resolved = resolveBoneName(boneName, bones);
+            boolean found = false;
+            for (SourceModelData.BoneInfo b : bones) {
+                if (b.name().equalsIgnoreCase(resolved)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return 0; // 未知骨骼，拒绝
+            boneName = resolved;
+        }
+
+        String key = entityId + ":" + boneName;
+        BoneState state = boneStates.computeIfAbsent(key, k -> new BoneState());
+        state.targetRotation = new Vector3f(clampAngle(rx), clampAngle(ry), clampAngle(rz));
+        state.fadeOutTick = -1;
+        state.expireTick = (durationSec <= 0) ? -1
+                : currentTick + Math.max(1, Math.round(durationSec * 20.0f));
+        state.interpolationSpeed = 0.15f;
+        return 1;
+    }
+
     public static void updateBones(long currentTick) {
-        for (Map.Entry<String, BoneState> entry : boneStates.entrySet()) {
+        var it = boneStates.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, BoneState> entry = it.next();
             BoneState state = entry.getValue();
+
+            // AI pose 过期：停止跟踪目标，回零淡出，归零后移除
+            if (state.expireTick > 0 && currentTick >= state.expireTick) {
+                if (state.fadeOutTick < 0) {
+                    state.fadeOutTick = currentTick;
+                    state.targetPosition = null;
+                    state.targetRotation = null;
+                }
+                long fadeTicks = Math.max(1, Math.round(POSE_FADE_OUT_SEC * 20.0f));
+                boolean faded = (currentTick - state.fadeOutTick) >= fadeTicks;
+                if (faded) {
+                    it.remove();
+                    continue;
+                }
+                state.rotation.lerp(new Vector3f(0, 0, 0), state.interpolationSpeed);
+            }
+
             if (state.targetPosition != null) {
                 state.position.lerp(state.targetPosition, state.interpolationSpeed);
                 if (state.position.distance(state.targetPosition) < 0.001f) {
@@ -241,9 +322,9 @@ public class NpcBoneController {
             if (parts.length == 2) {
                 String entityId = parts[0];
                 String boneName = parts[1];
-                setBonePosition(entityId, boneName, kf.position);
-                setBoneRotation(entityId, boneName, kf.rotation);
-                setBoneScale(entityId, boneName, kf.scale);
+                setBonePosition(entityId, boneName, kf.position());
+                setBoneRotation(entityId, boneName, kf.rotation());
+                setBoneScale(entityId, boneName, kf.scale());
             }
         }
     }
@@ -251,5 +332,6 @@ public class NpcBoneController {
     public static void clearAll() {
         boneStates.clear();
         animationQueues.clear();
+        entityBones.clear();
     }
 }

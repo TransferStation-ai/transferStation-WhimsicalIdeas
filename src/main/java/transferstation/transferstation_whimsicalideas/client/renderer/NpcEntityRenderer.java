@@ -5,16 +5,12 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.NotNull;
 import org.joml.Matrix4f;
 import transferstation.transferstation_whimsicalideas.client.GmodModelRenderer;
 import transferstation.transferstation_whimsicalideas.client.animation.AnimationProcessor;
+import transferstation.transferstation_whimsicalideas.client.model.*;
 import transferstation.transferstation_whimsicalideas.common.BodyHitboxSystem;
-import transferstation.transferstation_whimsicalideas.client.model.JavaModelRenderer;
-import transferstation.transferstation_whimsicalideas.client.model.MdlModelRenderer;
-import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
-import transferstation.transferstation_whimsicalideas.client.model.NpcBoneController;
-import transferstation.transferstation_whimsicalideas.client.model.NpcEntity;
-import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
 
 import java.nio.file.Path;
 import java.util.Map;
@@ -31,7 +27,7 @@ public class NpcEntityRenderer extends EntityRenderer<NpcEntity> {
 
     @Override
     public void render(NpcEntity entity, float entityYaw, float partialTicks,
-                       PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
+                       @NotNull PoseStack poseStack, @NotNull MultiBufferSource bufferSource, int packedLight) {
         String modelName = entity.getModelName();
         if (modelName == null || modelName.isEmpty()) return;
 
@@ -71,9 +67,8 @@ public class NpcEntityRenderer extends EntityRenderer<NpcEntity> {
                 if (future == null) {
                     future = ModelLoadManager.loadModelAsync(packageDir);
                     loadingModels.put(loadKey, future);
-                    String finalLoadKey = loadKey;
                     future.thenAccept(data -> {
-                        loadingModels.remove(finalLoadKey);
+                        loadingModels.remove(loadKey);
                         if (data != null && !data.meshes.isEmpty()) {
                             net.minecraft.client.Minecraft.getInstance().tell(() -> {
                                 JavaModelRenderer.setModelData(entity, data);
@@ -91,7 +86,7 @@ public class NpcEntityRenderer extends EntityRenderer<NpcEntity> {
             }
         }
 
-        if (modelData == null || modelData.meshes.isEmpty()) {
+        if (modelData.meshes.isEmpty()) {
             poseStack.pushPose();
             GmodModelRenderer.renderGmodModel(entity, poseStack, bufferSource, packedLight, partialTicks);
             poseStack.popPose();
@@ -101,7 +96,7 @@ public class NpcEntityRenderer extends EntityRenderer<NpcEntity> {
 
         poseStack.pushPose();
 
-        float[][] boneMatrices = null;
+        float[][] boneMatrices;
 
         if (!modelData.bones.isEmpty()) {
             boneMatrices = AnimationProcessor.getBoneTransforms(entity, modelData, partialTicks);
@@ -117,9 +112,10 @@ public class NpcEntityRenderer extends EntityRenderer<NpcEntity> {
             }
 
             String entityId = entity.getStringUUID();
+            NpcBoneController.registerBones(entityId, modelData.bones);
             for (int i = 0; i < modelData.bones.size(); i++) {
                 SourceModelData.BoneInfo bone = modelData.bones.get(i);
-                Matrix4f override = NpcBoneController.getBoneTransform(entityId, bone.name);
+                Matrix4f override = NpcBoneController.getBoneTransform(entityId, bone.name());
                 Matrix4f identity = new Matrix4f();
                 identity.identity();
                 if (override != null && !override.equals(identity, 0.001f)) {
@@ -144,7 +140,7 @@ public class NpcEntityRenderer extends EntityRenderer<NpcEntity> {
     }
 
     @Override
-    public ResourceLocation getTextureLocation(NpcEntity entity) {
+    public @NotNull ResourceLocation getTextureLocation(@NotNull NpcEntity entity) {
         return ResourceLocation.parse("minecraft:textures/entity/steve.png");
     }
 }
