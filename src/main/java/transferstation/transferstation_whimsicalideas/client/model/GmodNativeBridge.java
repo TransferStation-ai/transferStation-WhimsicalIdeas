@@ -186,6 +186,7 @@ public class GmodNativeBridge {
     static native int nativeGetMeshCount(long handle);
     static native void nativeRenderModel(long handle, float[] modelMatrix, int packedLight, float partialTicks);
     static native void nativeRenderModelLOD(long handle, float[] modelMatrix, int packedLight, float partialTicks, int lodLevel);
+    static native void nativeSetCameraPosition(float x, float y, float z);
     static native float nativeGetMinZ(long handle);
     static native float nativeGetModelScale(long handle);
     static native String nativeGetDisplayName(long handle);
