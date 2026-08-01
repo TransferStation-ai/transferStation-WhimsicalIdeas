@@ -153,13 +153,16 @@ in vec3 in_normal;
 in vec2 in_texcoord;
 
 uniform mat4 u_modelViewProjection;
+uniform mat4 u_modelMatrix;
 
 out vec2 v_texcoord;
 out vec3 v_normal;
+out vec3 v_worldPos;
 
 void main() {
     v_texcoord = in_texcoord;
     v_normal = mat3(u_modelViewProjection) * in_normal;
+    v_worldPos = (u_modelMatrix * vec4(in_position, 1.0)).xyz;
     gl_Position = u_modelViewProjection * vec4(in_position, 1.0);
 }
 )";
@@ -184,8 +187,56 @@ void main() {
 }
 )";
 
-uint32_t GlRenderer::s_program = 0;
+const char* GlRenderer::FRAGMENT_SHADER_UNLIT = R"(
+#version 150 core
+in vec2 v_texcoord;
+
+uniform sampler2D u_texture;
+uniform vec4 u_colorTint;
+
+out vec4 fragColor;
+
+void main() {
+    vec4 texColor = texture(u_texture, v_texcoord);
+    fragColor = vec4(texColor.rgb * u_colorTint.rgb, texColor.a * u_colorTint.a);
+}
+)";
+
+const char* GlRenderer::FRAGMENT_SHADER_EYE = R"(
+#version 150 core
+in vec2 v_texcoord;
+in vec3 v_normal;
+in vec3 v_worldPos;
+
+uniform sampler2D u_texture;
+uniform vec3 u_lightDir;
+uniform vec3 u_cameraPos;
+uniform float u_ambient;
+uniform float u_phongBoost;
+uniform vec4 u_colorTint;
+
+out vec4 fragColor;
+
+void main() {
+    vec4 texColor = texture(u_texture, v_texcoord);
+    vec3 N = normalize(v_normal);
+    vec3 L = normalize(u_lightDir);
+    float NdotL = max(dot(N, L), 0.0);
+    float lighting = u_ambient + (1.0 - u_ambient) * NdotL;
+    vec3 V = normalize(u_cameraPos - v_worldPos);
+    vec3 H = normalize(L + V);
+    float spec = pow(max(dot(N, H), 0.0), 32.0) * u_phongBoost;
+    vec3 color = texColor.rgb * u_colorTint.rgb * lighting + vec3(spec);
+    fragColor = vec4(color, texColor.a * u_colorTint.a);
+}
+)";
+
+uint32_t GlRenderer::s_programBase = 0;
+uint32_t GlRenderer::s_programUnlit = 0;
+uint32_t GlRenderer::s_programEye = 0;
 bool GlRenderer::s_initialized = false;
+float GlRenderer::s_cameraPos[3] = {0.0f, 0.0f, 0.0f};
+float GlRenderer::s_phongBoost = 0.3f;
 static std::unordered_map<uint32_t, std::pair<uint32_t, uint32_t>> s_meshBuffers;
 
 bool GlRenderer::initialize() {
@@ -238,24 +289,29 @@ bool GlRenderer::initialize() {
     LOAD_GL_FUNC(glGetIntegerv, glGetIntegerv);
     LOAD_GL_FUNC(glIsEnabled, glIsEnabled);
 
-    // Compile and link shader program
+    // Compile and link shader programs
     uint32_t vs = compileShader(GL_VERTEX_SHADER, VERTEX_SHADER_SOURCE);
     if (!vs) return false;
 
-    uint32_t fs = compileShader(GL_FRAGMENT_SHADER, FRAGMENT_SHADER_SOURCE);
-    if (!fs) {
-        glDeleteShader(vs);
-        return false;
-    }
+    auto linkWithVs = [vs](const char* fsSource, const char* name) {
+        uint32_t fs = GlRenderer::compileShader(GL_FRAGMENT_SHADER, fsSource);
+        if (!fs) return static_cast<uint32_t>(0);
+        uint32_t program = GlRenderer::linkProgram(vs, fs);
+        glDeleteShader(fs);
+        if (!program) std::cerr << "[GL] Failed to link " << name << " program" << std::endl;
+        return program;
+    };
 
-    s_program = linkProgram(vs, fs);
+    s_programBase = linkWithVs(FRAGMENT_SHADER_SOURCE, "base");
+    s_programUnlit = linkWithVs(FRAGMENT_SHADER_UNLIT, "unlit");
+    s_programEye = linkWithVs(FRAGMENT_SHADER_EYE, "eye");
     glDeleteShader(vs);
-    glDeleteShader(fs);
 
-    if (!s_program) return false;
+    if (!s_programBase) return false;
 
     s_initialized = true;
-    std::cout << "[GL] Renderer initialized, program=" << s_program << std::endl;
+    std::cout << "[GL] Renderer initialized, programs: base=" << s_programBase
+              << " unlit=" << s_programUnlit << " eye=" << s_programEye << std::endl;
     return true;
 }
 
@@ -415,8 +471,15 @@ void GlRenderer::destroyTexture(uint32_t textureId) {
 
 void GlRenderer::renderMesh(uint32_t vao, int indexCount, uint32_t textureId,
                              const float* modelMatrix, int packedLight,
-                             const float* colorTint) {
-    if (!vao || indexCount <= 0 || !s_program) return;
+                             const float* colorTint, RenderMode mode) {
+    if (mode == RenderMode::SKIP) return;
+    uint32_t program = s_programBase;
+    switch (mode) {
+        case RenderMode::UNLIT: program = s_programUnlit; break;
+        case RenderMode::EYE:   program = s_programEye;   break;
+        default: break;
+    }
+    if (!vao || indexCount <= 0 || !program) return;
     if (!glUseProgram || !glBindVertexArray || !glDrawElements) return;
 
     // Save OpenGL state
@@ -430,27 +493,37 @@ void GlRenderer::renderMesh(uint32_t vao, int indexCount, uint32_t textureId,
     glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActiveTex);
 
     // Use our shader
-    glUseProgram(s_program);
+    glUseProgram(program);
 
     // Set uniforms
-    int mvpLoc = glGetUniformLocation(s_program, "u_modelViewProjection");
+    int mvpLoc = glGetUniformLocation(program, "u_modelViewProjection");
     if (mvpLoc >= 0) glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, modelMatrix);
 
-    int texLoc = glGetUniformLocation(s_program, "u_texture");
+    int modelLoc = glGetUniformLocation(program, "u_modelMatrix");
+    if (modelLoc >= 0) glUniformMatrix4fv(modelLoc, 1, GL_FALSE, modelMatrix);
+
+    if (mode == RenderMode::EYE) {
+        int camLoc = glGetUniformLocation(program, "u_cameraPos");
+        if (camLoc >= 0) glUniform3fv(camLoc, 1, s_cameraPos);
+        int pbLoc = glGetUniformLocation(program, "u_phongBoost");
+        if (pbLoc >= 0) glUniform1f(pbLoc, s_phongBoost);
+    }
+
+    int texLoc = glGetUniformLocation(program, "u_texture");
     if (texLoc >= 0) glUniform1i(texLoc, 0);
 
-    int lightLoc = glGetUniformLocation(s_program, "u_lightDir");
+    int lightLoc = glGetUniformLocation(program, "u_lightDir");
     if (lightLoc >= 0) {
         float lightDir[] = { 0.2f, 0.8f, 0.3f };
         glUniform3fv(lightLoc, 1, lightDir);
     }
 
-    int ambLoc = glGetUniformLocation(s_program, "u_ambient");
+    int ambLoc = glGetUniformLocation(program, "u_ambient");
     if (ambLoc >= 0) {
         glUniform1f(ambLoc, 0.4f);
     }
 
-    int tintLoc = glGetUniformLocation(s_program, "u_colorTint");
+    int tintLoc = glGetUniformLocation(program, "u_colorTint");
     if (tintLoc >= 0) {
         if (colorTint) {
             glUniform4fv(tintLoc, 1, colorTint);
@@ -497,6 +570,14 @@ void GlRenderer::renderMesh(uint32_t vao, int indexCount, uint32_t textureId,
     glBlendFunc(static_cast<GLenum>(prevBlendSrc), static_cast<GLenum>(prevBlendDst));
 }
 
+void GlRenderer::setCameraPosition(float x, float y, float z) {
+    s_cameraPos[0] = x; s_cameraPos[1] = y; s_cameraPos[2] = z;
+}
+
+void GlRenderer::setPhongBoost(float boost) {
+    s_phongBoost = boost;
+}
+
 void GlRenderer::shutdown() {
     // Clean up all remaining mesh buffers
     for (auto& [vao, bufs] : s_meshBuffers) {
@@ -505,15 +586,18 @@ void GlRenderer::shutdown() {
     }
     s_meshBuffers.clear();
 
-    if (s_program) {
-        // s_program is a program object, not a shader — use glDeleteProgram
+    auto deleteProgram = [](uint32_t& prog) {
+        if (!prog) return;
         typedef void (GL_API* GL_DELETEPROGRAM)(uint32_t);
         static GL_DELETEPROGRAM pDeleteProgram = nullptr;
         if (!pDeleteProgram) {
             pDeleteProgram = reinterpret_cast<GL_DELETEPROGRAM>(glPlatformLoadProc("glDeleteProgram"));
         }
-        if (pDeleteProgram) pDeleteProgram(s_program);
-        s_program = 0;
-    }
+        if (pDeleteProgram) pDeleteProgram(prog);
+        prog = 0;
+    };
+    deleteProgram(s_programBase);
+    deleteProgram(s_programUnlit);
+    deleteProgram(s_programEye);
     s_initialized = false;
 }
