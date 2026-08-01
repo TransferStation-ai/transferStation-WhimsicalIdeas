@@ -12,8 +12,6 @@ import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -40,7 +38,6 @@ public class JavaModelRenderer {
      */
     public static float MODEL_FACING_YAW = (float) Math.PI;
 
-    private static boolean FACING_DEBUG_LOG = true;
     private static boolean facingDebugLogged = false;
 
     /**
@@ -90,15 +87,6 @@ public class JavaModelRenderer {
         return currentModelData != null && !currentModelData.meshes.isEmpty();
     }
 
-    public static boolean hasModel(Entity entity) {
-        return entityModelData.containsKey(entity);
-    }
-
-    public static void clearEntityModel(Entity entity) {
-        entityModelData.remove(entity);
-        entityLodData.remove(entity);
-    }
-
     public static void clearAllEntityModels() {
         entityModelData.clear();
         entityLodData.clear();
@@ -140,26 +128,30 @@ public class JavaModelRenderer {
     }
 
     public static void renderModel(LivingEntity entity, PoseStack poseStack,
-                                    MultiBufferSource bufferSource, int packedLight,
-                                    float partialTicks) {
-        renderWithData(entity, poseStack, bufferSource, packedLight, partialTicks, resolveModelData(entity));
+                                    MultiBufferSource bufferSource, int packedLight) {
+        renderWithData(entity, poseStack, bufferSource, packedLight, resolveModelData(entity));
     }
 
     public static void renderModelLOD(LivingEntity entity, PoseStack poseStack,
                                        MultiBufferSource bufferSource, int packedLight,
-                                       float partialTicks, int lodLevel) {
-        renderWithData(entity, poseStack, bufferSource, packedLight, partialTicks, resolveLodData(entity, lodLevel));
+                                       int lodLevel) {
+        renderWithData(entity, poseStack, bufferSource, packedLight, resolveLodData(entity, lodLevel));
     }
 
     private static void renderWithData(LivingEntity entity, PoseStack poseStack,
                                         MultiBufferSource bufferSource, int packedLight,
-                                        float partialTicks, SourceModelData data) {
+                                        SourceModelData data) {
         if (data == null || data.meshes.isEmpty()) return;
 
         poseStack.pushPose();
 
         // 整体朝向补偿：把 Source 模型前向对齐到 Minecraft 实体前向（-Z，看向玩家）
-        poseStack.mulPose(com.mojang.math.Axis.YP.rotation(MODEL_FACING_YAW));
+        // Sprite shader 模型改为面向相机（billboard）
+        if (needsSpriteBillboard(data)) {
+            applySpriteBillboard(poseStack);
+        } else {
+            poseStack.mulPose(com.mojang.math.Axis.YP.rotation(MODEL_FACING_YAW));
+        }
         logFacingCompensation();
 
         float scale = entity.getBbHeight() / 1.8f;
@@ -183,16 +175,42 @@ public class JavaModelRenderer {
         Matrix3f normalMatrix = pose.normal();
 
         for (SourceModelData.MeshData mesh : data.meshes) {
-            renderMeshWithEmissiveSupport(mesh, matrix, normalMatrix, bufferSource, packedLight, partialTicks);
+            renderMeshWithEmissiveSupport(mesh, matrix, normalMatrix, bufferSource, packedLight);
         }
 
         poseStack.popPose();
     }
 
-    private static int fullbrightLight = 0xF000F0;
+    private static final int fullbrightLight = 0xF000F0;
 
-    public static void setFullbrightLight(int light) {
-        fullbrightLight = light;
+    private static boolean isSkippedShader(SourceModelData.MeshData mesh) {
+        if (mesh.shaderType == null) return false;
+        VmtParser.ShaderType st = VmtParser.ShaderType.fromName(mesh.shaderType);
+        return st == VmtParser.ShaderType.SKYBOX || st == VmtParser.ShaderType.TOOL_TEXTURE;
+    }
+
+    private static boolean isSelfIllumShader(SourceModelData.MeshData mesh) {
+        if (mesh.shaderType == null) return false;
+        VmtParser.ShaderType st = VmtParser.ShaderType.fromName(mesh.shaderType);
+        return st == VmtParser.ShaderType.UNLIT_GENERIC || st == VmtParser.ShaderType.EYE_REFRACT;
+    }
+
+    private static boolean needsSpriteBillboard(SourceModelData data) {
+        for (SourceModelData.MeshData mesh : data.meshes) {
+            if (mesh.shaderType != null
+                    && VmtParser.ShaderType.fromName(mesh.shaderType) == VmtParser.ShaderType.SPRITE) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void applySpriteBillboard(PoseStack poseStack) {
+        net.minecraft.client.Camera camera =
+            net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera();
+        poseStack.mulPose(camera.rotation().conjugate());
+        // Source sprite 前向 +X → MC 前向 -Z：绕 Y 轴补偿 90°
+        poseStack.mulPose(com.mojang.math.Axis.YP.rotation((float) Math.PI / 2));
     }
 
     private static RenderType selectRenderType(ResourceLocation texture, boolean translucent,
@@ -220,15 +238,20 @@ public class JavaModelRenderer {
 
     private static void renderMeshWithEmissiveSupport(SourceModelData.MeshData mesh, Matrix4f matrix,
                                                         Matrix3f normalMatrix, MultiBufferSource bufferSource,
-                                                        int packedLight, float partialTicks) {
+                                                        int packedLight) {
         if (mesh.indices.length < 3) return;
+        if (isSkippedShader(mesh)) return;
 
         ResourceLocation texture = mesh.texture;
         if (texture != null) {
             ModelLoadManager.getColorResolver().ensureTextureRegistered(texture);
         }
-        RenderType renderType = selectRenderType(texture, mesh.translucent, mesh.alphaTest, mesh.selfIllum, mesh.noCull);
-        int light = mesh.selfIllum ? fullbrightLight : packedLight;
+        boolean selfIllum = mesh.selfIllum || isSelfIllumShader(mesh);
+        boolean alphaTest = mesh.alphaTest
+                || (mesh.shaderType != null
+                    && VmtParser.ShaderType.fromName(mesh.shaderType) == VmtParser.ShaderType.EYE_REFRACT);
+        RenderType renderType = selectRenderType(texture, mesh.translucent, alphaTest, selfIllum, mesh.noCull);
+        int light = selfIllum ? fullbrightLight : packedLight;
         VertexConsumer consumer = bufferSource.getBuffer(renderType);
 
         float[] vertices = mesh.vertices;
@@ -288,14 +311,19 @@ public class JavaModelRenderer {
 
     public static void renderWithSkinning(Entity entity, PoseStack poseStack,
                                             MultiBufferSource bufferSource, int packedLight,
-                                            float partialTicks, float[][] boneMatrices) {
+                                            float[][] boneMatrices) {
         SourceModelData data = resolveModelData(entity instanceof LivingEntity le ? le : null);
         if (data == null || data.meshes.isEmpty()) return;
 
         poseStack.pushPose();
 
         // 整体朝向补偿：与 renderWithData 保持一致（见上方说明）
-        poseStack.mulPose(com.mojang.math.Axis.YP.rotation(MODEL_FACING_YAW));
+        // Sprite shader 模型改为面向相机（billboard）
+        if (needsSpriteBillboard(data)) {
+            applySpriteBillboard(poseStack);
+        } else {
+            poseStack.mulPose(com.mojang.math.Axis.YP.rotation(MODEL_FACING_YAW));
+        }
 
         float scale = entity instanceof LivingEntity le ? le.getBbHeight() / 1.8f : 1.0f;
         poseStack.scale(scale, scale, scale);
@@ -312,7 +340,7 @@ public class JavaModelRenderer {
         Matrix3f normalMatrix = pose.normal();
 
         for (SourceModelData.MeshData mesh : data.meshes) {
-            renderMeshSkinned(mesh, matrix, normalMatrix, bufferSource, packedLight, partialTicks, boneMatrices);
+            renderMeshSkinned(mesh, matrix, normalMatrix, bufferSource, packedLight, boneMatrices);
         }
 
         poseStack.popPose();
@@ -334,15 +362,20 @@ public class JavaModelRenderer {
                                             Matrix4f modelMatrix,
                                             Matrix3f normalMatrix,
                                             MultiBufferSource bufferSource, int packedLight,
-                                            float partialTicks, float[][] boneMatrices) {
+                                            float[][] boneMatrices) {
         if (mesh.indices.length < 3) return;
+        if (isSkippedShader(mesh)) return;
 
         ResourceLocation texture = mesh.texture;
         if (texture != null) {
             ModelLoadManager.getColorResolver().ensureTextureRegistered(texture);
         }
-        RenderType renderType = selectRenderType(texture, mesh.translucent, mesh.alphaTest, mesh.selfIllum, mesh.noCull);
-        int light = mesh.selfIllum ? fullbrightLight : packedLight;
+        boolean selfIllum = mesh.selfIllum || isSelfIllumShader(mesh);
+        boolean alphaTest = mesh.alphaTest
+                || (mesh.shaderType != null
+                    && VmtParser.ShaderType.fromName(mesh.shaderType) == VmtParser.ShaderType.EYE_REFRACT);
+        RenderType renderType = selectRenderType(texture, mesh.translucent, alphaTest, selfIllum, mesh.noCull);
+        int light = selfIllum ? fullbrightLight : packedLight;
         VertexConsumer consumer = bufferSource.getBuffer(renderType);
 
         float[] vertices = mesh.vertices;

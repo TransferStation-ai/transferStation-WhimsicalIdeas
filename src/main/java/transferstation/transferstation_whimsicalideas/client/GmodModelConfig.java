@@ -3,10 +3,9 @@ package transferstation.transferstation_whimsicalideas.client;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.model.MdlModelRenderer;
 import transferstation.transferstation_whimsicalideas.client.model.ModelPackage;
-import transferstation.transferstation_whimsicalideas.client.model.NpcModelRegistry;
-import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Files;

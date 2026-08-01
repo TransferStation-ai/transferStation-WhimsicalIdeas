@@ -299,15 +299,10 @@ public class VpkParser {
                     entry.path = path;
                     entry.filename = filename;
 
-                    StringBuilder fullPathBuilder = new StringBuilder();
-                    if (!path.isEmpty()) {
-                        fullPathBuilder.append(path).append('/');
-                    }
-                    fullPathBuilder.append(filename);
-                    if (!extension.isEmpty()) {
-                        fullPathBuilder.append('.').append(extension);
-                    }
-                    entry.fullPath = fullPathBuilder.toString().replace('\\', '/').toLowerCase(Locale.ROOT);
+                    String fullPathBuilder = path + '/' +
+                            filename +
+                            '.' + extension;
+                    entry.fullPath = fullPathBuilder.replace('\\', '/').toLowerCase(Locale.ROOT);
 
                     entry.crc32 = readIntLE(treeData, pos);
                     entry.preloadBytes = readShortLE(treeData, pos + 4) & 0xFFFF;
@@ -489,9 +484,7 @@ public class VpkParser {
             } else {
                 relPath = entry.path + "/" + entry.filename;
             }
-            if (!entry.extension.isEmpty()) {
-                relPath += "." + entry.extension;
-            }
+            relPath += "." + entry.extension;
 
             Path targetFile = outputDir.resolve(relPath).normalize();
             if (!targetFile.startsWith(outputDir.normalize())) {

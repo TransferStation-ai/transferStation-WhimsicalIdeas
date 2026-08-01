@@ -1,14 +1,13 @@
 package transferstation.transferstation_whimsicalideas.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
+import org.jetbrains.annotations.NotNull;
 import transferstation.transferstation_whimsicalideas.client.model.NpcEntity;
 import transferstation.transferstation_whimsicalideas.client.voice.VoiceCaptureService;
 import transferstation.transferstation_whimsicalideas.client.voice.VoiceConfig;
@@ -89,7 +88,7 @@ public class NpcChatScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
+    public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         renderBackground(graphics);
         super.render(graphics, mouseX, mouseY, partialTicks);
 
@@ -112,8 +111,7 @@ public class NpcChatScreen extends Screen {
 
         int y = chatBottom - 8;
         int totalContentHeight = messages.size() * lineHeight;
-        int visibleHeight = chatHeight;
-        int maxScroll = Math.max(0, totalContentHeight - visibleHeight);
+        int maxScroll = Math.max(0, totalContentHeight - chatHeight);
 
         // Clamp scroll
         scrollOffset = Mth.clamp(scrollOffset, 0, maxScroll);
@@ -181,32 +179,28 @@ public class NpcChatScreen extends Screen {
             voiceStatusText = "§c录音中...";
             voiceStatusTimer = 0;
 
-            VoiceCaptureService.startRecording(wavData -> {
-                net.minecraft.client.Minecraft.getInstance().execute(() -> {
-                    micButton.setMessage(Component.literal("§e⏳"));
-                    voiceStatusText = "§e识别中...";
+            VoiceCaptureService.startRecording(wavData -> net.minecraft.client.Minecraft.getInstance().execute(() -> {
+                micButton.setMessage(Component.literal("§e⏳"));
+                voiceStatusText = "§e识别中...";
 
-                    VoskSttEngine.transcribe(wavData)
-                        .thenAccept(text -> {
-                            net.minecraft.client.Minecraft.getInstance().execute(() -> {
-                                isRecording = false;
-                                if (text != null && !text.isEmpty()) {
-                                    if (VoiceConfig.isAutoSend()) {
-                                        inputField.setValue(text);
-                                        sendMessage();
-                                    } else {
-                                        inputField.setValue(text);
-                                    }
-                                    voiceStatusText = "";
-                                } else {
-                                    voiceStatusText = "§7未检测到语音";
-                                    voiceStatusTimer = 40;
-                                }
-                                micButton.setMessage(Component.literal("🎤"));
-                            });
-                        });
-                });
-            });
+                VoskSttEngine.transcribe(wavData)
+                    .thenAccept(text -> net.minecraft.client.Minecraft.getInstance().execute(() -> {
+                        isRecording = false;
+                        if (text != null && !text.isEmpty()) {
+                            if (VoiceConfig.isAutoSend()) {
+                                inputField.setValue(text);
+                                sendMessage();
+                            } else {
+                                inputField.setValue(text);
+                            }
+                            voiceStatusText = "";
+                        } else {
+                            voiceStatusText = "§7未检测到语音";
+                            voiceStatusTimer = 40;
+                        }
+                        micButton.setMessage(Component.literal("🎤"));
+                    }));
+            }));
         } else {
             // Stop recording
             VoiceCaptureService.stopRecording();
@@ -323,12 +317,6 @@ public class NpcChatScreen extends Screen {
         getMinecraft().setScreen(null);
     }
 
-    private static class ChatMessage {
-        final String text;
-        final boolean isPlayer;
-        ChatMessage(String text, boolean isPlayer) {
-            this.text = text;
-            this.isPlayer = isPlayer;
-        }
+    private record ChatMessage(String text, boolean isPlayer) {
     }
 }

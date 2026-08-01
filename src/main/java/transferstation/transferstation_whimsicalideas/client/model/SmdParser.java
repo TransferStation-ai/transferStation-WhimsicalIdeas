@@ -115,13 +115,6 @@ public class SmdParser {
                         currentSection = Section.TRIANGLES;
                         continue;
                     case "end":
-                        if (currentSection == Section.TRIANGLES && currentTriVerts != null && currentMaterial != null) {
-                            if (!currentTriVerts.isEmpty()) {
-                                result.meshes.add(new SmdMesh(currentMaterial, new ArrayList<>(currentTriVerts)));
-                            }
-                            currentTriVerts = null;
-                            currentMaterial = null;
-                        }
                         currentSection = Section.NONE;
                         continue;
                 }
@@ -206,8 +199,7 @@ public class SmdParser {
             return true;
         }
         String lower = rawLine.toLowerCase();
-        if (lower.startsWith("//") || lower.equals("end")) return false;
-        return true;
+        return !lower.startsWith("//") && !lower.equals("end");
     }
 
     private static boolean isFloat(String s) {
@@ -240,22 +232,21 @@ public class SmdParser {
             boneWeights = new float[]{1.0f};
         } else {
             try {
-                int numLinks = firstVal;
-                if (numLinks < 1) {
+                if (firstVal < 1) {
                     boneIds = new int[]{0};
                     boneWeights = new float[]{1.0f};
                     idx = 1;
                 } else {
-                    boneIds = new int[numLinks];
-                    boneWeights = new float[numLinks];
+                    boneIds = new int[firstVal];
+                    boneWeights = new float[firstVal];
                     int boneIdx = 0;
-                    while (boneIdx < numLinks && idx + 1 + boneIdx * 2 + 1 < parts.length) {
+                    while (boneIdx < firstVal && idx + 1 + boneIdx * 2 + 1 < parts.length) {
                         boneIds[boneIdx] = Integer.parseInt(parts[idx + 1 + boneIdx * 2]);
                         boneWeights[boneIdx] = Float.parseFloat(parts[idx + 1 + boneIdx * 2 + 1]);
                         boneIdx++;
                     }
-                    if (boneIdx < numLinks) return null;
-                    idx = 1 + numLinks * 2;
+                    if (boneIdx < firstVal) return null;
+                    idx = 1 + firstVal * 2;
                 }
             } catch (NumberFormatException e) {
                 boneIds = new int[]{firstVal};
@@ -291,7 +282,7 @@ public class SmdParser {
                 inQuotes = !inQuotes;
                 current.append(c);
             } else if (Character.isWhitespace(c) && !inQuotes) {
-                if (current.length() > 0) {
+                if (!current.isEmpty()) {
                     parts.add(current.toString());
                     current.setLength(0);
                 }
@@ -299,7 +290,7 @@ public class SmdParser {
                 current.append(c);
             }
         }
-        if (current.length() > 0) {
+        if (!current.isEmpty()) {
             parts.add(current.toString());
         }
         return parts.toArray(new String[0]);

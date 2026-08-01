@@ -5,7 +5,7 @@
 
 关于资源
 
-使用了[ysm ui](https://github.com/YesSteveModel/YSM-Wiki-Issues)
+使用了[ysm ui](https://github.com/YesSteveModel/LgeacyYSM)
 
 相关资料来源[起源模型](https://developer.valvesoftware.com/wiki/Category:Zh/Modeling)
 
@@ -30,9 +30,14 @@ Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 
 以下是内容介绍/以及技术文档
 
+是的，不同于GMOD我们有一定的防穿模功能
+
+是的，为了方便1.0之后我们全部使用 /TransferStation TransferStationWhimsicalIdeas开头的指令
+
+
 --------------------------
 
-是的关于平台支持
+是的对于平台支持
 
  Windows:完全支持  ----我知道这很废话，因为gmod原生就是在windows上运行的
 

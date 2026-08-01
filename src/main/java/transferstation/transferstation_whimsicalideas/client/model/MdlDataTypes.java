@@ -152,10 +152,6 @@ public class MdlDataTypes {
         public int surfacepropidx;
         public int contents;
         public int[] unused;
-
-        public float[] getWorldPos() {
-            return new float[]{pos[0], pos[1], pos[2]};
-        }
     }
 
     public static class Eyeball {
@@ -242,6 +238,7 @@ public class MdlDataTypes {
         public int baseptr;
         public int sznameindex;
         public String label;
+        public int szactivitynameindex;
         public int activity;
         public int actweight;
         public int[] events;
@@ -277,20 +274,9 @@ public class MdlDataTypes {
         public int nextSeq;
         public int pose;
         public float[] poseKey;
-        public int numIKLocks;
-        public int IKLockIndex;
         public float[] keyValueIndex;
         public int keyValueSize;
         public int paramValue;
-    }
-
-    public static class AnimEvent {
-        public int cycle;
-        public int eventIndex;
-        public int eventType;
-        public byte[] options;
-        public int sznameindex;
-        public String name;
     }
 
     public static class IKChain {
@@ -366,6 +352,13 @@ public class MdlDataTypes {
         public float[] flexibleOffsets;
     }
 
+    public static class BoneFlexDriver {
+        public int boneIndex;
+        public int flexControllerIndex;
+        public float min;
+        public float max;
+    }
+
     public static class SrcBoneTransform {
         public float[] pos;
         public float[] quat;
@@ -419,28 +412,16 @@ public class MdlDataTypes {
     public static SequenceType classifySequence(SeqDesc seq) {
         if (seq.label == null || seq.label.isEmpty()) return SequenceType.NORMAL;
         String name = seq.label.toLowerCase().trim();
-        if (name.equals("ref") || name.equals("reference") || name.equals("bindpose")
-            || name.equals("bind_pose") || name.startsWith("ref_") || name.contains("_ref")
-            || name.contains("reference") || name.equals("default")) {
+        if (name.equals("ref") || name.equals("bindpose")
+                || name.equals("bind_pose") || name.startsWith("ref_") || name.contains("_ref")
+                || name.contains("reference") || name.equals("default")) {
             return SequenceType.REFERENCE;
         }
-        if (name.equals("a_pose") || name.equals("apose") || name.equals("a-pose")
-            || name.startsWith("a_pose") || name.contains("_apose")) {
+        if (name.equals("apose") || name.equals("a-pose")
+                || name.startsWith("a_pose") || name.contains("_apose")) {
             return SequenceType.A_POSE;
         }
         return SequenceType.NORMAL;
-    }
-
-    public static boolean nameMatches(String name, String... keywords) {
-        if (name == null) return false;
-        String lower = name.toLowerCase().trim();
-        for (String kw : keywords) {
-            if (lower.equals(kw) || lower.startsWith(kw + "_") || lower.contains("_" + kw)
-                || lower.startsWith(kw + "-") || lower.endsWith("_" + kw) || lower.endsWith("-" + kw)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     public static class ParsedModel {
@@ -453,12 +434,9 @@ public class MdlDataTypes {
         public List<Integer> indices = new ArrayList<>();
         public List<Bone> bones = new ArrayList<>();
         public List<Eyeball> eyeballs = new ArrayList<>();
-        public List<Integer> meshTrianglesOffset = new ArrayList<>();
         public List<Texture> textures = new ArrayList<>();
         public List<String> cdTextures = new ArrayList<>();
         public List<Integer> skinTable = new ArrayList<>();
-        public int vvdVertexCount;
-        public List<List<VtxParser.VtxTriangle>> vtxTriangles = new ArrayList<>();
         public List<String> includeModels = new ArrayList<>();
         public List<Attachment> attachments = new ArrayList<>();
         public List<BoneController> boneControllers = new ArrayList<>();

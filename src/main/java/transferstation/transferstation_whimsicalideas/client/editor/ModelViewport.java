@@ -20,7 +20,7 @@ import java.util.Map;
 
 /**
  * Reusable in-game 3D viewport for the model/animation editors.
- *
+ * <p>
  * Renders a {@link SourceModelData} inside a screen rectangle with an orbit
  * camera (drag to rotate, wheel to zoom). Bone gizmos can be drawn on top.
  * The mesh drawing logic mirrors {@code JavaModelRenderer} so the editor shows
@@ -41,15 +41,13 @@ public class ModelViewport {
 
     // Optional per-bone override transforms applied on top of the model's bind pose.
     // Keyed by bone index. null entry = use model default.
-    private Map<Integer, BoneOverride> boneOverrides = new java.util.HashMap<>();
+    private final Map<Integer, BoneOverride> boneOverrides = new java.util.HashMap<>();
 
-    public static class BoneOverride {
-        public final float[] pos;      // local position offset (added to bind pos)
-        public final float[] rot;      // euler rotation in radians (applied on top of bind)
-        public BoneOverride(float[] pos, float[] rot) {
-            this.pos = pos;
-            this.rot = rot;
-        }
+    /**
+     * @param pos local position offset (added to bind pos)
+     * @param rot euler rotation in radians (applied on top of bind)
+     */
+    public record BoneOverride(float[] pos, float[] rot) {
     }
 
     public void setRect(int x, int y, int width, int height) {
@@ -243,13 +241,13 @@ public class ModelViewport {
         int cur = boneIndex;
         while (cur >= 0 && cur < model.bones.size()) {
             chain.push(cur);
-            cur = model.bones.get(cur).parent;
+            cur = model.bones.get(cur).parent();
         }
         Matrix4f m = new Matrix4f().identity();
         while (!chain.isEmpty()) {
             int bi = chain.pop();
             SourceModelData.BoneInfo bone = model.bones.get(bi);
-            float px = bone.pos[0], py = bone.pos[1], pz = bone.pos[2];
+            float px = bone.pos()[0], py = bone.pos()[1], pz = bone.pos()[2];
             float rx = 0, ry = 0, rz = 0;
             BoneOverride ov = boneOverrides.get(bi);
             if (ov != null) {
@@ -257,11 +255,11 @@ public class ModelViewport {
                 rx = ov.rot[0]; ry = ov.rot[1]; rz = ov.rot[2];
             }
             Matrix4f local = new Matrix4f().translation(px, py, pz);
-            if (bone.quat != null) {
-                Quaternionf q = new Quaternionf(bone.quat[0], bone.quat[1], bone.quat[2], bone.quat[3]);
+            if (bone.quat() != null) {
+                Quaternionf q = new Quaternionf(bone.quat()[0], bone.quat()[1], bone.quat()[2], bone.quat()[3]);
                 local.rotate(q);
-            } else if (bone.rot != null) {
-                local.rotateXYZ(bone.rot[0], bone.rot[1], bone.rot[2]);
+            } else if (bone.rot() != null) {
+                local.rotateXYZ(bone.rot()[0], bone.rot()[1], bone.rot()[2]);
             }
             if (rx != 0 || ry != 0 || rz != 0) {
                 local.rotateXYZ(rx, ry, rz);

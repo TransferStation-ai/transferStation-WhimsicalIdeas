@@ -9,129 +9,8 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Locale;
 
 public class GmodNativeBridge {
-
-    private static boolean linuxInit = false;
-    private static boolean androidInit = false;
-    private static boolean linuxLoaded = false;
-    private static boolean androidLoaded = false;
-    private static String linuxArch = null;
-    private static String androidAbi = null;
-
-    public static synchronized boolean isAvailableLinux() {
-        if (linuxInit) return linuxLoaded;
-        linuxInit = true;
-
-        String osArch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-        if (osArch.contains("amd64") || osArch.contains("x86_64")) {
-            linuxArch = "x86_64";
-        } else if (osArch.contains("aarch64") || osArch.contains("arm64")) {
-            linuxArch = "aarch64";
-        } else if (osArch.contains("arm")) {
-            linuxArch = "arm";
-        } else {
-            linuxArch = osArch.isEmpty() ? "unknown" : osArch;
-        }
-
-        // Try architecture-specific library name first, then generic
-        String[] libNames = {
-            "native-renderer-" + linuxArch,
-            "native-renderer",
-        };
-
-        for (String libName : libNames) {
-            try {
-                System.loadLibrary(libName);
-                linuxLoaded = true;
-                LogUtils.getLogger().info("[GmodNative] native-renderer.so ({}) Loaded for Linux (arch={})", libName, linuxArch);
-                return linuxLoaded;
-            } catch (Throwable t) {
-                LogUtils.getLogger().debug("[GmodNative] Failed to load {}: {}", libName, t.getMessage());
-            }
-        }
-
-        // Try extracting from resources
-        try {
-            String resourcePath = "/natives/linux/" + linuxArch + "/native-renderer.so";
-            try (InputStream in = GmodNativeBridge.class.getResourceAsStream(resourcePath)) {
-                if (in != null) {
-                    Path tempDir = Files.createTempDirectory("gmod_native_linux_");
-                    tempDir.toFile().deleteOnExit();
-                    Path soPath = tempDir.resolve("native-renderer.so");
-                    Files.copy(in, soPath, StandardCopyOption.REPLACE_EXISTING);
-                    soPath.toFile().deleteOnExit();
-                    System.load(soPath.toAbsolutePath().toString());
-                    linuxLoaded = true;
-                    LogUtils.getLogger().info("[GmodNative] native-renderer.so Loaded for Linux from resources (arch={})", linuxArch);
-                }
-            }
-        } catch (Throwable t) {
-            LogUtils.getLogger().debug("[GmodNative] Resource extraction failed: {}", t.getMessage());
-        }
-
-        if (!linuxLoaded) {
-            LogUtils.getLogger().warn("[GmodNative] native-renderer.so not found for Linux arch {}; using Java fallback", linuxArch);
-        }
-        return linuxLoaded;
-    }
-
-    public static synchronized boolean isAvailableAndroid() {
-        if (androidInit) return androidLoaded;
-        androidInit = true;
-
-        String osArch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-        if (osArch.contains("aarch64") || osArch.contains("arm64")) {
-            androidAbi = "arm64-v8a";
-        } else if (osArch.contains("arm")) {
-            androidAbi = osArch.contains("v7") ? "armeabi-v7a" : "armeabi";
-        } else if (osArch.contains("x86_64") || osArch.contains("amd64")) {
-            androidAbi = "x86_64";
-        } else if (osArch.contains("x86")) {
-            androidAbi = "x86";
-        } else {
-            androidAbi = osArch.isEmpty() ? "unknown" : osArch;
-        }
-
-        String[] libNames = {
-            "native-renderer-" + androidAbi,
-            "native-renderer",
-        };
-
-        for (String libName : libNames) {
-            try {
-                System.loadLibrary(libName);
-                androidLoaded = true;
-                LogUtils.getLogger().info("[GmodNative] native-renderer.so ({}) Loaded for Android (ABI={})", libName, androidAbi);
-                return androidLoaded;
-            } catch (Throwable t) {
-                LogUtils.getLogger().debug("[GmodNative] Failed to load {}: {}", libName, t.getMessage());
-            }
-        }
-
-        if (!androidLoaded) {
-            LogUtils.getLogger().warn("[GmodNative] native-renderer.so not found for Android ABI {}; using Java fallback", androidAbi);
-        }
-        return androidLoaded;
-    }
-
-    public static String getLinuxArch() {
-        if (linuxArch == null) isAvailableLinux();
-        return linuxArch;
-    }
-
-    public static String getAndroidAbi() {
-        if (androidAbi == null) isAvailableAndroid();
-        return androidAbi;
-    }
-
-    static native byte[] nativeParseMdlSerializedLinux(byte[] mdlData);
-    static native byte[] nativeParseVvdSerializedLinux(byte[] vvdData);
-    static native byte[] nativeParseVtxSerializedLinux(byte[] vtxData);
-    static native byte[] nativeParseMdlSerializedAndroid(byte[] mdlData);
-    static native byte[] nativeParseVvdSerializedAndroid(byte[] vvdData);
-    static native byte[] nativeParseVtxSerializedAndroid(byte[] vtxData);
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
@@ -185,7 +64,7 @@ public class GmodNativeBridge {
                     // Relative to game dir
                     Path resolved = FMLPaths.GAMEDIR.get().resolve(path);
                     if (!resolved.toString().endsWith(".dll")) {
-                        resolved = Path.of(resolved.toString() + ".dll");
+                        resolved = Path.of(resolved + ".dll");
                     }
                     if (Files.exists(resolved)) {
                         System.load(resolved.toAbsolutePath().toString());
@@ -195,7 +74,7 @@ public class GmodNativeBridge {
                     // Relative to working directory
                     resolved = Path.of(path);
                     if (!resolved.toString().endsWith(".dll")) {
-                        resolved = Path.of(resolved.toString() + ".dll");
+                        resolved = Path.of(resolved + ".dll");
                     }
                     if (Files.exists(resolved)) {
                         System.load(resolved.toAbsolutePath().toString());
@@ -275,15 +154,6 @@ public class GmodNativeBridge {
                     extractedDllPath = tempDir.resolve(mainDllName);
                     Files.copy(in, extractedDllPath, StandardCopyOption.REPLACE_EXISTING);
                     extractedDllPath.toFile().deleteOnExit();
-                    for (String dep : knownDeps) {
-                        try (InputStream depIn = GmodNativeBridge.class.getResourceAsStream(dir + dep)) {
-                            if (depIn != null) {
-                                Path depPath = tempDir.resolve(dep);
-                                Files.copy(depIn, depPath, StandardCopyOption.REPLACE_EXISTING);
-                                depPath.toFile().deleteOnExit();
-                            }
-                        }
-                    }
                     // Load with absolute path - dependencies in same dir will be found by Windows loader
                     try {
                         System.load(extractedDllPath.toAbsolutePath().toString());
@@ -316,39 +186,11 @@ public class GmodNativeBridge {
     static native int nativeGetMeshCount(long handle);
     static native void nativeRenderModel(long handle, float[] modelMatrix, int packedLight, float partialTicks);
     static native void nativeRenderModelLOD(long handle, float[] modelMatrix, int packedLight, float partialTicks, int lodLevel);
+    static native void nativeSetCameraPosition(float x, float y, float z);
     static native float nativeGetMinZ(long handle);
     static native float nativeGetModelScale(long handle);
     static native String nativeGetDisplayName(long handle);
     static native void nativeClearAllCaches();
-
-    // Windows-native parsing methods
-    // These call the native C++ parsers (mdl_parser, vvd_parser, vtx_parser) via JNI
-    // and return serialized byte[] data that Java deserializes into the corresponding Java objects.
-    // Each returns null if parsing fails, allowing graceful fallback to Java parsers.
-
-    /**
-     * Parse MDL binary data using the native C++ parser.
-     * Returns serialized ParsedModel data, or null on failure.
-     */
-    static native byte[] nativeParseMdlSerialized(byte[] mdlData);
-
-    /**
-     * Parse VVD binary data using the native C++ parser.
-     * Returns serialized ParsedVvd data, or null on failure.
-     */
-    static native byte[] nativeParseVvdSerialized(byte[] vvdData);
-
-    /**
-     * Parse VTX binary data using the native C++ parser.
-     * Returns serialized ParsedVtx data, or null on failure.
-     */
-    static native byte[] nativeParseVtxSerialized(byte[] vtxData);
-
-    /**
-     * Parse PHY binary data using the native C++ parser.
-     * Returns serialized ParsedPhy data, or null on failure.
-     */
-    static native byte[] nativeParsePhySerialized(byte[] phyData);
 
     // Windows-native mesh data extraction methods
     // These extract already-parsed mesh data from a native model handle,

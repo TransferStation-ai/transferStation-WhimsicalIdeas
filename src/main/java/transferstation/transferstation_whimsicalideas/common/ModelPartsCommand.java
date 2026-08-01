@@ -15,7 +15,6 @@ import transferstation.transferstation_whimsicalideas.Transferstation_whimsicali
 /**
  * 查询当前模型包含哪些身体部件（BodyPart）的指令。
  * 用法：/modelparts <目标实体>
- *
  * 显示目标实体可用的 InjurySystem.BodyPart 列表，
  * 包含伤害倍率信息，并标注当前受伤的部件。
  */
@@ -87,7 +86,7 @@ public class ModelPartsCommand {
         String[] words = name.split("_");
         StringBuilder sb = new StringBuilder();
         for (String word : words) {
-            if (sb.length() > 0) sb.append(" ");
+            if (!sb.isEmpty()) sb.append(" ");
             sb.append(Character.toUpperCase(word.charAt(0)));
             sb.append(word.substring(1));
         }

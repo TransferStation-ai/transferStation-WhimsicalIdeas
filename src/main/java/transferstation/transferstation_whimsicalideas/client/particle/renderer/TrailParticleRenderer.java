@@ -21,7 +21,7 @@ import java.util.List;
  * positions into ribbon geometry facing the camera.
  */
 public class TrailParticleRenderer implements ParticleRenderer {
-    private ResourceLocation texture;
+    private final ResourceLocation texture;
 
     public TrailParticleRenderer(ResourceLocation texture) {
         this.texture = texture;

@@ -183,18 +183,20 @@ public class InjurySystem {
         if (tag.contains("Injuries")) {
             List<Injury> injuries = new ArrayList<>();
             var list = (net.minecraft.nbt.ListTag) tag.get("Injuries");
-            for (int i = 0; i < list.size(); i++) {
-                CompoundTag t = list.getCompound(i);
-                Injury inj = new Injury(
-                    InjuryType.valueOf(t.getString("Type")),
-                    BodyPart.valueOf(t.getString("BodyPart")),
-                    t.getInt("Severity"),
-                    t.getInt("Remaining")
-                );
-                inj.isBleeding = t.getBoolean("Bleeding");
-                inj.isStopped = t.getBoolean("Stopped");
-                inj.hasArrow = t.getBoolean("Arrow");
-                injuries.add(inj);
+            if (list != null) {
+                for (int i = 0; i < list.size(); i++) {
+                    CompoundTag t = list.getCompound(i);
+                    Injury inj = new Injury(
+                        InjuryType.valueOf(t.getString("Type")),
+                        BodyPart.valueOf(t.getString("BodyPart")),
+                        t.getInt("Severity"),
+                        t.getInt("Remaining")
+                    );
+                    inj.isBleeding = t.getBoolean("Bleeding");
+                    inj.isStopped = t.getBoolean("Stopped");
+                    inj.hasArrow = t.getBoolean("Arrow");
+                    injuries.add(inj);
+                }
             }
             entityInjuries.put(entity.getUUID(), injuries);
         }

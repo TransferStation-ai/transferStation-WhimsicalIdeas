@@ -339,8 +339,7 @@ public final class ColorUtils {
                 int r = Character.digit(cleaned.charAt(0), 16);
                 int g = Character.digit(cleaned.charAt(1), 16);
                 int b = Character.digit(cleaned.charAt(2), 16);
-                int argb = (0xFF << 24) | ((r * 17) << 16) | ((g * 17) << 8) | (b * 17);
-                return argb;
+                return (0xFF << 24) | ((r * 17) << 16) | ((g * 17) << 8) | (b * 17);
             }
             case 4: {
                 // RGBA -> AARRGGBB (each char doubled)
@@ -348,12 +347,11 @@ public final class ColorUtils {
                 int g = Character.digit(cleaned.charAt(1), 16);
                 int b = Character.digit(cleaned.charAt(2), 16);
                 int a = Character.digit(cleaned.charAt(3), 16);
-                int argb = ((a * 17) << 24) | ((r * 17) << 16) | ((g * 17) << 8) | (b * 17);
-                return argb;
+                return ((a * 17) << 24) | ((r * 17) << 16) | ((g * 17) << 8) | (b * 17);
             }
             case 6:
                 // RRGGBB -> ARGB (alpha=255)
-                return (int) (value | 0xFF000000);
+                return (int) (value | 0xffff_ffff_ff00_0000L);
             case 8:
                 // AARRGGBB -> ARGB
                 return (int) value;
@@ -901,11 +899,11 @@ public final class ColorUtils {
         }
         try {
             long value = Long.parseLong(cleaned, 16);
-            switch (cleaned.length()) {
-                case 6: return java.util.OptionalInt.of((int) (value | 0xFF000000));
-                case 8: return java.util.OptionalInt.of((int) value);
-                default: return java.util.OptionalInt.empty();
-            }
+            return switch (cleaned.length()) {
+                case 6 -> java.util.OptionalInt.of((int) (value | 0xffff_ffff_ff00_0000L));
+                case 8 -> java.util.OptionalInt.of((int) value);
+                default -> java.util.OptionalInt.empty();
+            };
         } catch (NumberFormatException e) {
             return java.util.OptionalInt.empty();
         }

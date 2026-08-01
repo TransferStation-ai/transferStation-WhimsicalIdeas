@@ -130,7 +130,7 @@ public class BBModelParser {
     private static SourceModelData.MeshData parseMeshElement(JsonObject elem, Map<Integer, ResourceLocation> textureMap) {
         JsonArray verts = elem.getAsJsonArray("vertices");
         JsonArray faces = elem.getAsJsonArray("faces");
-        if (verts == null || verts.size() < 3 || faces == null || faces.size() < 1) return null;
+        if (verts == null || verts.size() < 3 || faces == null || faces.isEmpty()) return null;
 
         List<Float> vertexList = new ArrayList<>();
         List<Integer> indexList = new ArrayList<>();
@@ -469,7 +469,7 @@ public class BBModelParser {
 
                 int boneIdx = -1;
                 for (int i = 0; i < modelData.bones.size(); i++) {
-                    if (modelData.bones.get(i).name.equals(boneName)) {
+                    if (modelData.bones.get(i).name().equals(boneName)) {
                         boneIdx = i;
                         break;
                     }

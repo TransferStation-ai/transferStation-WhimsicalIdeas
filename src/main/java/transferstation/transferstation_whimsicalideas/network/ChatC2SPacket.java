@@ -2,17 +2,12 @@ package transferstation.transferstation_whimsicalideas.network;
 
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.network.NetworkEvent;
+import transferstation.transferstation_whimsicalideas.client.model.NpcEntity;
+
 import java.util.UUID;
 import java.util.function.Supplier;
 
-public class ChatC2SPacket {
-    public final UUID npcUuid;
-    public final String message;
-
-    public ChatC2SPacket(UUID npcUuid, String message) {
-        this.npcUuid = npcUuid;
-        this.message = message;
-    }
+public record ChatC2SPacket(UUID npcUuid, String message) {
 
     public static ChatC2SPacket decode(FriendlyByteBuf buf) {
         return new ChatC2SPacket(buf.readUUID(), buf.readUtf(256));
@@ -30,7 +25,7 @@ public class ChatC2SPacket {
             // ServerPlayer.serverLevel() returns ServerLevel, which has getEntity(UUID)
             var level = sender.serverLevel();
             var entity = level.getEntity(packet.npcUuid);
-            if (entity instanceof transferstation.transferstation_whimsicalideas.client.model.NpcEntity npc) {
+            if (entity instanceof NpcEntity npc) {
                 // Process on server thread
                 npc.handleChatMessage(sender, packet.message);
             }

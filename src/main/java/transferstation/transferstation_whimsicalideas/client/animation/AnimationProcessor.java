@@ -1,25 +1,21 @@
 // AnimationProcessor.java - core animation processing class for managing models
 package transferstation.transferstation_whimsicalideas.client.animation;
 
-import com.mojang.logging.LogUtils;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.client.renderer.MultiBufferSource;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.logging.LogUtils;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.world.entity.LivingEntity;
+import org.jetbrains.annotations.NotNull;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.GmodModelRenderer;
-import transferstation.transferstation_whimsicalideas.client.morph.MorphManager;
-import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
 import transferstation.transferstation_whimsicalideas.client.model.MdlDataTypes;
+import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
+import transferstation.transferstation_whimsicalideas.client.morph.MorphManager;
 
 import java.nio.file.Path;
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.Set;
-import java.util.HashSet;
+import java.util.*;
 
 public class AnimationProcessor {
 
@@ -193,7 +189,7 @@ public class AnimationProcessor {
     /**
      * Returns per-bone transformation matrices for the given entity at the current animation frame.
      * Used by the skinned renderer for per-vertex skinning.
-     * 
+     * <p> 
      * The transforms are computed as: bindPose * animationDelta
      * where bindPose comes from the MDL's reference pose (srcBoneTransforms).
      */
@@ -210,15 +206,35 @@ public class AnimationProcessor {
         // 2. Try to get VMD animation
         String animName = getActiveAnimationName(entity);
         AnimationData anim = getAnimation(animName);
-        
+
         // 3. If no VMD animation, try MDL's built-in sequence animation data
         if (anim == null || anim.tracks.isEmpty()) {
             anim = getMdlSequenceAnimation(entity, modelData, animName);
         }
 
-        // 4. Apply animation delta on top of bind pose
-        if (anim != null && !anim.tracks.isEmpty()) {
-            applyAnimationDelta(entity, anim, modelData, localTransforms, partialTicks);
+        // 4. Sample base layer deltas (with frame interpolation)
+        Map<Integer, float[]> deltas = sampleAnimationDeltas(entity, anim, modelData, partialTicks);
+
+        // 4b. Overlay layer: blend gesture deltas on top (per-bone weight = layerWeight * boneMask)
+        AnimationLayers.tickFades(entity, (entity.tickCount + partialTicks) / 20.0f);
+        AnimationLayers.LayerState overlay = AnimationLayers.getActiveOverlay(entity, AnimationLayers.OVERLAY);
+        if (overlay != null) {
+            float layerWeight = AnimationLayers.fadeWeight(overlay) * overlay.weight;
+            Map<Integer, float[]> overlayDeltas = sampleAnimationDeltas(entity, overlay.anim, modelData, partialTicks);
+            for (Map.Entry<Integer, float[]> entry : overlayDeltas.entrySet()) {
+                int boneIdx = entry.getKey();
+                String boneName = modelData.bones.get(boneIdx).name();
+                if (AnimationLayers.isMaskedOut(entity, AnimationLayers.OVERLAY, boneName)) continue;
+                deltas.compute(boneIdx, (k, base) -> blendDeltas(Objects.requireNonNullElseGet(base, AnimationProcessor::toIdentityDelta), entry.getValue(), layerWeight));
+            }
+        }
+
+        // 4c. Apply mixed deltas on top of bind pose
+        for (Map.Entry<Integer, float[]> entry : deltas.entrySet()) {
+            org.joml.Matrix4f bindPose = new org.joml.Matrix4f();
+            bindPose.set(localTransforms[entry.getKey()]);
+            bindPose.mul(deltaToMatrix(entry.getValue()));
+            bindPose.get(localTransforms[entry.getKey()]);
         }
 
         // 5. Convert local transforms to world-space by walking hierarchy in
@@ -237,18 +253,7 @@ public class AnimationProcessor {
                 int boneIdx = findBoneIndex(modelData, entry.getKey());
                 if (boneIdx < 0) continue;
 
-                float[] t = entry.getValue();
-                org.joml.Matrix4f morphMat = new org.joml.Matrix4f();
-                morphMat.identity();
-                morphMat.translate(t[0], t[1], t[2]);
-                if (t.length >= 7) {
-                    float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, t[6]))));
-                    float s = (float) Math.sqrt(1.0 - t[6] * t[6]);
-                    if (s > 0.001f) {
-                        float invS = 1.0f / s;
-                        morphMat.rotate(angle, t[3] * invS, t[4] * invS, t[5] * invS);
-                    }
-                }
+                Matrix4f morphMat = getMatrix4f(entry);
 
                 org.joml.Matrix4f existing = new org.joml.Matrix4f();
                 existing.set(localTransforms[boneIdx]);
@@ -260,6 +265,22 @@ public class AnimationProcessor {
         return localTransforms;
     }
 
+    private static @NotNull Matrix4f getMatrix4f(Map.Entry<String, float[]> entry) {
+        float[] t = entry.getValue();
+        Matrix4f morphMat = new Matrix4f();
+        morphMat.identity();
+        morphMat.translate(t[0], t[1], t[2]);
+        if (t.length >= 7) {
+            float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, t[6]))));
+            float s = (float) Math.sqrt(1.0 - t[6] * t[6]);
+            if (s > 0.001f) {
+                float invS = 1.0f / s;
+                morphMat.rotate(angle, t[3] * invS, t[4] * invS, t[5] * invS);
+            }
+        }
+        return morphMat;
+    }
+
     /**
      * Compute the world-space transform for bone {@code index}, recursively
      * ensuring its parent is computed first. {@code computed} guards against
@@ -268,7 +289,7 @@ public class AnimationProcessor {
     private static void computeWorldBone(int index, SourceModelData modelData,
                                          float[][] localTransforms, Set<Integer> computed) {
         if (index < 0 || index >= modelData.bones.size() || computed.contains(index)) return;
-        int parent = modelData.bones.get(index).parent;
+        int parent = modelData.bones.get(index).parent();
         if (parent >= 0 && parent < modelData.bones.size() && !computed.contains(parent)) {
             computeWorldBone(parent, modelData, localTransforms, computed);
         }
@@ -303,23 +324,7 @@ public class AnimationProcessor {
                     0f,  0f, 1f, 0f,
                     1f,  0f, 0f, 0f,
                     0f,  0f, 0f, 1f);
-                org.joml.Matrix4f mSrc = new org.joml.Matrix4f();
-                mSrc.identity();
-                if (bt.pos != null) {
-                    mSrc.translate(bt.pos[0], bt.pos[1], bt.pos[2]);
-                }
-                if (bt.quat != null) {
-                    // quat is [x, y, z, w]
-                    float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, bt.quat[3]))));
-                    float s = (float) Math.sqrt(1.0 - bt.quat[3] * bt.quat[3]);
-                    if (s > 0.001f) {
-                        float invS = 1.0f / s;
-                        mSrc.rotate(angle, bt.quat[0] * invS, bt.quat[1] * invS, bt.quat[2] * invS);
-                    }
-                }
-                if (bt.scale != null) {
-                    mSrc.scale(bt.scale[0], bt.scale[1], bt.scale[2]);
-                }
+                Matrix4f mSrc = getMatrix4f(bt);
                 org.joml.Matrix4f mat = new org.joml.Matrix4f(S).mul(mSrc).mul(S.transpose());
                 mat.get(localTransforms[i]);
             }
@@ -336,27 +341,53 @@ public class AnimationProcessor {
             1f,  0f, 0f, 0f,
             0f,  0f, 0f, 1f);
         for (int i = 0; i < modelData.bones.size(); i++) {
-            SourceModelData.BoneInfo bone = modelData.bones.get(i);
-            org.joml.Matrix4f mSrc = new org.joml.Matrix4f();
-            mSrc.identity();
-            if (bone.pos != null) {
-                mSrc.translate(bone.pos[0], bone.pos[1], bone.pos[2]);
-            }
-            if (bone.quat != null) {
-                float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, bone.quat[3]))));
-                float s = (float) Math.sqrt(1.0 - bone.quat[3] * bone.quat[3]);
-                if (s > 0.001f) {
-                    float invS = 1.0f / s;
-                    mSrc.rotate(angle, bone.quat[0] * invS, bone.quat[1] * invS, bone.quat[2] * invS);
-                }
-            }
-            if (bone.rot != null) {
-                // Euler rotation fallback (radians)
-                mSrc.rotateXYZ(bone.rot[0], bone.rot[1], bone.rot[2]);
-            }
+            Matrix4f mSrc = getMatrix4f(modelData, i);
             org.joml.Matrix4f mat = new org.joml.Matrix4f(S).mul(mSrc).mul(S.transpose());
             mat.get(localTransforms[i]);
         }
+    }
+
+    private static @NotNull Matrix4f getMatrix4f(MdlDataTypes.SrcBoneTransform bt) {
+        Matrix4f mSrc = new Matrix4f();
+        mSrc.identity();
+        if (bt.pos != null) {
+            mSrc.translate(bt.pos[0], bt.pos[1], bt.pos[2]);
+        }
+        if (bt.quat != null) {
+            // quat is [x, y, z, w]
+            float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, bt.quat[3]))));
+            float s = (float) Math.sqrt(1.0 - bt.quat[3] * bt.quat[3]);
+            if (s > 0.001f) {
+                float invS = 1.0f / s;
+                mSrc.rotate(angle, bt.quat[0] * invS, bt.quat[1] * invS, bt.quat[2] * invS);
+            }
+        }
+        if (bt.scale != null) {
+            mSrc.scale(bt.scale[0], bt.scale[1], bt.scale[2]);
+        }
+        return mSrc;
+    }
+
+    private static @NotNull Matrix4f getMatrix4f(SourceModelData modelData, int i) {
+        SourceModelData.BoneInfo bone = modelData.bones.get(i);
+        Matrix4f mSrc = new Matrix4f();
+        mSrc.identity();
+        if (bone.pos() != null) {
+            mSrc.translate(bone.pos()[0], bone.pos()[1], bone.pos()[2]);
+        }
+        if (bone.quat() != null) {
+            float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, bone.quat()[3]))));
+            float s = (float) Math.sqrt(1.0 - bone.quat()[3] * bone.quat()[3]);
+            if (s > 0.001f) {
+                float invS = 1.0f / s;
+                mSrc.rotate(angle, bone.quat()[0] * invS, bone.quat()[1] * invS, bone.quat()[2] * invS);
+            }
+        }
+        if (bone.rot() != null) {
+            // Euler rotation fallback (radians)
+            mSrc.rotateXYZ(bone.rot()[0], bone.rot()[1], bone.rot()[2]);
+        }
+        return mSrc;
     }
 
     /**
@@ -395,48 +426,135 @@ public class AnimationProcessor {
         return anim;
     }
 
+    /** delta 分量布局：{tx,ty,tz, qx,qy,qz,qw, sx,sy,sz} */
+    static final int DELTA_LEN = 10;
+
     /**
-     * Apply animation delta on top of bind pose.
-     * Animation data from VMD is typically relative to bind pose.
+     * 按浮点帧号采样轨道，相邻两 keyframe 间插值：
+     * 平移/缩放 lerp，旋转 nlerp。f 越界时 clamp 到首尾帧。
+     * 返回 DELTA_LEN 数组；无关键帧返回 null。
      */
-    private static void applyAnimationDelta(LivingEntity entity, AnimationData anim, 
-                                             SourceModelData modelData, float[][] localTransforms, float partialTicks) {
+    static float[] sampleTrackAtTime(AnimationData.AnimationTrack track, float frameFloat) {
+        if (track == null || track.keyFrames == null || track.keyFrames.isEmpty()) return null;
+        List<AnimationData.KeyFrame> kfs = track.keyFrames;
+        // 关键帧按 frame 升序（VMD 解析保证，防御性拷贝排序避免改坏原始数据）
+        if (kfs.size() > 1 && kfs.get(0).frame > kfs.get(1).frame) {
+            kfs = new ArrayList<>(kfs);
+            kfs.sort(Comparator.comparingInt(a -> a.frame));
+        }
+
+        AnimationData.KeyFrame first = kfs.get(0);
+        AnimationData.KeyFrame last = kfs.get(kfs.size() - 1);
+        if (frameFloat <= first.frame) return toDelta(first);
+        if (frameFloat >= last.frame) return toDelta(last);
+
+        for (int i = 0; i < kfs.size() - 1; i++) {
+            AnimationData.KeyFrame a = kfs.get(i);
+            AnimationData.KeyFrame b = kfs.get(i + 1);
+            if (frameFloat >= a.frame && frameFloat <= b.frame) {
+                float t = (b.frame > a.frame) ? (frameFloat - a.frame) / (b.frame - a.frame) : 0;
+                float[] da = toDelta(a);
+                float[] db = toDelta(b);
+                return blendDeltas(da, db, t);
+            }
+        }
+        return toDelta(last);
+    }
+
+    private static float[] toDelta(AnimationData.KeyFrame kf) {
+        float[] d = new float[DELTA_LEN];
+        if (kf.translation != null) {
+            d[0] = kf.translation[0]; d[1] = kf.translation[1]; d[2] = kf.translation[2];
+        }
+        if (kf.rotation != null) {
+            d[3] = kf.rotation[0]; d[4] = kf.rotation[1]; d[5] = kf.rotation[2]; d[6] = kf.rotation[3];
+        } else {
+            d[6] = 1.0f; // 无旋转 = 恒等四元数
+        }
+        if (kf.scale != null) {
+            d[7] = kf.scale[0]; d[8] = kf.scale[1]; d[9] = kf.scale[2];
+        } else {
+            d[7] = 1.0f; d[8] = 1.0f; d[9] = 1.0f;
+        }
+        return d;
+    }
+
+    /** 四元数 nlerp（自动处理相反方向），返回归一化结果。 */
+    static float[] nlerpQuat(float[] a, float[] b, float t) {
+        float dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+        float[] b2 = (dot < 0) ? new float[]{-b[0], -b[1], -b[2], -b[3]} : b;
+        float[] out = new float[4];
+        for (int i = 0; i < 4; i++) {
+            out[i] = a[i] + (b2[i] - a[i]) * t;
+        }
+        float len = (float) Math.sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2] + out[3] * out[3]);
+        if (len > 1e-6f) {
+            for (int i = 0; i < 4; i++) out[i] /= len;
+        } else {
+            out[3] = 1.0f;
+        }
+        return out;
+    }
+
+    /**
+     * 按权重混合 base/overlay delta：平移/缩放 lerp，旋转 nlerp。
+     * weight clamp 到 [0,1]。
+     */
+    static float[] blendDeltas(float[] base, float[] overlay, float weight) {
+        float t = Math.max(0.0f, Math.min(1.0f, weight));
+        float[] out = new float[DELTA_LEN];
+        for (int i = 0; i < 3; i++) out[i] = base[i] + (overlay[i] - base[i]) * t;   // 平移
+        float[] rot = nlerpQuat(new float[]{base[3], base[4], base[5], base[6]},
+                                new float[]{overlay[3], overlay[4], overlay[5], overlay[6]}, t);
+        out[3] = rot[0]; out[4] = rot[1]; out[5] = rot[2]; out[6] = rot[3];
+        for (int i = 7; i < DELTA_LEN; i++) out[i] = base[i] + (overlay[i] - base[i]) * t; // 缩放
+        return out;
+    }
+
+    /**
+     * 采样单层动画，返回 boneIndex → delta 分量 {tx,ty,tz,qx,qy,qz,qw,sx,sy,sz}。
+     * 动画 delta 相对 bind pose（VMD 惯例）。
+     */
+    private static Map<Integer, float[]> sampleAnimationDeltas(LivingEntity entity, AnimationData anim,
+                                                                SourceModelData modelData, float partialTicks) {
+        Map<Integer, float[]> deltas = new HashMap<>();
+        if (anim == null || anim.tracks.isEmpty()) return deltas;
+
         float elapsedSec = (entity.tickCount + partialTicks) / 20.0f;
-        int currentFrame = anim.frameCount > 0 ? (int) (elapsedSec * anim.fps) % anim.frameCount : 0;
+        float frameFloat = elapsedSec * anim.fps;
+        if (anim.loop && anim.frameCount > 0) {
+            frameFloat = frameFloat % anim.frameCount;
+        } else if (anim.frameCount > 0) {
+            frameFloat = Math.min(frameFloat, anim.frameCount - 1);
+        }
 
         for (AnimationData.AnimationTrack track : anim.tracks) {
-            // Map VMD bone name to MDL bone name
             String mdlBoneName = mapVmdBoneNameToMdl(track.boneName, modelData);
             int boneIndex = findBoneIndex(modelData, mdlBoneName);
             if (boneIndex < 0) continue;
-
-            AnimationData.KeyFrame kf = findKeyFrame(track.keyFrames, currentFrame);
-            if (kf == null) continue;
-
-            // Create animation delta matrix
-            org.joml.Matrix4f deltaMat = new org.joml.Matrix4f();
-            deltaMat.identity();
-            if (kf.translation != null) {
-                deltaMat.translate(kf.translation[0], kf.translation[1], kf.translation[2]);
-            }
-            if (kf.rotation != null) {
-                float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, kf.rotation[3]))));
-                float s = (float) Math.sqrt(1.0 - kf.rotation[3] * kf.rotation[3]);
-                if (s > 0.001f) {
-                    float invS = 1.0f / s;
-                    deltaMat.rotate(angle, kf.rotation[0] * invS, kf.rotation[1] * invS, kf.rotation[2] * invS);
-                }
-            }
-            if (kf.scale != null) {
-                deltaMat.scale(kf.scale[0], kf.scale[1], kf.scale[2]);
-            }
-
-            // Multiply bind pose * animation delta
-            org.joml.Matrix4f bindPose = new org.joml.Matrix4f();
-            bindPose.set(localTransforms[boneIndex]);
-            bindPose.mul(deltaMat);
-            bindPose.get(localTransforms[boneIndex]);
+            float[] d = sampleTrackAtTime(track, frameFloat);
+            if (d != null) deltas.put(boneIndex, d);
         }
+        return deltas;
+    }
+
+    /** delta 分量 → 变换矩阵（T * R * S）。 */
+    private static org.joml.Matrix4f deltaToMatrix(float[] d) {
+        org.joml.Matrix4f m = new org.joml.Matrix4f();
+        m.identity();
+        m.translate(d[0], d[1], d[2]);
+        float angle = (float) (2.0 * Math.acos(Math.max(-1.0f, Math.min(1.0f, d[6]))));
+        float s = (float) Math.sqrt(Math.max(0.0f, 1.0f - d[6] * d[6]));
+        if (s > 0.001f) {
+            float invS = 1.0f / s;
+            m.rotate(angle, d[3] * invS, d[4] * invS, d[5] * invS);
+        }
+        m.scale(d[7], d[8], d[9]);
+        return m;
+    }
+
+    private static float[] toIdentityDelta() {
+        return new float[]{0, 0, 0, 0, 0, 0, 1, 1, 1, 1};
     }
 
     /**
@@ -448,8 +566,8 @@ public class AnimationProcessor {
 
         // First try exact match
         for (SourceModelData.BoneInfo bone : modelData.bones) {
-            if (bone.name.equalsIgnoreCase(vmdName)) {
-                return bone.name;
+            if (bone.name().equalsIgnoreCase(vmdName)) {
+                return bone.name();
             }
         }
 
@@ -465,8 +583,8 @@ public class AnimationProcessor {
 
         for (String pattern : patterns) {
             for (SourceModelData.BoneInfo bone : modelData.bones) {
-                if (bone.name.equalsIgnoreCase(pattern)) {
-                    return bone.name;
+                if (bone.name().equalsIgnoreCase(pattern)) {
+                    return bone.name();
                 }
             }
         }
@@ -474,7 +592,7 @@ public class AnimationProcessor {
         // Fuzzy match: check if MDL bone name contains VMD bone name parts
         String[] vmdParts = vmdName.toLowerCase().split("[ _]");
         for (SourceModelData.BoneInfo bone : modelData.bones) {
-            String mdlLower = bone.name.toLowerCase();
+            String mdlLower = bone.name().toLowerCase();
             int matches = 0;
             for (String part : vmdParts) {
                 if (part.length() > 2 && mdlLower.contains(part)) {
@@ -482,7 +600,7 @@ public class AnimationProcessor {
                 }
             }
             if (matches >= 2) { // At least 2 parts match
-                return bone.name;
+                return bone.name();
             }
         }
 
@@ -491,25 +609,11 @@ public class AnimationProcessor {
 
     private static int findBoneIndex(SourceModelData modelData, String boneName) {
         for (int i = 0; i < modelData.bones.size(); i++) {
-            if (modelData.bones.get(i).name.equalsIgnoreCase(boneName)) {
+            if (modelData.bones.get(i).name().equalsIgnoreCase(boneName)) {
                 return i;
             }
         }
         return -1;
-    }
-
-    private static AnimationData.KeyFrame findKeyFrame(List<AnimationData.KeyFrame> keyFrames, int frame) {
-        if (keyFrames == null || keyFrames.isEmpty()) return null;
-        AnimationData.KeyFrame closest = null;
-        int minDiff = Integer.MAX_VALUE;
-        for (AnimationData.KeyFrame kf : keyFrames) {
-            int diff = Math.abs(kf.frame - frame);
-            if (diff < minDiff) {
-                minDiff = diff;
-                closest = kf;
-            }
-        }
-        return closest;
     }
 
     public static void setCurrentMorph(String morphName) {

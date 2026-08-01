@@ -10,6 +10,8 @@
 #include <future>
 #include <mutex>
 #include <thread>
+
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -17,6 +19,7 @@
 #include <windows.h>
 #include <propidl.h>
 #include <gdiplus.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -31,6 +34,9 @@ static inline uint16_t readUint16(const uint8_t* buf, int offset) {
 
 // VMT material info
 struct VmtInfo {
+    std::string shaderName;  // VMT 第一行 shader 名，如 "UnlitGeneric"
+    bool selfIllum = false;  // $selfillum
+    bool envmap = false;     // $envmap 键存在
     std::string baseTexture;
     std::string bumpMap;
     std::string lightwarptexture;
@@ -73,6 +79,16 @@ static VmtInfo parseVmtMaterial(const std::string& vmtPath) {
         if (start == std::string::npos) continue;
         line = line.substr(start);
 
+        if (info.shaderName.empty() && !line.empty()
+            && line[0] != '{' && line[0] != '}' && line[0] != '/') {
+            std::string token = line;
+            size_t tokStart = token.find_first_not_of(" \t\"");
+            if (tokStart != std::string::npos) token = token.substr(tokStart);
+            size_t tokEnd = token.find_first_of(" \t\r\"");
+            if (tokEnd != std::string::npos) token = token.substr(0, tokEnd);
+            if (!token.empty()) info.shaderName = token;
+        }
+
         if (info.baseTexture.empty()) {
             info.baseTexture = extractValue(line, "$basetexture");
             if (info.baseTexture.empty()) info.baseTexture = extractValue(line, "$BaseTexture");
@@ -86,6 +102,12 @@ static VmtInfo parseVmtMaterial(const std::string& vmtPath) {
         if (!tr.empty()) info.translucent = boolVal(tr);
         std::string at = extractValue(line, "$alphatest");
         if (!at.empty()) info.alphaTest = boolVal(at);
+
+        std::string si = extractValue(line, "$selfillum");
+        if (!si.empty()) info.selfIllum = boolVal(si);
+        if (info.envmap == false && !extractValue(line, "$envmap").empty()) {
+            info.envmap = true;
+        }
         std::string ph = extractValue(line, "$phong");
         if (!ph.empty()) info.phong = boolVal(ph);
         std::string hl = extractValue(line, "$halflambert");
@@ -126,6 +148,29 @@ static VmtInfo parseVmtMaterial(const std::string& vmtPath) {
     return info;
 }
 
+// 与 ModelLoader::toLower 同语义（该成员为 private，文件级函数无法访问）
+static std::string toLowerString(const std::string& s) {
+    std::string r = s;
+    std::transform(r.begin(), r.end(), r.begin(), ::tolower);
+    return r;
+}
+
+static RenderMode inferRenderMode(const VmtInfo& info) {
+    std::string s = toLowerString(info.shaderName);
+    if (s.find("unlitgeneric") != std::string::npos || info.selfIllum) {
+        return RenderMode::UNLIT;
+    }
+    if (s.find("eyerefract") != std::string::npos) {
+        return RenderMode::EYE;
+    }
+    if (s.find("skybox") != std::string::npos
+        || s.find("tooltexture") != std::string::npos
+        || s.find("tools/tool") != std::string::npos) {
+        return RenderMode::SKIP;
+    }
+    return RenderMode::BASE;
+}
+
 void ModelLoader::toLowerInPlace(std::string& s) {
     std::transform(s.begin(), s.end(), s.begin(), ::tolower);
 }
@@ -138,6 +183,7 @@ std::string ModelLoader::toLower(std::string_view s) {
 
 // Memory-mapped file reading for large files
 std::vector<uint8_t> ModelLoader::readFileMapped(const std::string& path) {
+#ifdef _WIN32
     HANDLE hFile = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE) {
@@ -186,6 +232,15 @@ std::vector<uint8_t> ModelLoader::readFileMapped(const std::string& path) {
     CloseHandle(hFile);
 
     return data;
+#else
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) throw std::runtime_error("Cannot open file: " + path);
+    size_t fileSize = static_cast<size_t>(file.tellg());
+    file.seekg(0);
+    std::vector<uint8_t> data(fileSize);
+    file.read(reinterpret_cast<char*>(data.data()), fileSize);
+    return data;
+#endif
 }
 
 // Parallel file loading
@@ -209,6 +264,7 @@ std::vector<ModelLoader::FileData> ModelLoader::loadFilesParallel(const std::vec
 
 // Load common image with GDI+ fallback
 static bool loadCommonImage(const std::string& imagePath, std::vector<uint8_t>& outRgba, int& outW, int& outH) {
+#ifdef _WIN32
     static bool gdiplusInitialized = false;
     static ULONG_PTR gdiplusToken = 0;
 
@@ -253,6 +309,10 @@ static bool loadCommonImage(const std::string& imagePath, std::vector<uint8_t>& 
         return true;
     }
     return false;
+#else
+    (void)imagePath; (void)outRgba; (void)outW; (void)outH;
+    return false;
+#endif
 }
 
 static bool isCommonImageExt(const std::string& ext) {
@@ -765,6 +825,7 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromDirectory(
                             mesh.translucent = vmtInfo.translucent;
                             mesh.alphaTest = vmtInfo.alphaTest;
                             mesh.noCull = vmtInfo.noCull;
+                            mesh.renderMode = inferRenderMode(vmtInfo);
                             break;
                         }
                     }
@@ -968,6 +1029,20 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromSmd(
                 model->textureData.push_back(std::move(td));
                 model->textures.push_back({0, 0, 0});
                 mesh.textureName = matLower;
+            }
+
+            auto vmtIt = vmtInfoMap.find(matLower);
+            if (vmtIt == vmtInfoMap.end()) {
+                for (auto& [k, vi] : vmtInfoMap) {
+                    std::string keyLower = ModelLoader::toLower(k);
+                    if (keyLower.find(matLower) != std::string::npos || matLower.find(keyLower) != std::string::npos) {
+                        vmtIt = vmtInfoMap.find(k);
+                        break;
+                    }
+                }
+            }
+            if (vmtIt != vmtInfoMap.end()) {
+                mesh.renderMode = inferRenderMode(vmtIt->second);
             }
 
             mesh.indices = std::move(meshIndices[material]);

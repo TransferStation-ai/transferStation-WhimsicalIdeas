@@ -7,6 +7,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.model.NpcChatHandler;
 import transferstation.transferstation_whimsicalideas.client.voice.VoiceCaptureService;
@@ -22,7 +23,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 
@@ -32,8 +32,6 @@ public class AiConfigScreen extends Screen {
 
     private EditBox apiKeyField;
     private EditBox endpointField;
-    private Button enableButton;
-    private Button providerDropdown;
     private EditBox modelField;
     private boolean enabled;
     private String statusMessage = "";
@@ -144,7 +142,7 @@ public class AiConfigScreen extends Screen {
         addWidget(endpointField);
 
         y += 28;
-        enableButton = addRenderableWidget(Button.builder(
+        Button enableButton = addRenderableWidget(Button.builder(
                 Component.translatable(enabled ? "gui.transferstation_whimsicalideas.ai_chat_enabled" : "gui.transferstation_whimsicalideas.ai_chat_disabled"),
                 btn -> {
                     enabled = !enabled;
@@ -154,15 +152,15 @@ public class AiConfigScreen extends Screen {
 
         // Provider selector
         y += 28;
-        providerDropdown = addRenderableWidget(Button.builder(
-            Component.literal("Provider: " + NpcChatHandler.getProvider().id),
-            btn -> {
-                var providers = NpcChatHandler.AiProvider.values();
-                int next = (java.util.Arrays.asList(providers).indexOf(NpcChatHandler.getProvider()) + 1) % providers.length;
-                NpcChatHandler.setProvider(providers[next]);
-                btn.setMessage(Component.literal("Provider: " + providers[next].id));
-                updateEndpointForProvider(providers[next]);
-            }
+        Button providerDropdown = addRenderableWidget(Button.builder(
+                Component.literal("Provider: " + NpcChatHandler.getProvider().id),
+                btn -> {
+                    var providers = NpcChatHandler.AiProvider.values();
+                    int next = (java.util.Arrays.asList(providers).indexOf(NpcChatHandler.getProvider()) + 1) % providers.length;
+                    NpcChatHandler.setProvider(providers[next]);
+                    btn.setMessage(Component.literal("Provider: " + providers[next].id));
+                    updateEndpointForProvider(providers[next]);
+                }
         ).pos(cx - 50, y).size(280, 18).build());
 
         y += 28;
@@ -268,15 +266,13 @@ public class AiConfigScreen extends Screen {
                     statusTimer = 60;
                     statusType = StatusType.SUCCESS;
                 } else {
-                    VoiceCaptureService.startRecording(data -> {
-                        net.minecraft.client.Minecraft.getInstance().execute(() -> {
-                            statusMessage = net.minecraft.network.chat.Component.translatable(
-                                "gui.transferstation_whimsicalideas.voice_test_received",
-                                data.length).getString();
-                            statusTimer = 80;
-                            statusType = StatusType.SUCCESS;
-                        });
-                    });
+                    VoiceCaptureService.startRecording(data -> net.minecraft.client.Minecraft.getInstance().execute(() -> {
+                        statusMessage = Component.translatable(
+                            "gui.transferstation_whimsicalideas.voice_test_received",
+                            data.length).getString();
+                        statusTimer = 80;
+                        statusType = StatusType.SUCCESS;
+                    }));
                     btn.setMessage(Component.literal("§c停止测试"));
                     statusMessage = net.minecraft.network.chat.Component.translatable(
                         "gui.transferstation_whimsicalideas.voice_test_recording").getString();
@@ -320,26 +316,32 @@ public class AiConfigScreen extends Screen {
 
                 if (response.statusCode() == 200) {
                     final String msg = Component.translatable("gui.transferstation_whimsicalideas.test_success").getString();
-                    minecraft.tell(() -> {
-                        statusMessage = msg;
-                        statusType = StatusType.SUCCESS;
-                        statusTimer = 100;
-                    });
+                    if (minecraft != null) {
+                        minecraft.tell(() -> {
+                            statusMessage = msg;
+                            statusType = StatusType.SUCCESS;
+                            statusTimer = 100;
+                        });
+                    }
                 } else {
                     final String msg = Component.translatable("gui.transferstation_whimsicalideas.test_server_error", response.statusCode()).getString();
+                    if (minecraft != null) {
+                        minecraft.tell(() -> {
+                            statusMessage = msg;
+                            statusType = StatusType.ERROR;
+                            statusTimer = 100;
+                        });
+                    }
+                }
+            } catch (Exception e) {
+                final String msg = Component.translatable("gui.transferstation_whimsicalideas.test_failed", e.getMessage()).getString();
+                if (minecraft != null) {
                     minecraft.tell(() -> {
                         statusMessage = msg;
                         statusType = StatusType.ERROR;
                         statusTimer = 100;
                     });
                 }
-            } catch (Exception e) {
-                final String msg = Component.translatable("gui.transferstation_whimsicalideas.test_failed", e.getMessage()).getString();
-                minecraft.tell(() -> {
-                    statusMessage = msg;
-                    statusType = StatusType.ERROR;
-                    statusTimer = 100;
-                });
             }
         });
     }
@@ -353,7 +355,7 @@ public class AiConfigScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
+    public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         renderBackground(graphics);
         super.render(graphics, mouseX, mouseY, partialTicks);
 
@@ -413,6 +415,8 @@ public class AiConfigScreen extends Screen {
         if (endpointField != null) NpcChatHandler.setApiEndpoint(endpointField.getValue());
         NpcChatHandler.setEnabled(enabled);
         VoiceConfig.save();
-        minecraft.setScreen(null);
+        if (minecraft != null) {
+            minecraft.setScreen(null);
+        }
     }
 }

@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import org.jetbrains.annotations.NotNull;
 import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
 
 import java.io.IOException;
@@ -32,14 +33,62 @@ public class BBModelWriter {
             ModelExporter.TextureEntry entry = textures.get(i);
             JsonObject tex = new JsonObject();
             tex.addProperty("id", i);
-            tex.addProperty("name", entry.name);
-            byte[] pngBytes = Files.readAllBytes(entry.pngPath);
+            tex.addProperty("name", entry.name());
+            byte[] pngBytes = Files.readAllBytes(entry.pngPath());
             String b64 = Base64.getEncoder().encodeToString(pngBytes);
             tex.addProperty("source", "data:image/png;base64," + b64);
             texArray.add(tex);
         }
         root.add("textures", texArray);
 
+        JsonArray elements = getJsonElements(model, textures);
+        root.add("elements", elements);
+
+        JsonArray outliner = new JsonArray();
+        if (!model.bones.isEmpty()) {
+            List<List<Integer>> children = new ArrayList<>();
+            for (int i = 0; i < model.bones.size(); i++) children.add(new ArrayList<>());
+            for (int i = 0; i < model.bones.size(); i++) {
+                int p = model.bones.get(i).parent();
+                if (p >= 0 && p < model.bones.size()) children.get(p).add(i);
+            }
+            int[] added = new int[model.bones.size()];
+            for (int i = 0; i < model.bones.size(); i++) {
+                if (added[i] == 0 && isRootBone(i, model.bones)) {
+                    outliner.add(buildBoneTree(i, model, children, added));
+                }
+            }
+        }
+        root.add("outliner", outliner);
+
+        JsonArray boneGroups = getJsonElements(model);
+        root.add("bone_groups", boneGroups);
+
+        Files.writeString(bbFile, GSON.toJson(root));
+    }
+
+    private static @NotNull JsonArray getJsonElements(SourceModelData model) {
+        JsonArray boneGroups = new JsonArray();
+        for (int i = 0; i < model.bones.size(); i++) {
+            SourceModelData.BoneInfo bone = model.bones.get(i);
+            JsonObject bg = new JsonObject();
+            bg.addProperty("name", bone.name());
+            bg.addProperty("parent", bone.parent());
+            JsonArray pos = new JsonArray();
+            if (bone.pos() != null) {
+                pos.add((double) bone.pos()[0]);
+                pos.add((double) bone.pos()[1]);
+                pos.add((double) bone.pos()[2]);
+            } else {
+                pos.add(0); pos.add(0); pos.add(0);
+            }
+            bg.add("position", pos);
+            boneGroups.add(bg);
+        }
+        return boneGroups;
+    }
+
+    private static @NotNull JsonArray getJsonElements(SourceModelData model, List<ModelExporter.TextureEntry> textures) {
         JsonArray elements = new JsonArray();
         for (int m = 0; m < model.meshes.size(); m++) {
             SourceModelData.MeshData mesh = model.meshes.get(m);
@@ -88,69 +137,36 @@ public class BBModelWriter {
             }
             elem.add("normals", normals);
 
-            JsonArray faceMats = new JsonArray();
-            int texId = 0;
-            if (mesh.texture != null) {
-                String path = mesh.texture.getPath().toLowerCase();
-                for (int t = 0; t < textures.size(); t++) {
-                    String tName = textures.get(t).name.toLowerCase().replaceAll("\\.png$", "").replace('/', '_');
-                    if (path.contains(tName)) {
-                        texId = t;
-                        break;
-                    }
-                }
-            }
-            int faceCount = mesh.indices.length / 3;
-            for (int i = 0; i < faceCount; i++) {
-                faceMats.add(texId);
-            }
+            JsonArray faceMats = getJsonElements(textures, mesh);
             elem.add("faces_materials", faceMats);
 
             elements.add(elem);
         }
-        root.add("elements", elements);
+        return elements;
+    }
 
-        JsonArray outliner = new JsonArray();
-        if (!model.bones.isEmpty()) {
-            List<List<Integer>> children = new ArrayList<>();
-            for (int i = 0; i < model.bones.size(); i++) children.add(new ArrayList<>());
-            for (int i = 0; i < model.bones.size(); i++) {
-                int p = model.bones.get(i).parent;
-                if (p >= 0 && p < model.bones.size()) children.get(p).add(i);
-            }
-            int[] added = new int[model.bones.size()];
-            for (int i = 0; i < model.bones.size(); i++) {
-                if (added[i] == 0 && isRootBone(i, model.bones)) {
-                    outliner.add(buildBoneTree(i, model, children, added));
+    private static @NotNull JsonArray getJsonElements(List<ModelExporter.TextureEntry> textures, SourceModelData.MeshData mesh) {
+        JsonArray faceMats = new JsonArray();
+        int texId = 0;
+        if (mesh.texture != null) {
+            String path = mesh.texture.getPath().toLowerCase();
+            for (int t = 0; t < textures.size(); t++) {
+                String tName = textures.get(t).name().toLowerCase().replaceAll("\\.png$", "").replace('/', '_');
+                if (path.contains(tName)) {
+                    texId = t;
+                    break;
                 }
             }
         }
-        root.add("outliner", outliner);
-
-        JsonArray boneGroups = new JsonArray();
-        for (int i = 0; i < model.bones.size(); i++) {
-            SourceModelData.BoneInfo bone = model.bones.get(i);
-            JsonObject bg = new JsonObject();
-            bg.addProperty("name", bone.name);
-            bg.addProperty("parent", bone.parent);
-            JsonArray pos = new JsonArray();
-            if (bone.pos != null) {
-                pos.add((double) bone.pos[0]);
-                pos.add((double) bone.pos[1]);
-                pos.add((double) bone.pos[2]);
-            } else {
-                pos.add(0); pos.add(0); pos.add(0);
-            }
-            bg.add("position", pos);
-            boneGroups.add(bg);
+        int faceCount = mesh.indices.length / 3;
+        for (int i = 0; i < faceCount; i++) {
+            faceMats.add(texId);
         }
-        root.add("bone_groups", boneGroups);
-
-        Files.writeString(bbFile, GSON.toJson(root));
+        return faceMats;
     }
 
     private static boolean isRootBone(int idx, List<SourceModelData.BoneInfo> bones) {
-        int p = bones.get(idx).parent;
+        int p = bones.get(idx).parent();
         return p < 0 || p >= bones.size();
     }
 
@@ -158,7 +174,7 @@ public class BBModelWriter {
                                              List<List<Integer>> children, int[] added) {
         added[idx] = 1;
         JsonObject node = new JsonObject();
-        node.addProperty("name", model.bones.get(idx).name);
+        node.addProperty("name", model.bones.get(idx).name());
         JsonArray ch = new JsonArray();
         for (int child : children.get(idx)) {
             ch.add(buildBoneTree(child, model, children, added));

@@ -20,7 +20,7 @@ import java.util.List;
  * Full dynamic light can be integrated with existing light systems later.
  */
 public class LightParticleRenderer implements ParticleRenderer {
-    private ResourceLocation texture;
+    private final ResourceLocation texture;
 
     public LightParticleRenderer(ResourceLocation texture) {
         this.texture = texture;

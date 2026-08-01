@@ -553,8 +553,8 @@ public class MdlDiagnostic {
             for (int lod = 0; lod < vtx.lodMeshTriangles.size(); lod++) {
                 List<List<VtxParser.VtxTriangle>> lodMeshes = vtx.lodMeshTriangles.get(lod);
                 int lodTriCount = 0;
-                for (int m = 0; m < lodMeshes.size(); m++) {
-                    lodTriCount += lodMeshes.get(m).size();
+                for (List<VtxParser.VtxTriangle> lodMesh : lodMeshes) {
+                    lodTriCount += lodMesh.size();
                 }
                 System.out.println("  LOD" + (lod + 1) + ": " + lodMeshes.size() + " meshes, "
                     + lodTriCount + " triangles");

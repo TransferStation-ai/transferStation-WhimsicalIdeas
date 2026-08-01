@@ -9,14 +9,8 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.MobCategory;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
-import net.minecraftforge.common.ForgeSpawnEggItem;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -150,8 +144,7 @@ public class NpcCommand {
         for (NpcEntity npc : level.getEntitiesOfClass(NpcEntity.class, infinite)) {
             npc.discard();
         }
-        int finalCount = count;
-        source.sendSuccess(() -> Component.translatable("command.transferstation_whimsicalideas.removed", finalCount), true);
+        source.sendSuccess(() -> Component.translatable("command.transferstation_whimsicalideas.removed", count), true);
         return count;
     }
 

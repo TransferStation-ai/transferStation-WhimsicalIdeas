@@ -1,7 +1,5 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -89,20 +87,27 @@ public class ModelLoadDiagnostics {
         public Builder numMeshes(int v) { this.numMeshes = v; return this; }
         public Builder numTextures(int v) { this.numTextures = v; return this; }
         public Builder numCdTextures(int v) { this.numCdTextures = v; return this; }
-        public Builder numVertices(int v) { this.numVertices = v; return this; }
-        public Builder numTriangles(int v) { this.numTriangles = v; return this; }
+        public void numVertices(int v) { this.numVertices = v;
+        }
+        public void numTriangles(int v) { this.numTriangles = v;
+        }
         public Builder numSequences(int v) { this.numSequences = v; return this; }
         public Builder numAnimations(int v) { this.numAnimations = v; return this; }
         public Builder numIncludeModels(int v) { this.numIncludeModels = v; return this; }
         public Builder checksumMdl(int v) { this.checksumMdl = v; return this; }
         public Builder checksumVvd(int v) { this.checksumVvd = v; return this; }
         public Builder checksumVtx(int v) { this.checksumVtx = v; return this; }
-        public Builder parserStrategy(String v) { this.parserStrategy = v; return this; }
-        public Builder loadTimeMs(long v) { this.loadTimeMs = v; return this; }
-        public Builder success(boolean v) { this.success = v; return this; }
-        public Builder bodyPartNames(List<String> v) { this.bodyPartNames = v; return this; }
+        public void parserStrategy(String v) { this.parserStrategy = v;
+        }
+        public void loadTimeMs(long v) { this.loadTimeMs = v;
+        }
+        public void success(boolean v) { this.success = v;
+        }
+        public void bodyPartNames(List<String> v) { this.bodyPartNames = v;
+        }
         public Builder textureNames(List<String> v) { this.textureNames = v; return this; }
-        public Builder warnings(List<String> v) { this.warnings = v; return this; }
+        public void warnings(List<String> v) { this.warnings = v;
+        }
         public ModelLoadDiagnostics build() { return new ModelLoadDiagnostics(this); }
     }
 

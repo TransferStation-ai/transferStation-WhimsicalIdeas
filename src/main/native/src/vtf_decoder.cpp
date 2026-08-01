@@ -5,12 +5,15 @@
 #include <cfloat>
 #include <stdexcept>
 #include <fstream>
+
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
 typedef LONG NTSTATUS;
+#endif
 
 namespace vtf {
 
@@ -250,7 +253,7 @@ VtfDecoder::DecodedTexture VtfDecoder::decodeFile(const std::string& path) {
 }
 
 std::vector<uint8_t> VtfDecoder::decompressZlib(const uint8_t* data, size_t size) {
-    // Use Windows built-in RtlDecompressBuffer (ntdll.dll, no extra dependencies)
+#ifdef _WIN32
     using RtlDecompressBufferFn = NTSTATUS(NTAPI*)(USHORT, PUCHAR, ULONG, PUCHAR, ULONG, PULONG);
     static RtlDecompressBufferFn RtlDecompressBuffer = nullptr;
     if (!RtlDecompressBuffer) {
@@ -260,13 +263,11 @@ std::vector<uint8_t> VtfDecoder::decompressZlib(const uint8_t* data, size_t size
     }
 
     if (!RtlDecompressBuffer) {
-        // Fallback: return raw data (will look wrong but won't crash)
         return std::vector<uint8_t>(data, data + size);
     }
 
-    // Try progressively larger buffers
     const USHORT COMPRESSION_FORMAT_ZLIB = 0x0002;
-    std::vector<uint8_t> result(size * 4); // Start with 4x compressed size
+    std::vector<uint8_t> result(size * 4);
     ULONG finalSize = 0;
 
     NTSTATUS status = RtlDecompressBuffer(COMPRESSION_FORMAT_ZLIB,
@@ -278,7 +279,6 @@ std::vector<uint8_t> VtfDecoder::decompressZlib(const uint8_t* data, size_t size
         return result;
     }
 
-    // If buffer too small, try larger
     result.resize(size * 8);
     status = RtlDecompressBuffer(COMPRESSION_FORMAT_ZLIB,
         result.data(), static_cast<ULONG>(result.size()),
@@ -289,8 +289,11 @@ std::vector<uint8_t> VtfDecoder::decompressZlib(const uint8_t* data, size_t size
         return result;
     }
 
-    // Decompression failed, return raw
     return std::vector<uint8_t>(data, data + size);
+#else
+    (void)data; (void)size;
+    return std::vector<uint8_t>();
+#endif
 }
 
 // BC6H/BC7 format constants for block mode detection

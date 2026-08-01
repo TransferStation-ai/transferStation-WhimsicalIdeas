@@ -5,7 +5,6 @@ import com.google.gson.GsonBuilder;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -22,7 +21,7 @@ public class MaterialCompiler {
     // materialId → 材质路径反向映射（用于引用计数释放）
     private static final Map<Integer, String> materialIdToPath = new ConcurrentHashMap<>();
     
-    private static int nextMaterialId = 1;
+    private static final int nextMaterialId = 1;
     
     /**
      * 编译一个材质并返回 materialId。

@@ -4,10 +4,9 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import transferstation.transferstation_whimsicalideas.client.animation.AnimationData;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import transferstation.transferstation_whimsicalideas.client.animation.AnimationData;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,7 +14,6 @@ import java.nio.file.Path;
 /**
  * Serializes an {@link AnimationEditorScreen.EditableAnimation} to a custom
  * animation JSON that {@code AnimationProcessor} can load, and back.
- *
  * Format (per-bone tracks with keyframes, plus a morph track):
  * {
  *   "name": "...",
@@ -50,11 +48,11 @@ public final class AnimationEditorIO {
             for (var e : anim.boneKeys.entrySet()) {
                 AnimationEditorScreen.BoneKey k = e.getKey();
                 AnimationEditorScreen.EditableAnimation.BoneKeyframe kf = e.getValue();
-                String boneName = "bone" + k.bone; // placeholder; resolved by index at load
+                String boneName = "bone" + k.bone(); // placeholder; resolved by index at load
                 JsonObject jo = new JsonObject();
-                jo.addProperty("frame", k.frame);
-                jo.add("pos", arr(kf.pos));
-                jo.add("rot", arr(kf.rot));
+                jo.addProperty("frame", k.frame());
+                jo.add("pos", arr(kf.pos()));
+                jo.add("rot", arr(kf.rot()));
                 boneMap.computeIfAbsent(boneName, x -> new JsonArray()).add(jo);
             }
             for (var e : boneMap.entrySet()) {
@@ -70,9 +68,9 @@ public final class AnimationEditorIO {
             for (var e : anim.morphKeys.entrySet()) {
                 AnimationEditorScreen.MorphKey k = e.getKey();
                 JsonObject jo = new JsonObject();
-                jo.addProperty("frame", k.frame);
+                jo.addProperty("frame", k.frame());
                 jo.addProperty("weight", e.getValue());
-                morphMap.computeIfAbsent(k.morph, x -> new JsonArray()).add(jo);
+                morphMap.computeIfAbsent(k.morph(), x -> new JsonArray()).add(jo);
             }
             for (var e : morphMap.entrySet()) {
                 JsonObject m = new JsonObject();
@@ -109,8 +107,8 @@ public final class AnimationEditorIO {
                     for (int j = 0; j < keys.size(); j++) {
                         JsonObject k = keys.get(j).getAsJsonObject();
                         int frame = k.get("frame").getAsInt();
-                        float[] pos = arr(k.getAsJsonArray("pos"), 3);
-                        float[] rot = arr(k.getAsJsonArray("rot"), 3);
+                        float[] pos = arr(k.getAsJsonArray("pos"));
+                        float[] rot = arr(k.getAsJsonArray("rot"));
                         if (pos != null && rot != null) {
                             anim.boneKeys.put(new AnimationEditorScreen.BoneKey(boneIdx, frame),
                                     new AnimationEditorScreen.EditableAnimation.BoneKeyframe(pos, rot));
@@ -145,9 +143,9 @@ public final class AnimationEditorIO {
         java.util.Map<Integer, AnimationData.AnimationTrack> tracks = new java.util.LinkedHashMap<>();
         for (var e : anim.boneKeys.entrySet()) {
             AnimationEditorScreen.BoneKey k = e.getKey();
-            AnimationData.AnimationTrack track = tracks.computeIfAbsent(k.bone,
+            AnimationData.AnimationTrack track = tracks.computeIfAbsent(k.bone(),
                     bi -> new AnimationData.AnimationTrack("bone" + bi));
-            track.addKeyFrame(new AnimationData.KeyFrame(k.frame, e.getValue().pos, e.getValue().rot, new float[]{1,1,1}));
+            track.addKeyFrame(new AnimationData.KeyFrame(k.frame(), e.getValue().pos(), e.getValue().rot(), new float[]{1,1,1}));
         }
         data.tracks.addAll(tracks.values());
         return data;
@@ -159,10 +157,10 @@ public final class AnimationEditorIO {
         return a;
     }
 
-    private static float[] arr(JsonArray a, int n) {
-        if (a == null || a.size() < n) return null;
-        float[] out = new float[n];
-        for (int i = 0; i < n; i++) out[i] = a.get(i).getAsFloat();
+    private static float[] arr(JsonArray a) {
+        if (a == null || a.size() < 3) return null;
+        float[] out = new float[3];
+        for (int i = 0; i < 3; i++) out[i] = a.get(i).getAsFloat();
         return out;
     }
 }

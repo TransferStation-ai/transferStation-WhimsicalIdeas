@@ -25,12 +25,15 @@ net/
 
 # Test models (do not pack into jar)
 此文件夹下有个测试用模型(禁止打包进jar里面)/
+# 这东西也不该被提交
+此文件夹下有一些模型需要手动移动到java资源目录
 
 # Common working directory
 run
 #  这东西不该被提交
 .superpowers
-
+# 我觉得这玩意不应该被追踪
+logs
 # BEGIN oh-my-opencode-slim worktrees
 .slim/worktrees/
 .slim/worktrees.json

@@ -21,17 +21,17 @@ public class JavaModelParserStrategy implements ModelParserStrategy {
     }
 
     @Override
-    public MdlDataTypes.ParsedModel parseMdl(byte[] data) throws IOException {
+    public MdlDataTypes.ParsedModel parseMdl(byte[] data) {
         return MdlParser.parse(data);
     }
 
     @Override
-    public VvdParser.ParsedVvd parseVvd(byte[] data) throws IOException {
+    public VvdParser.ParsedVvd parseVvd(byte[] data) {
         return VvdParser.parse(data);
     }
 
     @Override
-    public VtxParser.ParsedVtx parseVtx(byte[] data) throws IOException {
+    public VtxParser.ParsedVtx parseVtx(byte[] data) {
         return VtxParser.parse(data);
     }
 

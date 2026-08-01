@@ -202,6 +202,33 @@ class SourceModelDataTest {
         assertEquals(0, bpi.baseIndex);
     }
 
+    @Test
+    void meshShaderTypeRoundTrip() {
+        SourceModelData.MeshData mesh = new SourceModelData.MeshData.Builder()
+            .shaderType("UnlitGeneric")
+            .build();
+        assertEquals("UnlitGeneric", mesh.shaderType);
+    }
+
+    @Test
+    void meshShaderTypeDefaultsNull() {
+        SourceModelData.MeshData mesh = createTriangleMesh();
+        assertNull(mesh.shaderType);
+    }
+
+    @Test
+    void lodDecimationPreservesShaderType() {
+        SourceModelData model = createSimpleModel();
+        SourceModelData.MeshData mesh = new SourceModelData.MeshData.Builder()
+            .vertices(createFloatArray(64 * 8))
+            .indices(createIntArray(96))
+            .shaderType("UnlitGeneric")
+            .build();
+        model.meshes.add(mesh);
+        SourceModelData lod = model.getMeshesForLod(1);
+        assertEquals("UnlitGeneric", lod.meshes.get(0).shaderType);
+    }
+
     private float[] createFloatArray(int length) {
         float[] arr = new float[length];
         for (int i = 0; i < length; i++) arr[i] = (float) Math.random();

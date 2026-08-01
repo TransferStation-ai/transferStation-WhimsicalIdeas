@@ -1,31 +1,18 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
 import net.minecraft.resources.ResourceLocation;
+
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class SourceModelData {
 
-    public static class BoneInfo {
-        public final String name;
-        public final float[] pos;
-        public final float[] quat;
-        public final float[] rot;
-        public final int parent;
-
-        public BoneInfo(String name, float[] pos, float[] quat, float[] rot, int parent) {
-            this.name = name;
-            this.pos = pos;
-            this.quat = quat;
-            this.rot = rot;
-            this.parent = parent;
-        }
+    public record BoneInfo(String name, float[] pos, float[] quat, float[] rot, int parent) {
 
         public BoneInfo(String name, float[] pos, int parent) {
-            this(name, pos, null, null, parent);
+                this(name, pos, null, null, parent);
+            }
         }
-    }
 
     public static class BodyPartInfo {
         public final String name;
@@ -76,6 +63,7 @@ public class SourceModelData {
         public float alpha;
         public final String surfaceProp;
         public final int detailBlendMode;
+        public String shaderType;
 
         public MeshTextureInfo(ResourceLocation texture, ResourceLocation normalMap,
                                 ResourceLocation ssbumpMap, ResourceLocation envMapMask,
@@ -141,6 +129,7 @@ public class SourceModelData {
         public float alpha;
         public final String surfaceProp;
         public final int detailBlendMode;
+        public final String shaderType;
 
         private MeshData(Builder builder) {
             this.vertices = builder.vertices;
@@ -171,6 +160,7 @@ public class SourceModelData {
             this.alpha = builder.alpha;
             this.surfaceProp = builder.surfaceProp;
             this.detailBlendMode = builder.detailBlendMode;
+            this.shaderType = builder.shaderType;
         }
 
         public int vertexCount() { return vertices.length / 8; }
@@ -213,6 +203,7 @@ public class SourceModelData {
             private float alpha = 1.0f;
             private String surfaceProp;
             private int detailBlendMode;
+            private String shaderType;
 
             public Builder vertices(float[] vertices) { this.vertices = vertices; return this; }
             public Builder indices(int[] indices) { this.indices = indices; return this; }
@@ -242,6 +233,7 @@ public class SourceModelData {
             public Builder alpha(float alpha) { this.alpha = alpha; return this; }
             public Builder surfaceProp(String surfaceProp) { this.surfaceProp = surfaceProp; return this; }
             public Builder detailBlendMode(int detailBlendMode) { this.detailBlendMode = detailBlendMode; return this; }
+            public Builder shaderType(String shaderType) { this.shaderType = shaderType; return this; }
 
             public MeshData build() {
                 return new MeshData(this);

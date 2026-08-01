@@ -260,7 +260,7 @@ public class VvdParser {
 
         int tangentStart = vvd.header.tangentDataStart;
         int numVerts = (vvd.vertices != null) ? vvd.vertices.size() : 0;
-        if (tangentStart <= 0 || numVerts <= 0) return result;
+        if (tangentStart <= 0 || numVerts == 0) return result;
 
         int bufferLimit = data.length;
         int tangentSize = 16;

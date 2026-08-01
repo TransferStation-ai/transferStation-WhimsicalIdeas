@@ -16,7 +16,6 @@ public class SoftBodySimulation {
     private final List<BoneAttachment> attachments = new ArrayList<>();
 
     private Vector3f gravity = new Vector3f(0, -9.81f, 0);
-    private float damping = 0.995f;
     private float windStrength = 0;
     private Vector3f windDirection = new Vector3f(1, 0, 0);
 
@@ -111,8 +110,7 @@ public class SoftBodySimulation {
         float subDt = deltaTime / subSteps;
 
         for (int step = 0; step < subSteps; step++) {
-            for (int i = 0; i < pointMasses.size(); i++) {
-                PointMass pm = pointMasses.get(i);
+            for (PointMass pm : pointMasses) {
                 if (pm.pinned) continue;
 
                 Vector3f acceleration = new Vector3f(gravity);
@@ -136,6 +134,7 @@ public class SoftBodySimulation {
                 }
 
                 Vector3f newVelocity = new Vector3f(pm.velocity).add(new Vector3f(acceleration).mul(subDt));
+                float damping = 0.995f;
                 newVelocity.mul(damping);
 
                 Vector3f newPosition = new Vector3f(pm.position).add(new Vector3f(newVelocity).mul(subDt));
@@ -147,8 +146,8 @@ public class SoftBodySimulation {
                 // Sanitize: a spring can explode and produce NaN/Inf or a runaway
                 // magnitude. Reset to the previous position and zero velocity so a
                 // single bad point mass cannot corrupt the whole simulation.
-                if (!java.lang.Float.isFinite(pm.position.x) || !java.lang.Float.isFinite(pm.position.y)
-                        || !java.lang.Float.isFinite(pm.position.z)
+                if (!Float.isFinite(pm.position.x) || !Float.isFinite(pm.position.y)
+                        || !Float.isFinite(pm.position.z)
                         || pm.position.lengthSquared() > 1e12f) {
                     pm.position.set(pm.prevPosition);
                     pm.velocity.set(0f, 0f, 0f);

@@ -29,7 +29,7 @@ public class StrideDiagnosticTest {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private static final Path TEST_MODEL_DIR = Paths.get(
-        "此文件夹下有个测试用模型(禁止打包进jar里面)",
+        "run", "config", "transferstation_whimsicalideas", "models",
         "0v0NekoWork_Chiffon_GothicTacMaid",
         "models", "pm"
     );

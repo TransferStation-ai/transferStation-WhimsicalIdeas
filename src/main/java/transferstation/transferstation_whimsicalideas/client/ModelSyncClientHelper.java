@@ -2,9 +2,9 @@ package transferstation.transferstation_whimsicalideas.client;
 
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
+import transferstation.transferstation_whimsicalideas.client.model.MdlModelRenderer;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadProgress;
-import transferstation.transferstation_whimsicalideas.client.model.MdlModelRenderer;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -63,8 +63,7 @@ public final class ModelSyncClientHelper {
 
         int prewarmed = 0;
         int deferred = 0;
-        for (int i = 0; i < ordered.size(); i++) {
-            String modelName = ordered.get(i);
+        for (String modelName : ordered) {
             Path packageDir = modelsDir.resolve(modelName);
             if (!Files.exists(packageDir)) continue;
 

@@ -1,20 +1,42 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
-import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 public class VmtParser {
 
+    public enum ShaderType {
+        VERTEX_LIT_GENERIC,
+        UNLIT_GENERIC,
+        EYE_REFRACT,
+        SPRITE,
+        CABLE,
+        SKYBOX,
+        TOOL_TEXTURE,
+        UNKNOWN;
+
+        public static ShaderType fromName(String name) {
+            if (name == null) return UNKNOWN;
+            String lower = name.trim().toLowerCase();
+            if (lower.contains("vertexlitgeneric")) return VERTEX_LIT_GENERIC;
+            if (lower.contains("unlitgeneric")) return UNLIT_GENERIC;
+            if (lower.contains("eyerefract")) return EYE_REFRACT;
+            if (lower.contains("sprite")) return SPRITE;
+            if (lower.contains("cable")) return CABLE;
+            if (lower.contains("tooltexture") || lower.contains("tools/tool")) return TOOL_TEXTURE;
+            if (lower.contains("skybox")) return SKYBOX;
+            return UNKNOWN;
+        }
+    }
+
     public static class VmtMaterial {
         public String shader;
+        public ShaderType shaderType = ShaderType.UNKNOWN;
         public Map<String, String> parameters = new HashMap<>();
 
         public String getBaseTexture() {
@@ -42,15 +64,6 @@ public class VmtParser {
                 return btNorm;
             }
             // No $cdmaterials: if the path looks absolute (starts with a known category), return as-is
-            if (btNorm.startsWith("models/") || btNorm.startsWith("materials/")
-                || btNorm.startsWith("nature/") || btNorm.startsWith("decals/")
-                || btNorm.startsWith("effects/") || btNorm.startsWith("editor/")
-                || btNorm.startsWith("vgui/") || btNorm.startsWith("skybox/")
-                || btNorm.startsWith("overlays/") || btNorm.startsWith("particle/")
-                || btNorm.startsWith("lights/") || btNorm.startsWith("map/")
-                || btNorm.startsWith("console/") || btNorm.startsWith("ui/")) {
-                return btNorm;
-            }
             return btNorm;
         }
 
@@ -175,9 +188,19 @@ public class VmtParser {
             return parseColor("$color");
         }
 
+        public boolean isColorVertex() {
+            String val = parameters.get("$color");
+            return val != null && val.toLowerCase().contains("vertex");
+        }
+
+        public boolean isColor2Vertex() {
+            String val = parameters.get("$color2");
+            return val != null && val.toLowerCase().contains("vertex");
+        }
+
         private boolean parseBool(String key) {
             String val = parameters.get(key);
-            return val != null && parseBoolValue(val);
+            return parseBoolValue(val);
         }
 
         private static boolean parseBoolValue(String val) {
@@ -414,6 +437,43 @@ public class VmtParser {
             return parseTextureTransform("$basetexturetransform");
         }
 
+        public float[] getBaseTextureTransformMatrix() {
+            String val = parameters.get("$basetexturetransform");
+            if (val == null || val.isEmpty()) return null;
+            float[] parsed = parseTextureTransform("$basetexturetransform");
+            if (parsed == null) return null;
+            float scaleX = parsed[0], scaleY = parsed[1];
+            float rotDeg = parsed[2], transX = parsed[3], transY = parsed[4];
+            // Extract optional center pivot (rotation/scale happen around it)
+            float centerX = 0f, centerY = 0f;
+            try {
+                int ci = val.toLowerCase().indexOf("center");
+                if (ci >= 0) {
+                    String after = val.substring(ci + 6).trim();
+                    String[] nums = extractBracketedNumbers(after);
+                    if (nums != null && nums.length >= 2) {
+                        centerX = Float.parseFloat(nums[0]);
+                        centerY = Float.parseFloat(nums[1]);
+                    } else {
+                        String[] parts = after.split("\\s+");
+                        centerX = Float.parseFloat(parts[0]);
+                        centerY = parts.length > 1 ? Float.parseFloat(parts[1]) : 0;
+                    }
+                }
+            } catch (Exception ignored) {
+                // Fall back to origin-center transform
+            }
+            double rad = Math.toRadians(rotDeg);
+            double cos = Math.cos(rad);
+            double sin = Math.sin(rad);
+            return new float[]{
+                (float)(scaleX * cos), (float)(scaleX * sin),
+                (float)(transX + centerX - scaleX * (centerX * cos + centerY * sin)),
+                (float)(-scaleY * sin), (float)(scaleY * cos),
+                (float)(transY + centerY - scaleY * (-centerX * sin + centerY * cos))
+            };
+        }
+
         /**
          * Get bump map texture transform ($bumpmaptransform)
          */
@@ -428,7 +488,6 @@ public class VmtParser {
             // Format: "center [0.5 0.5] scale [1 1] rotate 0 translate [0 0]"
             float[] result = new float[]{1.0f, 1.0f, 0.0f, 0.0f, 0.0f};
             try {
-                int ci = val.toLowerCase().indexOf("center");
                 int si = val.toLowerCase().indexOf("scale");
                 int ri = val.toLowerCase().indexOf("rotate");
                 int ti = val.toLowerCase().indexOf("translate");
@@ -483,40 +542,6 @@ public class VmtParser {
                 return inner.split("\\s+");
             }
             return null;
-        }
-
-        private static int[] extractTopColors(BufferedImage image, int count) {
-            if (image == null || count <= 0) return null;
-            int width = image.getWidth();
-            int height = image.getHeight();
-            if (width <= 0 || height <= 0) return null;
-
-            // 使用HashMap统计颜色频率，O(n)复杂度
-            java.util.Map<Integer, Integer> colorFrequency = new java.util.HashMap<>();
-            int step = Math.max(1, Math.min(width, height) / 32);
-
-            for (int y = 0; y < height; y += step) {
-                for (int x = 0; x < width; x += step) {
-                    int argb = image.getRGB(x, y);
-                    int r = (argb >> 16) & 0xFF;
-                    int g = (argb >> 8) & 0xFF;
-                    int b = argb & 0xFF;
-                    int color = (r << 16) | (g << 8) | b;
-                    colorFrequency.put(color, colorFrequency.getOrDefault(color, 0) + 1);
-                }
-            }
-
-            // 按频率排序，取前count个
-            List<Map.Entry<Integer, Integer>> sorted = colorFrequency.entrySet().stream()
-                .sorted((a, b) -> b.getValue() - a.getValue())
-                .limit(count)
-                .collect(Collectors.toList());
-
-            int[] topColors = new int[Math.min(count, sorted.size())];
-            for (int i = 0; i < topColors.length; i++) {
-                topColors[i] = sorted.get(i).getKey() | 0xFF000000;
-            }
-            return topColors;
         }
 
         private float[] parseColor(String key) {
@@ -577,21 +602,24 @@ public class VmtParser {
          * @return 合并了所有父材质参数的新 VmtMaterial
          */
         public VmtMaterial resolve(VmtMaterial vmt, int maxDepth) {
+            return resolve(vmt, maxDepth, new java.util.HashSet<>());
+        }
+
+        private VmtMaterial resolve(VmtMaterial vmt, int maxDepth, java.util.Set<String> visited) {
             if (maxDepth <= 0) return vmt;
-            
             String include = vmt.parameters.get("%includematerial");
             if (include == null || include.isEmpty()) return vmt;
-            
+            if (!visited.add(include)) {
+                return vmt;
+            }
             VmtMaterial parent = materialLoader.apply(include);
             if (parent == null) return vmt;
-            
-            VmtMaterial resolved = resolve(parent, maxDepth - 1);
-            
-            // 合并：子 VMT 的参数覆盖父 VMT
+            VmtMaterial resolved = resolve(parent, maxDepth - 1, visited);
             VmtMaterial result = new VmtMaterial();
             result.shader = vmt.shader != null ? vmt.shader : resolved.shader;
+            result.shaderType = vmt.shaderType != ShaderType.UNKNOWN ? vmt.shaderType : resolved.shaderType;
             result.parameters.putAll(resolved.parameters);
-            result.parameters.putAll(vmt.parameters); // 子覆盖父
+            result.parameters.putAll(vmt.parameters);
             return result;
         }
     }
@@ -644,6 +672,7 @@ public class VmtParser {
 
                 if (braceDepth == 0 && material.shader == null) {
                     material.shader = unquote(line.trim());
+                    material.shaderType = ShaderType.fromName(material.shader);
                     continue;
                 }
 
@@ -672,7 +701,7 @@ public class VmtParser {
 
         // Handle quoted key-value pairs: "key" "value"
         if (line.startsWith("\"")) {
-            int firstEnd = findClosingQuote(line, 1);
+            int firstEnd = findClosingQuote(line);
             if (firstEnd < 0) return;
 
             String key = line.substring(1, firstEnd).trim();
@@ -682,7 +711,7 @@ public class VmtParser {
 
             String value;
             if (rest.startsWith("\"")) {
-                int secondEnd = findClosingQuote(rest, 1);
+                int secondEnd = findClosingQuote(rest);
                 if (secondEnd < 0) {
                     value = rest.substring(1).trim();
                 } else {
@@ -734,8 +763,8 @@ public class VmtParser {
         }
     }
 
-    private static int findClosingQuote(String s, int start) {
-        int idx = start;
+    private static int findClosingQuote(String s) {
+        int idx = 1;
         while (idx < s.length()) {
             if (s.charAt(idx) == '\\' && idx + 1 < s.length()) {
                 idx += 2;

@@ -2,8 +2,8 @@ package transferstation.transferstation_whimsicalideas.client.model;
 
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
+
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 
@@ -24,7 +24,7 @@ public class AndroidNativeModelParserStrategy implements ModelParserStrategy {
     @Override
     public String getPlatformName() {
         if (detectedAbi == null) detectNativeAvailability();
-        return "Android Native (" + detectedAbi + ", via native-renderer.so)";
+        return "Android Native (" + detectedAbi + ", via native-core.so)";
     }
 
     private static synchronized void detectNativeAvailability() {
@@ -43,12 +43,12 @@ public class AndroidNativeModelParserStrategy implements ModelParserStrategy {
             detectedAbi = osArch.isEmpty() ? "unknown" : osArch;
         }
 
-        if (GmodNativeBridge.isAvailableAndroid()) {
+        if (GmodNativeCoreBridge.tryLoadNative()) {
             nativeAvailable = true;
-            LOGGER.info("[AndroidNativeParser] Native .so available for ABI: {}", detectedAbi);
+            LOGGER.info("[AndroidNativeParser] native-core.so available for ABI: {}", detectedAbi);
         } else {
             nativeAvailable = false;
-            LOGGER.info("[AndroidNativeParser] Native .so not available for ABI: {}, using Java fallback", detectedAbi);
+            LOGGER.info("[AndroidNativeParser] native-core.so not available for ABI: {}, using Java fallback", detectedAbi);
         }
     }
 
@@ -63,7 +63,7 @@ public class AndroidNativeModelParserStrategy implements ModelParserStrategy {
             return fallback.parseMdl(data);
         }
         try {
-            byte[] nativeResult = GmodNativeBridge.nativeParseMdlSerializedAndroid(data);
+            byte[] nativeResult = GmodNativeCoreBridge.nativeParseMdlSerialized(data);
             if (nativeResult != null && nativeResult.length > 4) {
                 MdlDataTypes.ParsedModel model = WindowsNativeModelParserStrategy.deserializeParsedModel(nativeResult);
                 if (model != null) {
@@ -86,7 +86,7 @@ public class AndroidNativeModelParserStrategy implements ModelParserStrategy {
             return fallback.parseVvd(data);
         }
         try {
-            byte[] nativeResult = GmodNativeBridge.nativeParseVvdSerializedAndroid(data);
+            byte[] nativeResult = GmodNativeCoreBridge.nativeParseVvdSerialized(data);
             if (nativeResult != null && nativeResult.length > 4) {
                 VvdParser.ParsedVvd vvd = WindowsNativeModelParserStrategy.deserializeParsedVvd(nativeResult);
                 if (vvd != null) return vvd;
@@ -106,7 +106,7 @@ public class AndroidNativeModelParserStrategy implements ModelParserStrategy {
             return fallback.parseVtx(data);
         }
         try {
-            byte[] nativeResult = GmodNativeBridge.nativeParseVtxSerializedAndroid(data);
+            byte[] nativeResult = GmodNativeCoreBridge.nativeParseVtxSerialized(data);
             if (nativeResult != null && nativeResult.length > 4) {
                 VtxParser.ParsedVtx vtx = WindowsNativeModelParserStrategy.deserializeParsedVtx(nativeResult);
                 if (vtx != null) return vtx;
@@ -122,52 +122,11 @@ public class AndroidNativeModelParserStrategy implements ModelParserStrategy {
 
     @Override
     public SourceModelData loadModel(Path packageDir) throws IOException {
-        if (!isAvailable()) {
-            return fallback.loadModel(packageDir);
-        }
-        try {
-            String modelName = packageDir.getFileName().toString();
-            long handle = GmodNativeBridge.nativeLoadModel(
-                packageDir.getParent().toAbsolutePath().toString(), modelName);
-            if (handle != 0) {
-                try {
-                    int meshCount = GmodNativeBridge.nativeGetMeshCount(handle);
-                    if (meshCount > 0) {
-                        SourceModelData result = new SourceModelData();
-                        result.name = modelName;
-                        for (int i = 0; i < meshCount; i++) {
-                            float[] vertData = GmodNativeBridge.nativeGetMeshVertices(handle, i);
-                            int[] idxData = GmodNativeBridge.nativeGetMeshIndices(handle, i);
-                            if (vertData == null || idxData == null || idxData.length < 3) continue;
-                            result.meshes.add(new SourceModelData.MeshData.Builder()
-                                .vertices(vertData).indices(idxData)
-                                .bodyPartIndex(-1).modelIndex(-1).materialIndex(i)
-                                .build());
-                        }
-                        if (!result.meshes.isEmpty()) {
-                            LOGGER.info("[AndroidNativeParser] Model loaded natively: {} meshes", result.meshes.size());
-                            return result;
-                        }
-                    }
-                } finally {
-                    GmodNativeBridge.nativeFreeModel(handle);
-                }
-            }
-        } catch (UnsatisfiedLinkError e) {
-            LOGGER.info("[AndroidNativeParser] Native model load unavailable ({}), fallback", e.getMessage());
-            nativeAvailable = false;
-        } catch (Exception e) {
-            LOGGER.debug("[AndroidNativeParser] Native model load failed: {}", e.getMessage());
-        }
         return fallback.loadModel(packageDir);
     }
 
     @Override
     public void clearCache() {
-        if (isAvailable()) {
-            try { GmodNativeBridge.nativeClearAllCaches(); }
-            catch (Exception ignored) {}
-        }
         fallback.clearCache();
     }
 }

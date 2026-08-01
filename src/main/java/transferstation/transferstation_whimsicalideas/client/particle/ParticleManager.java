@@ -2,10 +2,10 @@ package transferstation.transferstation_whimsicalideas.client.particle;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.logging.LogUtils;
-
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
+import transferstation.transferstation_whimsicalideas.client.particle.renderer.ParticleRenderer;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,16 +13,12 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
-import transferstation.transferstation_whimsicalideas.client.particle.renderer.ParticleRenderer;
-
 public class ParticleManager {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static ParticleManager INSTANCE;
 
     private final Map<String, PcfParticleSystemDef.SystemDefinition> registry = new ConcurrentHashMap<>();
     private final List<ParticleEmitter> activeEmitters = Collections.synchronizedList(new ArrayList<>());
-    private int maxGlobalParticles = 10000;
-    private int maxParticlesPerEffect = 2000;
 
     // PCF file cache (raw bytes)
     private final Map<String, byte[]> pcfCache = new ConcurrentHashMap<>();
@@ -112,9 +108,11 @@ public class ParticleManager {
                 emitter.tick(dt);
 
                 // Enforce particle caps using local count tracking
+                int maxGlobalParticles = 10000;
                 if (globalCount > maxGlobalParticles) {
                     emitter.active = false;
                 }
+                int maxParticlesPerEffect = 2000;
                 if (emitter.getParticleCount() > maxParticlesPerEffect) {
                     emitter.active = false;
                 }

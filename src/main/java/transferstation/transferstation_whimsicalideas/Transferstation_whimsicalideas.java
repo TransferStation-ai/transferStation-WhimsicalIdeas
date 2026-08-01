@@ -2,9 +2,6 @@ package transferstation.transferstation_whimsicalideas;
 
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
-import net.minecraft.server.packs.resources.PreparableReloadListener;
-import net.minecraft.server.packs.resources.ResourceManager;
-import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraftforge.api.distmarker.Dist;
@@ -24,10 +21,12 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.GmodModelConfig;
-import transferstation.transferstation_whimsicalideas.client.particle.ParticleManager;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.NpcEntity;
 import transferstation.transferstation_whimsicalideas.client.model.NpcModelRegistry;
+import transferstation.transferstation_whimsicalideas.client.particle.ParticleManager;
+import transferstation.transferstation_whimsicalideas.client.renderer.NpcEntityRenderer;
+import transferstation.transferstation_whimsicalideas.client.renderer.NpcRagdollRenderer;
 import transferstation.transferstation_whimsicalideas.client.voice.VoiceCaptureService;
 import transferstation.transferstation_whimsicalideas.client.voice.VoiceConfig;
 import transferstation.transferstation_whimsicalideas.client.voice.VoskSttEngine;
@@ -36,8 +35,6 @@ import transferstation.transferstation_whimsicalideas.event.InjuryEventHandler;
 
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 
 @Mod(Transferstation_whimsicalideas.MODID)
 public class Transferstation_whimsicalideas {
@@ -108,7 +105,7 @@ public class Transferstation_whimsicalideas {
     @SuppressWarnings("unchecked")
     private void onEntityAttributeCreation(EntityAttributeCreationEvent event) {
         for (var entry : NpcModelRegistry.getRegisteredNpcs().entrySet()) {
-            event.put((EntityType<? extends LivingEntity>) (EntityType<?>) entry.getValue().get(), NpcEntity.createAttributes().build());
+            event.put((EntityType<? extends LivingEntity>) entry.getValue().get(), NpcEntity.createAttributes().build());
         }
     }
 
@@ -169,20 +166,13 @@ public class Transferstation_whimsicalideas {
          */
         @SubscribeEvent
         public static void onRegisterReloadListeners(RegisterClientReloadListenersEvent event) {
-            event.registerReloadListener(new PreparableReloadListener() {
-                @Override
-                public CompletableFuture<Void> reload(PreparationBarrier stage, ResourceManager resourceManager,
-                                                       ProfilerFiller preparationsProfiler, ProfilerFiller reloadProfiler,
-                                                       Executor backgroundExecutor, Executor gameExecutor) {
-                    return stage.wait(null).thenRunAsync(() -> {
-                        // 用缓存的 NativeImage 副本重建所有 DynamicTexture。
-                        // reRegisterAllTextures() 内部会递增世代计数器，
-                        // 使所有未在本批重建的条目在下一帧渲染时自动按需重注册，
-                        // 避免 DynamicTexture 的 NativeImage 为 null 导致 NPE。
-                        ModelLoadManager.getColorResolver().reRegisterAllTextures();
-                    }, gameExecutor);
-                }
-            });
+            event.registerReloadListener((stage, resourceManager, preparationsProfiler, reloadProfiler, backgroundExecutor, gameExecutor) -> stage.wait(null).thenRunAsync(() -> {
+                // 用缓存的 NativeImage 副本重建所有 DynamicTexture。
+                // reRegisterAllTextures() 内部会递增世代计数器，
+                // 使所有未在本批重建的条目在下一帧渲染时自动按需重注册，
+                // 避免 DynamicTexture 的 NativeImage 为 null 导致 NPE。
+                ModelLoadManager.getColorResolver().reRegisterAllTextures();
+            }, gameExecutor));
             LOGGER.debug("[TransferStation] Registered resource reload listener for texture re-registration");
         }
 
@@ -191,14 +181,13 @@ public class Transferstation_whimsicalideas {
         public static void onRegisterRenderers(net.minecraftforge.client.event.EntityRenderersEvent.RegisterRenderers event) {
             for (var entry : NpcModelRegistry.getRegisteredNpcs().entrySet()) {
                 net.minecraft.world.entity.EntityType type = entry.getValue().get();
-                event.registerEntityRenderer(type, (net.minecraft.client.renderer.entity.EntityRendererProvider.Context ctx) ->
-                    new transferstation.transferstation_whimsicalideas.client.renderer.NpcEntityRenderer(ctx));
+                event.registerEntityRenderer(type, NpcEntityRenderer::new);
             }
 
             if (NpcModelRegistry.getNpcRagdollType() != null) {
                 event.registerEntityRenderer(
-                    (net.minecraft.world.entity.EntityType) NpcModelRegistry.getNpcRagdollType(),
-                    ctx -> new transferstation.transferstation_whimsicalideas.client.renderer.NpcRagdollRenderer(ctx)
+                        NpcModelRegistry.getNpcRagdollType(),
+                        NpcRagdollRenderer::new
                 );
             }
         }

@@ -215,11 +215,14 @@ public class MeshDecimator {
 
         Set<Integer> usedVerts = new HashSet<>();
         List<Integer> activeFaces = new ArrayList<>();
-        for (int i = 0; i < faces.size(); i++) {
-            Face f = faces.get(i);
+        for (Face f : faces) {
             if (f.deleted) continue;
-            activeFaces.add(f.v0); activeFaces.add(f.v1); activeFaces.add(f.v2);
-            usedVerts.add(f.v0); usedVerts.add(f.v1); usedVerts.add(f.v2);
+            activeFaces.add(f.v0);
+            activeFaces.add(f.v1);
+            activeFaces.add(f.v2);
+            usedVerts.add(f.v0);
+            usedVerts.add(f.v1);
+            usedVerts.add(f.v2);
         }
 
         if (activeFaces.size() < 3) {
@@ -240,6 +243,7 @@ public class MeshDecimator {
                 .phongBoost(original.phongBoost).vtfKey(original.vtfKey)
                 .colorTint(original.colorTint).alpha(original.alpha)
                 .surfaceProp(original.surfaceProp).detailBlendMode(original.detailBlendMode)
+                .shaderType(original.shaderType)
                 .build();
         }
 
@@ -286,6 +290,7 @@ public class MeshDecimator {
             .vtfKey(original.vtfKey).colorTint(original.colorTint)
             .alpha(original.alpha).surfaceProp(original.surfaceProp)
             .detailBlendMode(original.detailBlendMode)
+            .shaderType(original.shaderType)
             .build();
     }
 
@@ -304,7 +309,8 @@ public class MeshDecimator {
 
         int sharedFaces = 0;
         for (int fi : v0.faces) {
-            if (fi >= v0.faces.size()) continue;
+            if (fi >= v0.faces.size()) {
+            }
         }
         Set<Integer> v0FaceSet = new HashSet<>(v0.faces);
         for (int fi : v1.faces) {

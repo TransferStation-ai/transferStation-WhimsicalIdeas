@@ -16,7 +16,6 @@ import java.util.Map;
 /**
  * Loads built-in Valve content (particle effects) from the mod jar.
  * NPC entity registration is handled in the mod constructor via
- * {@link Transferstation_whimsicalideas#registerBuiltinValveNpcs()}
  * to ensure DeferredRegister is not frozen.
  */
 @Mod.EventBusSubscriber(modid = Transferstation_whimsicalideas.MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)

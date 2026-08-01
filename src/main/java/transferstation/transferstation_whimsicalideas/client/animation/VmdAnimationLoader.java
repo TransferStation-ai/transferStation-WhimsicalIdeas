@@ -1,6 +1,9 @@
 // VmdAnimationLoader.java - Loads animation data from standard VMD format
 package transferstation.transferstation_whimsicalideas.client.animation;
 
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -8,9 +11,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-
-import com.mojang.logging.LogUtils;
-import org.slf4j.Logger;
 
 public class VmdAnimationLoader {
 
@@ -29,7 +29,7 @@ public class VmdAnimationLoader {
 
     /**
      * Parse a standard VMD (Vocaloid Motion Data) file.
-     *
+     * <p>
      * Standard VMD layout:
      *   Offset 0: 30-byte header ("Vocaloid Motion Data 0002" + padding)
      *   Offset 30: 20-byte model name (Shift-JIS, null-padded)
@@ -167,7 +167,7 @@ public class VmdAnimationLoader {
             generateRotTrack(trackList, "Bip01 Spine", 0, 0.03, speed, 0, frameCount);
         } else if (lower.equals("happy") || lower.equals("excited")) {
             double bounce = lower.equals("excited") ? 4.0 : 2.5;
-            generateTransTrack(trackList, "Bip01", 1, bounce, 4.0, 0, frameCount);
+            generateTransTrack(trackList, bounce, 4.0, frameCount);
             generateRotTrack(trackList, "Bip01 Head", 2, 0.1, 4.0, Math.PI, frameCount);
         } else if (lower.equals("wave")) {
             generateFixedRotTrack(trackList, "Bip01 R UpperArm", 0, -1.0, frameCount);
@@ -185,11 +185,11 @@ public class VmdAnimationLoader {
             generateRotTrack(trackList, "Bip01 R UpperArm", 2, 0.6, 3.0, Math.PI, frameCount);
             generateRotTrack(trackList, "Bip01 Spine", 1, 0.15, 3.0, 0, frameCount);
         } else if (lower.equals("sneak")) {
-            generateTransTrack(trackList, "Bip01", 1, -3.0, 1.0, 0, frameCount);
+            generateTransTrack(trackList, -3.0, 1.0, frameCount);
             generateRotTrack(trackList, "Bip01 L Thigh", 0, 0.2, 3.0, 0, frameCount);
             generateRotTrack(trackList, "Bip01 R Thigh", 0, 0.2, 3.0, Math.PI, frameCount);
         } else if (lower.equals("crawl")) {
-            generateTransTrack(trackList, "Bip01", 1, -5.0, 1.0, 0, frameCount);
+            generateTransTrack(trackList, -5.0, 1.0, frameCount);
             generateRotTrack(trackList, "Bip01 Spine", 0, 0.5, 1.0, 0, frameCount);
             generateRotTrack(trackList, "Bip01 L UpperArm", 0, 0.4, 3.0, 0, frameCount);
             generateRotTrack(trackList, "Bip01 R UpperArm", 0, 0.4, 3.0, Math.PI, frameCount);
@@ -213,7 +213,7 @@ public class VmdAnimationLoader {
             generateRotTrack(trackList, "Bip01 Pelvis", 1, 0.2, 4.0, 0, frameCount);
             generateRotTrack(trackList, "Bip01 L UpperArm", 0, 0.4, 4.0, 0, frameCount);
             generateRotTrack(trackList, "Bip01 R UpperArm", 0, 0.4, 4.0, Math.PI, frameCount);
-            generateTransTrack(trackList, "Bip01", 1, 1.5, 4.0, 0, frameCount);
+            generateTransTrack(trackList, 1.5, 4.0, frameCount);
         } else if (lower.equals("nod")) {
             generateRotTrack(trackList, "Bip01 Head", 0, 0.3, 3.0, 0, frameCount);
         } else if (lower.equals("shake")) {
@@ -221,11 +221,11 @@ public class VmdAnimationLoader {
         } else if (lower.contains("climb")) {
             generateRotTrack(trackList, "Bip01 L UpperArm", 0, 0.5, 4.0, 0, frameCount);
             generateRotTrack(trackList, "Bip01 R UpperArm", 0, 0.5, 4.0, Math.PI, frameCount);
-            generateTransTrack(trackList, "Bip01", 1, 0.8, 4.0, 0, frameCount);
+            generateTransTrack(trackList, 0.8, 4.0, frameCount);
         } else if (lower.equals("ride") || lower.equals("onhorse")) {
             generateFixedRotTrack(trackList, "Bip01 L Thigh", 0, 0.5, frameCount);
             generateFixedRotTrack(trackList, "Bip01 R Thigh", 0, 0.5, frameCount);
-            generateTransTrack(trackList, "Bip01", 1, 1.0, 3.0, 0, frameCount);
+            generateTransTrack(trackList, 1.0, 3.0, frameCount);
         } else if (lower.contains("fall") || lower.equals("elytrafly")) {
             if (lower.equals("elytrafly")) {
                 generateFixedRotTrack(trackList, "Bip01 L UpperArm", 2, 0.8, frameCount);
@@ -262,15 +262,15 @@ public class VmdAnimationLoader {
     }
 
     /** Add a track with sinusoidal translation on a single axis. */
-    private static void generateTransTrack(List<AnimationData.AnimationTrack> trackList, String boneName,
-                                            int axis, double amplitude, double frequency, double phase, int frameCount) {
+    private static void generateTransTrack(List<AnimationData.AnimationTrack> trackList,
+                                           double amplitude, double frequency, int frameCount) {
         if (frameCount <= 0) return;
-        AnimationData.AnimationTrack track = new AnimationData.AnimationTrack(boneName);
+        AnimationData.AnimationTrack track = new AnimationData.AnimationTrack("Bip01");
         for (int f = 0; f < frameCount; f++) {
-            double t = (f / (double) frameCount) * frequency * 2.0 * Math.PI + phase;
+            double t = (f / (double) frameCount) * frequency * 2.0 * Math.PI + (double) 0;
             float value = (float)(amplitude * Math.sin(t));
             float[] trans = new float[]{0, 0, 0};
-            trans[axis] = value;
+            trans[1] = value;
             track.addKeyFrame(new AnimationData.KeyFrame(f, trans, IDENTITY_QUATERNION, new float[]{1, 1, 1}));
         }
         trackList.add(track);

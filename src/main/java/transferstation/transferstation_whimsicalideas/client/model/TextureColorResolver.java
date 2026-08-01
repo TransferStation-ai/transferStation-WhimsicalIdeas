@@ -4,8 +4,8 @@ import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.ColorUtils;
 
@@ -20,18 +20,18 @@ public class TextureColorResolver {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     /**
-     * 世代计数器，每次资源重载后递增�?     * 用于替代 boolean texturesNeedRefresh，避免竞态条件�?     * TextureEntry 记录自己最后注册的世代，ensureTextureRegistered 比较
-     * 世代而不清除 flag，确保所有条目都能在下一帧正确重新注册�?     */
+     * 世代计数器，每次资源重载后递增    * 用于替代 boolean texturesNeedRefresh，避免竞态条件     * TextureEntry 记录自己最后注册的世代，ensureTextureRegistered 比较
+     * 世代而不清除 flag，确保所有条目都能在下一帧正确重新注册     */
     private static volatile long textureGeneration = 0;
 
     /**
-     * 递增全局纹理世代计数器�?     * �?ModelLoadManager.markTexturesStale() 在资源重载时调用�?     */
+     * 递增全局纹理世代计数器     ModelLoadManager.markTexturesStale() 在资源重载时调用    */
     public static void incrementGeneration() {
         textureGeneration++;
     }
 
     /**
-     * 返回当前纹理世代号�?     */
+     * 返回当前纹理世代号     */
     public static long getTextureGeneration() {
         return textureGeneration;
     }
@@ -50,11 +50,11 @@ public class TextureColorResolver {
         private volatile boolean alphaTest;
         private volatile boolean noCull;
         /**
-         * 此条目持有的、已注册�?TextureManager �?DynamicTexture 实例�?         * 整个生命周期内保持同一个实例，避免重新注册时关闭旧实例导致
-         * RenderSystem 上传队列中残留对已关�?NativeImage �?null)纹理的引用，
-         * 从而在 flipFrame �?replayQueue 中触�?NullPointerException�?         */
+         * 此条目持有的、已注册TextureManager DynamicTexture 实例         * 整个生命周期内保持同一个实例，避免重新注册时关闭旧实例导致
+         * RenderSystem 上传队列中残留对已关NativeImage null)纹理的引用，
+         * 从而在 flipFrame replayQueue 中触NullPointerException         */
         private volatile DynamicTexture dynamicTexture;
-        /** 此条目的纹理最后被注册时所在世代。与 TextureColorResolver.textureGeneration 比较�?*/
+        /** 此条目的纹理最后被注册时所在世代。与 TextureColorResolver.textureGeneration 比较*/
         private volatile long lastRegisteredGeneration = -1;
 
         public TextureEntry(String path) {
@@ -88,7 +88,7 @@ public class TextureColorResolver {
         public boolean isNoCull() { return noCull; }
         public void setNoCull(boolean v) { this.noCull = v; }
 
-        public boolean isUsable() { return state.isUsable(); }
+        public boolean isUsable() { return !state.isUsable(); }
 
         public long getLastRegisteredGeneration() { return lastRegisteredGeneration; }
         public void setLastRegisteredGeneration(long gen) { this.lastRegisteredGeneration = gen; }
@@ -218,7 +218,7 @@ public class TextureColorResolver {
 
     public Optional<ResourceLocation> safeGetTextureLocation(String texturePath) {
         TextureEntry entry = entries.get(texturePath);
-        if (entry == null || !entry.isUsable()) {
+        if (entry == null || entry.isUsable()) {
             return Optional.empty();
         }
         return Optional.ofNullable(entry.getResourceLocation());
@@ -226,7 +226,7 @@ public class TextureColorResolver {
 
     public int getColorOrDefault(String texturePath, int defaultColor) {
         TextureEntry entry = entries.get(texturePath);
-        if (entry == null || !entry.isUsable()) {
+        if (entry == null || entry.isUsable()) {
             return defaultColor;
         }
         int color = entry.getCachedColor();
@@ -235,7 +235,7 @@ public class TextureColorResolver {
 
     public TextureRenderProps getRenderProps(String texturePath) {
         TextureEntry entry = entries.get(texturePath);
-        if (entry == null || !entry.isUsable()) {
+        if (entry == null || entry.isUsable()) {
             return TextureRenderProps.DEFAULT;
         }
         return new TextureRenderProps(
@@ -274,9 +274,9 @@ public class TextureColorResolver {
      * TextureManager. MUST run on the render thread (or be wrapped in mc.execute)
      * so that the NativeImage is created, used, and registered atomically and is
      * never closed by another thread before registration completes.
-     *
-     * 关键修复：每�?loc 在整个生命周期内只持有一�?DynamicTexture 实例�?     * 重新构建时复用已有实例（setImage + upload），而不是新建并重新注册�?     * 否则 TextureManager.register 会关闭旧实例，而旧实例�?upload 任务仍留�?     * RenderSystem 的上传队列中，在 flipFrame �?replayQueue 中因 NativeImage
-     * �?null 而抛�?NullPointerException（crash-2026-07-19）�?     */
+     * <p>
+     * 关键修复：每loc 在整个生命周期内只持有一DynamicTexture 实例     * 重新构建时复用已有实例（setImage + upload），而不是新建并重新注册     * 否则 TextureManager.register 会关闭旧实例，而旧实例upload 任务仍留     * RenderSystem 的上传队列中，在 flipFrame replayQueue 中因 NativeImage
+     * null 而抛NullPointerException（crash-2026-07-19）     */
     private void buildAndRegister(String regKey, ResourceLocation loc, BufferedImage image) {
         try {
             NativeImage nativeImage = bufferedImageToNativeImage(image);
@@ -284,7 +284,7 @@ public class TextureColorResolver {
             TextureEntry entry = entries.get(regKey);
             DynamicTexture dynamicTex = (entry != null) ? entry.getDynamicTexture() : null;
             // If the existing instance was closed by a resource reload (NativeImage
-            // released), its getPixels() returns null �?create a fresh instance.
+            // released), its getPixels() returns null create a fresh instance.
             if (dynamicTex == null || dynamicTex.getPixels() == null) {
                 dynamicTex = new DynamicTexture(nativeImage);
                 mc.getTextureManager().register(loc, dynamicTex);
@@ -314,17 +314,12 @@ public class TextureColorResolver {
     }
 
     /**
-     * 将一张 NativeImage 应用到指定 loc 的 DynamicTexture 上。
-     * 复用已有的 DynamicTexture 实例（setPixels + upload），若实例不存在或已被
-     * 资源重载关闭（getPixels 为 null）则新建并注册一次。
-     * 必须在渲染线程调用。返回最终使用的 DynamicTexture（可能为 null 表示失败）。
-     *
-     * 这是修复 flipFrame NPE 的核心：永不通过重新注册来关闭仍可能残留上传任务的旧实例。
+     * 检查是否已经有纹理注册如果有则直接复用而不是重复加载那样会造成内存浪费(¬_¬ )
      */
-    public DynamicTexture applyNativeImage(ResourceLocation loc, NativeImage nativeImage) {
-        if (loc == null || nativeImage == null) return null;
+    public void applyNativeImage(ResourceLocation loc, NativeImage nativeImage) {
+        if (loc == null || nativeImage == null) return;
         String path = loc.getPath();
-        if (!path.startsWith("textures/generated/")) return null;
+        if (!path.startsWith("textures/generated/")) return;
         String regKey = path.substring("textures/generated/".length());
         Minecraft mc = Minecraft.getInstance();
         TextureEntry entry = entries.get(regKey);
@@ -338,24 +333,24 @@ public class TextureColorResolver {
             dynamicTex.upload();
         }
         textureRegistry.put(regKey, loc);
-        return dynamicTex;
     }
 
     /**
-     * 确保纹理已注册到 TextureManager�?     * 使用世代计数器比较：如果该条目已在当前世代注册过，则跳过�?     * 这样每帧仅做一�?long 比较，极大减少无意义�?DynamicTexture 重建�?     */
-    public boolean ensureTextureRegistered(ResourceLocation loc) {
-        if (loc == null) return false;
+     * 确保纹理已注册到 TextureManager     * 使用世代计数器比较：如果该条目已在当前世代注册过，则跳过     * 这样每帧仅做一long 比较，极大减少无意义DynamicTexture 重建
+     */
+    public void ensureTextureRegistered(ResourceLocation loc) {
+        if (loc == null) return;
         String path = loc.getPath();
-        if (!path.startsWith("textures/generated/")) return true;
+        if (!path.startsWith("textures/generated/")) return;
         String regKey = path.substring("textures/generated/".length());
         TextureEntry entry = entries.get(regKey);
-        if (entry == null) return false;
+        if (entry == null) return;
         long currentGen = textureGeneration;
-        if (entry.getLastRegisteredGeneration() == currentGen) return true;
+        if (entry.getLastRegisteredGeneration() == currentGen) return;
         // Only re-register entries that actually have a usable texture.
         if (entry.getState() != ColorUtils.TextureParseState.COMPLETE
                 && entry.getState() != ColorUtils.TextureParseState.PARTIAL) {
-            return false;
+            return;
         }
         // Do NOT read the cached NativeImage here and pass it across the thread
         // boundary (it could be closed before the deferred register runs). Let
@@ -364,7 +359,6 @@ public class TextureColorResolver {
         // reRegisterOnRenderThread) so a render between this call and the actual
         // re-register cannot sample an unregistered/closed texture.
         reRegisterTexture(regKey, loc);
-        return true;
     }
 
     private void reRegisterTexture(String regKey, ResourceLocation loc) {
@@ -384,11 +378,10 @@ public class TextureColorResolver {
      * Re-read the cached NativeImage and rebuild/register the DynamicTexture.
      * MUST run on the render thread. Bails early if the cached image became null
      * (e.g. cleared/trimmed before this deferred task ran).
-     *
      * 关键修复：复用已有的 DynamicTexture 实例（setImage + upload），
-     * 而不是新建并重新注册。重新注册会关闭旧实例，而旧实例�?upload 任务
-     * 仍留�?RenderSystem 上传队列中，�?flipFrame �?replayQueue 中因
-     * NativeImage �?null 而抛�?NullPointerException�?     */
+     * 而不是新建并重新注册。重新注册会关闭旧实例，而旧实例upload 任务
+     * 仍留RenderSystem 上传队列中，flipFrame replayQueue 中因
+     * NativeImage null 而抛NullPointerException     */
     private void reRegisterOnRenderThread(String regKey, ResourceLocation loc) {
         try {
             TextureEntry entry = entries.get(regKey);
@@ -421,8 +414,8 @@ public class TextureColorResolver {
     }
 
     /**
-     * 重新注册所有已生成的纹理到 TextureManager�?     * 先递增世代计数器（使所有现有条目标记为过期），
-     * 再用缓存�?NativeImage 副本重建 DynamicTexture�?     * 每次成功注册后更新条目的世代，使 ensureTextureRegistered 跳过�?     */
+     * 重新注册所有已生成的纹理到 TextureManager     * 先递增世代计数器（使所有现有条目标记为过期），
+     * 再用缓存NativeImage 副本重建 DynamicTexture     * 每次成功注册后更新条目的世代，使 ensureTextureRegistered 跳过     */
     public void reRegisterAllTextures() {
         long newGen = ++textureGeneration;
         int reRegistered = 0;
@@ -541,7 +534,7 @@ public class TextureColorResolver {
         LOGGER.info("[TextureColorResolver] Cleared all entries and texture registry");
     }
 
-    public int trimStale() {
+    public void trimStale() {
         int removed = 0;
         Iterator<Map.Entry<String, TextureEntry>> iter = entries.entrySet().iterator();
         Minecraft mc = Minecraft.getInstance();
@@ -586,7 +579,6 @@ public class TextureColorResolver {
         if (removed > 0) {
             LOGGER.debug("[TextureColorResolver] Trimmed {} stale entries", removed);
         }
-        return removed;
     }
 
     public ParseStatistics getStatistics() {
@@ -626,11 +618,10 @@ public class TextureColorResolver {
                 int g = (argb >> 8) & 0xFF;
                 int b = argb & 0xFF;
 
-                long weight = a;
-                totalR += r * weight;
-                totalG += g * weight;
-                totalB += b * weight;
-                totalWeight += weight;
+                totalR += r * (long) a;
+                totalG += g * (long) a;
+                totalB += b * (long) a;
+                totalWeight += a;
             }
         }
 
@@ -662,50 +653,34 @@ public class TextureColorResolver {
         return nativeImage;
     }
 
-    public static class TextureRenderProps {
-        public static final TextureRenderProps DEFAULT = new TextureRenderProps(false, false, false);
-        public final boolean translucent;
-        public final boolean alphaTest;
-        public final boolean noCull;
-
-        public TextureRenderProps(boolean translucent, boolean alphaTest, boolean noCull) {
-            this.translucent = translucent;
-            this.alphaTest = alphaTest;
-            this.noCull = noCull;
-        }
+    public record TextureRenderProps(boolean translucent, boolean alphaTest, boolean noCull) {
+            public static final TextureRenderProps DEFAULT = new TextureRenderProps(false, false, false);
     }
 
-    public static class ParseStatistics {
-        public final int unparsed;
-        public final int partial;
-        public final int complete;
-        public final int failed;
-        public final int registeredTextures;
+    public record ParseStatistics(int unparsed, int partial, int complete, int failed, int registeredTextures) {
 
-        public ParseStatistics(int unparsed, int partial, int complete, int failed, int registeredTextures) {
-            this.unparsed = unparsed;
-            this.partial = partial;
-            this.complete = complete;
-            this.failed = failed;
-            this.registeredTextures = registeredTextures;
+        public int totalEntries() {
+            return unparsed + partial + complete + failed;
         }
 
-        public int totalEntries() { return unparsed + partial + complete + failed; }
-        public boolean hasFailures() { return failed > 0; }
+        public boolean hasFailures() {
+            return failed > 0;
+        }
+
         public float successRate() {
-            int total = totalEntries();
-            return total > 0 ? (float) complete / total : 0f;
-        }
+                int total = totalEntries();
+                return total > 0 ? (float) complete / total : 0f;
+            }
 
-        @Override
-        public String toString() {
-            return String.format("ParseStats{unparsed=%d, partial=%d, complete=%d, failed=%d, registered=%d, rate=%.1f%%}",
-                unparsed, partial, complete, failed, registeredTextures, successRate() * 100f);
+            @Override
+            public @NotNull String toString() {
+                return String.format("ParseStats{unparsed=%d, partial=%d, complete=%d, failed=%d, registered=%d, rate=%.1f%%}",
+                        unparsed, partial, complete, failed, registeredTextures, successRate() * 100f);
+            }
         }
-    }
 
     public static class TextureParseStateTracker {
-        private int totalToResolve;
+        private final int totalToResolve;
         private int resolved;
         private int failed;
         private int skipped;

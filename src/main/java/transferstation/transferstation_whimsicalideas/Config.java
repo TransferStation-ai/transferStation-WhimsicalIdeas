@@ -68,9 +68,9 @@ public class Config {
     @SubscribeEvent
     static void onLoad(final ModConfigEvent event) {
         if (ENTITY_MESSAGES.get() == null || ENTITY_MESSAGES.get().isEmpty()) {
-            ENTITY_MESSAGES_CACHE = Collections.unmodifiableList(new ArrayList<>(DEFAULT_MESSAGES));
+            ENTITY_MESSAGES_CACHE = List.copyOf(DEFAULT_MESSAGES);
         } else {
-            ENTITY_MESSAGES_CACHE = Collections.unmodifiableList(new ArrayList<>(ENTITY_MESSAGES.get()));
+            ENTITY_MESSAGES_CACHE = List.copyOf(ENTITY_MESSAGES.get());
         }
 
         int interval = ENTITY_MESSAGE_INTERVAL.get();
