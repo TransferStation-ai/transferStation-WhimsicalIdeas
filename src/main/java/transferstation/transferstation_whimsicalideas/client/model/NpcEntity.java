@@ -1,44 +1,50 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
+import com.mojang.logging.LogUtils;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.*;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
-import net.minecraft.world.entity.ai.goal.target.OwnerHurtByTargetGoal;
-import net.minecraft.world.entity.ai.goal.target.OwnerHurtTargetGoal;
-import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-
-import net.minecraft.client.Minecraft;
-
+import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.NpcChatScreen;
-
-import javax.annotation.Nullable;
-import java.util.UUID;
-
+import transferstation.transferstation_whimsicalideas.client.animation.AnimationLayers;
+import transferstation.transferstation_whimsicalideas.client.animation.AnimationProcessor;
 import transferstation.transferstation_whimsicalideas.common.BodyHitboxSystem;
 import transferstation.transferstation_whimsicalideas.common.InjurySystem;
 import transferstation.transferstation_whimsicalideas.npc.ai.AINpcAgent;
 
+import java.util.List;
+import java.util.Map;
+
 public class NpcEntity extends PathfinderMob {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
+    /** AI 单次骨骼指令上限 */
+    private static final int MAX_AI_POSES = 8;
+
     // AI代理成员，AI型NPC自动挂载
+    //这样就能给各种奇奇怪怪的生物上ai比如猎 头 蟹
     public final AINpcAgent aiAgent = new AINpcAgent(this);
 
     private final String modelName;
@@ -54,8 +60,9 @@ public class NpcEntity extends PathfinderMob {
     }
 
     @Override
-    public void remove(RemovalReason reason) {
+    public void remove(@NotNull RemovalReason reason) {
         NpcBoneController.clearEntity(this.getStringUUID());
+        AnimationLayers.clearEntity(this);
         super.remove(reason);
     }
 
@@ -92,7 +99,7 @@ public class NpcEntity extends PathfinderMob {
     }
 
     @Override
-    public void addAdditionalSaveData(CompoundTag tag) {
+    public void addAdditionalSaveData(@NotNull CompoundTag tag) {
         super.addAdditionalSaveData(tag);
         tag.putString("ModelName", modelName);
         tag.putString("CurrentAnimation", currentAnimation);
@@ -103,7 +110,7 @@ public class NpcEntity extends PathfinderMob {
     }
 
     @Override
-    public void readAdditionalSaveData(CompoundTag tag) {
+    public void readAdditionalSaveData(@NotNull CompoundTag tag) {
         super.readAdditionalSaveData(tag);
         if (tag.contains("CurrentAnimation")) {
             currentAnimation = tag.getString("CurrentAnimation");
@@ -117,7 +124,7 @@ public class NpcEntity extends PathfinderMob {
     }
 
     @Override
-    protected InteractionResult mobInteract(Player player, InteractionHand hand) {
+    protected @NotNull InteractionResult mobInteract(@NotNull Player player, @NotNull InteractionHand hand) {
         if (npcData == null) npcData = new NpcData();
 
         ItemStack itemStack = player.getItemInHand(hand);
@@ -192,8 +199,11 @@ public class NpcEntity extends PathfinderMob {
 
         if (itemStack.is(Items.WRITABLE_BOOK)) {
             if (!level().isClientSide()) {
-                String message = itemStack.hasTag() && itemStack.getTag().contains("pages") ?
-                        itemStack.getTag().getList("pages", 8).getString(0) : "I have something to say...";
+                String message = null;
+                if (itemStack.getTag() != null) {
+                    message = itemStack.hasTag() && itemStack.getTag().contains("pages") ?
+                            itemStack.getTag().getList("pages", 8).getString(0) : "I have something to say...";
+                }
 
                 NpcChatHandler.sendMessage(this, player, message).thenAccept(reply -> {
                     if (player instanceof ServerPlayer serverPlayer) {
@@ -214,7 +224,7 @@ public class NpcEntity extends PathfinderMob {
     }
 
     @Override
-    public void die(DamageSource source) {
+    public void die(@NotNull DamageSource source) {
         super.die(source);
         if (npcData != null) {
             npcData.addDeath();
@@ -229,19 +239,17 @@ public class NpcEntity extends PathfinderMob {
             float dvy = 0.5f;
             float dvz = (float)(Math.cos(Math.toRadians(deathYaw)) * 0.5);
 
-            if (source != null) {
-                var entity = source.getEntity();
-                if (entity != null) {
-                    float angle = (float) Math.atan2(
-                            entity.getX() - this.getX(),
-                            entity.getZ() - this.getZ());
-                    dvx = (float) (-Math.sin(angle) * 1.2);
-                    dvz = (float) (Math.cos(angle) * 1.2);
-                    dvy = 0.6f;
-                }
+            var entity = source.getEntity();
+            if (entity != null) {
+                float angle = (float) Math.atan2(
+                        entity.getX() - this.getX(),
+                        entity.getZ() - this.getZ());
+                dvx = (float) (-Math.sin(angle) * 1.2);
+                dvz = (float) (Math.cos(angle) * 1.2);
+                dvy = 0.6f;
             }
 
-            EntityType<NpcRagdoll> ragdollType = (EntityType<NpcRagdoll>) (EntityType<?>) NpcModelRegistry.getNpcRagdollType();
+            EntityType<NpcRagdoll> ragdollType = NpcModelRegistry.getNpcRagdollType();
             if (ragdollType != null) {
                 NpcRagdoll ragdoll = new NpcRagdoll(
                         ragdollType, level(), modelName,
@@ -294,7 +302,7 @@ public class NpcEntity extends PathfinderMob {
                 var nearbyPlayers = level().getEntitiesOfClass(Player.class, getBoundingBox().inflate(16));
                 if (!nearbyPlayers.isEmpty()) {
                     java.util.List<String> messages = transferstation.transferstation_whimsicalideas.Config.getEntityMessages();
-                    if (messages != null && !messages.isEmpty()) {
+                    if (!messages.isEmpty()) {
                         String msg = messages.get(random.nextInt(messages.size()));
                         msg = msg.replace("%entity%", getDisplayName().getString());
                         for (Player p : nearbyPlayers) {
@@ -327,6 +335,54 @@ public class NpcEntity extends PathfinderMob {
     }
 
     /**
+     * 播放手势到 overlay 层：优先 VMD 动画文件（CustomAnim 目录），
+     * 缺失时 fallback 程序化手势。不打断 base 层动画。
+     */
+    public void playGesture(String gesture, float fadeTime) {
+        if (gesture == null || gesture.isEmpty() || "idle".equals(gesture)) return;
+        if (AnimationProcessor.getAnimation(gesture) != null) {
+            AnimationLayers.play(this, AnimationLayers.OVERLAY, gesture, 1.0f,
+                    AnimationLayers.BoneMaskType.UPPER_BODY, fadeTime);
+        } else {
+            playProceduralGesture(gesture);
+        }
+    }
+
+    private void playProceduralGesture(String gesture) {
+        String id = getStringUUID();
+        SourceModelData modelData = JavaModelRenderer.getModelData(this);
+        List<SourceModelData.BoneInfo> bones = modelData != null ? modelData.bones : null;
+        switch (gesture) {
+            case "wave" -> NpcBoneController.playWaveAnimation(id, bones);
+            case "nod" -> NpcBoneController.playNodAnimation(id, bones);
+            case "shake" -> NpcBoneController.playShakeAnimation(id, bones);
+            case "dance" -> NpcBoneController.playDanceAnimation(id, bones);
+            default -> NpcBoneController.resetAllBones(id);
+        }
+    }
+
+    /**
+     * AI 骨骼指令入口（服务端解析 / 客户端 packet 双端可调，幂等覆盖式）。
+     * @return 实际接受的骨骼数
+     */
+    public int applyBonePose(Map<String, float[]> boneRotations, float duration) {
+        if (boneRotations == null || boneRotations.isEmpty()) return 0;
+        long tick = level().getGameTime();
+        int accepted = 0;
+        for (Map.Entry<String, float[]> entry : boneRotations.entrySet()) {
+            if (accepted >= MAX_AI_POSES) {
+                LOGGER.warn("[NpcEntity] AI pose exceeds {} bones, ignoring rest", MAX_AI_POSES);
+                break;
+            }
+            float[] r = entry.getValue();
+            if (r == null || r.length < 3) continue;
+            accepted += NpcBoneController.applyAiPose(getStringUUID(), entry.getKey(),
+                    r[0], r[1], r[2], duration, tick);
+        }
+        return accepted;
+    }
+
+    /**
      * Called server-side when a chat packet arrives for this NPC.
      * Processes the message through AI and sends reply via S2C packet.
      */
@@ -352,11 +408,11 @@ public class NpcEntity extends PathfinderMob {
                 default -> npcData.setCurrentMood("neutral");
             }
         }
-        setAnimation(gesture);
+        playGesture(gesture, 0.15f);
     }
 
     @Override
-    public Component getDisplayName() {
+    public @NotNull Component getDisplayName() {
         return Component.literal(modelName.contains("/") ?
                 modelName.substring(modelName.lastIndexOf('/') + 1) : modelName);
     }
