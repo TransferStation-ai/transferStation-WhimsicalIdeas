@@ -1,6 +1,7 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -46,6 +47,17 @@ class NpcBoneControllerTest {
         Matrix4f m = NpcBoneController.getBoneTransform(entityId, "ValveBiped.Bip01_Head");
         Matrix4f identity = new Matrix4f().identity();
         assertFalse(m.equals(identity, 0.001f), "head bone should be rotated");
+    }
+
+    @Test
+    void queueRotationLerpsInsteadOfJumpingToTarget() {
+        NpcBoneController.registerBones(entityId, valveBipedBones());
+        NpcBoneController.setBoneRotation(entityId, "ValveBiped.Bip01_Head", new Vector3f(0, 0.6f, 0));
+        NpcBoneController.updateBones(1); // single tick: rotation.y = 0.09, far from converged
+        Matrix4f m = NpcBoneController.getBoneTransform(entityId, "ValveBiped.Bip01_Head");
+        float angle = (float) Math.atan2(m.get(2, 0), m.get(0, 0)); // y-rotation extracted from matrix
+        assertTrue(angle > 0.001f && angle < 0.6f,
+                "render must use interpolated rotation (" + angle + "), not jump to target 0.6");
     }
 
     @Test
