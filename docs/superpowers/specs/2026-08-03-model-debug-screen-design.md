@@ -61,8 +61,9 @@ Gmod 模型加载/渲染存在两类问题：**白膜**（部分 mesh 无纹理�
 +-----------------------------------------------------------+
 |  [← 返回]       标题: 模型调试                              |
 |  ┌──────────────────────┐   ├─ 加载状态区（实时）           |
-|  │   3D 预览            │   ├─ 加载诊断区（本次加载）       |
-|  │  (待机姿势, orbit)    │   ├─ 文件完整性诊断              |
+|  │   3D 预览            │   ├─ 系统可用性区（缓存/物理/AI)  |
+|  │  (待机姿势, orbit)    │   ├─ 加载诊断区（本次加载）       |
+|  │                      │   ├─ 文件完整性诊断              |
 |  │                      │   ├─ 相关变量(缩放/纹理/骨骼)    |
 |  └──────────────────────┘   ├─ 白膜检测(红色高亮未贴图mesh)|
 |                             ├─ bodypart 数量+名称列表      |
@@ -81,6 +82,19 @@ Gmod 模型加载/渲染存在两类问题：**白膜**（部分 mesh 无纹理�
 - 读 `ModelLoadProgress`：`getCurrentPhase()`（SCANNING/PARSING/TEXTURING/BUILDING）、
   `getProgress()`、`getCompletedItems()`/`getTotalItems()`、`getCurrentItem()`、`getElapsed()`。
 - 打开界面时若目标模型正在异步加载，实时渲染进度而非空白。
+
+#### 系统可用性区（实时）
+
+- 展示模型加载/渲染依赖的各子系统是否可用，让玩家在调试时一眼判断问题出在
+  哪个环节。每个条目一行，`renderText(name, value)` 按 bool 着色（true 绿/false 红）。
+- 条目与读取方式：
+  - **缓存**：`ModelLoadManager.getCached(cacheKey) != null`（内存缓存是否命中当前模型，
+    green=可直接用，red=未缓存/需重新加载）+ `ModelLoadManager.getCacheDir()` 是否有效
+    （磁盘缓存目录）。
+  - **物理**：`PhysicsBridge.isAvailable()`（native 物理引擎是否初始化成功）。
+  - **AI**：`NpcChatHandler.isEnabled()`（AI 对话开关且已配置 API key）。
+- 该区在界面打开时静态读取即可；无需常驻监听。后续如需扩展（如语音、native 解析器），
+  照此格式追加条目。
 
 #### 加载诊断区（本次加载完成）
 
@@ -149,6 +163,9 @@ Gmod 模型加载/渲染存在两类问题：**白膜**（部分 mesh 无纹理�
   提供单位矩阵骨骼时顶点输出一致；提供非单位矩阵时输出随骨骼变换（可用少量顶点断言）。
 - 单元测试：待机骨骼生成——对含 reference pose 的 `SourceModelData` 生成矩阵非空且尺寸=骨骼数。
 - 单元测试：白膜检测——构造含 `texture=null` mesh 的数据，断言检测结果标记该 mesh。
+- 单元测试：系统可用性区——对 `ModelLoadManager.getCached`（命中/未命中）、
+  `PhysicsBridge.isAvailable`（mock 初始 false）、`NpcChatHandler.isEnabled`
+  （无 key 时 false）各断言一行渲染值正确。
 - 编译验证：`gradlew compileJava`；native 部分无改动。
 
 ## 已知限制
