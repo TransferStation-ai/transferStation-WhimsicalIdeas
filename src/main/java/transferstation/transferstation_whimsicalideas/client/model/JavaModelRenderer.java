@@ -358,7 +358,84 @@ public class JavaModelRenderer {
     private static final ThreadLocal<ReusableBuffers> REUSABLE_BUFFERS =
         ThreadLocal.withInitial(ReusableBuffers::new);
 
-    private static void renderMeshSkinned(SourceModelData.MeshData mesh,
+    /**
+     * Blend a single skinned vertex position/normal from its bone weights.
+     * Pure computation, shared by {@link #renderMeshSkinned} and the model debug
+     * screen (and unit tests). Returns {@code false} when the vertex has no usable
+     * weights, in which case the caller should fall back to the raw vertex.
+     *
+     * @param vertices   interleaved vertex data (pos3, nrm3, uv2 per vertex)
+     * @param offset     vertex float offset (vertexIndex * 8)
+     * @param weights    per-vertex bone weights (4 per vertex)
+     * @param boneIdx    per-vertex bone indices (4 per vertex)
+     * @param vertIdx    vertex index (for the weight arrays)
+     * @param boneMatrices world-space bone matrices
+     * @param outPos     blended position (w=1)
+     * @param outNormal  blended normal (w=0)
+     * @return true if blending applied
+     */
+    public static boolean skinVertex(float[] vertices, int offset,
+                                     float[] weights, int[] boneIdx, int vertIdx,
+                                     float[][] boneMatrices,
+                                     Vector4f outPos, Vector4f outNormal) {
+        return skinVertex(vertices, offset, weights, boneIdx, vertIdx, boneMatrices,
+            new Matrix4f(), new Vector4f(), new Vector4f(), outPos, outNormal);
+    }
+
+    /**
+     * Scratch-based variant of {@link #skinVertex} for allocation-free hot paths.
+     * Callers may reuse the same {@code boneMat}/{@code tempPos}/{@code tempNormal}
+     * instances across calls.
+     */
+    public static boolean skinVertex(float[] vertices, int offset,
+                                     float[] weights, int[] boneIdx, int vertIdx,
+                                     float[][] boneMatrices,
+                                     Matrix4f boneMat, Vector4f tempPos, Vector4f tempNormal,
+                                     Vector4f outPos, Vector4f outNormal) {
+        if (weights == null || boneIdx == null) return false;
+        float vx = vertices[offset];
+        float vy = vertices[offset + 1];
+        float vz = vertices[offset + 2];
+        float nx = vertices[offset + 3];
+        float ny = vertices[offset + 4];
+        float nz = vertices[offset + 5];
+
+        int wOffset = vertIdx * 4;
+        float sx = 0, sy = 0, sz = 0;
+        float snx = 0, sny = 0, snz = 0;
+        float totalWeight = 0f;
+
+        for (int w = 0; w < 4; w++) {
+            float weight = weights[wOffset + w];
+            if (weight < 0.001f) continue;
+            int bi = boneIdx[wOffset + w];
+            if (bi < 0 || bi >= boneMatrices.length) continue;
+
+            totalWeight += weight;
+            boneMat.set(boneMatrices[bi]);
+            tempPos.set(vx, vy, vz, 1.0f);
+            boneMat.transform(tempPos);
+            sx += tempPos.x() * weight;
+            sy += tempPos.y() * weight;
+            sz += tempPos.z() * weight;
+
+            tempNormal.set(nx, ny, nz, 0.0f);
+            boneMat.transform(tempNormal);
+            snx += tempNormal.x() * weight;
+            sny += tempNormal.y() * weight;
+            snz += tempNormal.z() * weight;
+        }
+
+        if (totalWeight > 0.001f) {
+            outPos.set(sx / totalWeight, sy / totalWeight, sz / totalWeight, 1.0f);
+            outNormal.set(snx / totalWeight, sny / totalWeight, snz / totalWeight, 0.0f);
+            return true;
+        }
+        return false;
+    }
+
+    /** Skinned single-mesh renderer, shared by the entity path and {@code ModelViewport}. */
+    public static void renderMeshSkinned(SourceModelData.MeshData mesh,
                                             Matrix4f modelMatrix,
                                             Matrix3f normalMatrix,
                                             MultiBufferSource bufferSource, int packedLight,
@@ -421,42 +498,15 @@ public class JavaModelRenderer {
                 float fx = vx, fy = vy, fz = vz;
                 float fnx = nx, fny = ny, fnz = nz;
 
-                if (hasWeights) {
-                    int wOffset = vertIdx * 4;
-                    float sx = 0, sy = 0, sz = 0;
-                    float snx = 0, sny = 0, snz = 0;
-                    float totalWeight = 0f;
-
-                    for (int w = 0; w < 4; w++) {
-                        float weight = weights[wOffset + w];
-                        if (weight < 0.001f) continue;
-                        int bi = boneIdx[wOffset + w];
-                        if (bi < 0 || bi >= boneMatrices.length) continue;
-
-                        totalWeight += weight;
-
-                        buf.boneMat.set(boneMatrices[bi]);
-                        buf.tempPos.set(vx, vy, vz, 1.0f);
-                        buf.boneMat.transform(buf.tempPos);
-                        sx += buf.tempPos.x() * weight;
-                        sy += buf.tempPos.y() * weight;
-                        sz += buf.tempPos.z() * weight;
-
-                        buf.tempNormal.set(nx, ny, nz, 0.0f);
-                        buf.boneMat.transform(buf.tempNormal);
-                        snx += buf.tempNormal.x() * weight;
-                        sny += buf.tempNormal.y() * weight;
-                        snz += buf.tempNormal.z() * weight;
-                    }
-
-                    if (totalWeight > 0.001f) {
-                        fx = sx / totalWeight;
-                        fy = sy / totalWeight;
-                        fz = sz / totalWeight;
-                        fnx = snx / totalWeight;
-                        fny = sny / totalWeight;
-                        fnz = snz / totalWeight;
-                    }
+                if (hasWeights && skinVertex(vertices, offset, weights, boneIdx, vertIdx,
+                        boneMatrices, buf.boneMat, buf.tempPos, buf.tempNormal,
+                        buf.skinnedPos, buf.skinnedNormal)) {
+                    fx = buf.skinnedPos.x();
+                    fy = buf.skinnedPos.y();
+                    fz = buf.skinnedPos.z();
+                    fnx = buf.skinnedNormal.x();
+                    fny = buf.skinnedNormal.y();
+                    fnz = buf.skinnedNormal.z();
                 }
 
                 buf.skinnedPos.set(fx, fy, fz, 1.0f);

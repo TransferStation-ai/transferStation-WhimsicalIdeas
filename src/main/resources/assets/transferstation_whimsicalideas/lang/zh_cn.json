@@ -5,6 +5,7 @@
     "key.transferstation_whimsicalideas.toggle_physics": "切换物理模拟",
     "key.transferstation_whimsicalideas.model_editor": "打开 3D 模型编辑器",
     "key.transferstation_whimsicalideas.anim_editor": "打开 3D 动画编辑器",
+    "key.transferstation_whimsicalideas.model_debug": "打开模型调试界面",
 
     "gui.transferstation_whimsicalideas.model_selection": "GMOD 模型选择",
     "gui.transferstation_whimsicalideas.player_on": "玩家: 开",
@@ -108,6 +109,11 @@
 
     "gui.transferstation_whimsicalideas.model_editor": "3D 模型编辑器",
     "gui.transferstation_whimsicalideas.anim_editor": "3D 动画编辑器",
+    "gui.transferstation_whimsicalideas.debug": "调试",
+    "gui.transferstation_whimsicalideas.model_debug": "模型调试",
+    "gui.transferstation_whimsicalideas.debug_reload": "重新加载",
+    "gui.transferstation_whimsicalideas.debug_switch_parser": "切到 %2$s (当前 %1$s)",
+    "gui.transferstation_whimsicalideas.debug_integrity_scan": "扫描文件完整性",
     "gui.transferstation_whimsicalideas.editor_no_model": "未加载模型，请先选择一个模型。",
     "gui.transferstation_whimsicalideas.editor_bones": "骨骼",
     "gui.transferstation_whimsicalideas.editor_morphs": "表情",

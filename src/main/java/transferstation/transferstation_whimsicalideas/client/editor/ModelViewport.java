@@ -13,6 +13,7 @@ import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
+import transferstation.transferstation_whimsicalideas.client.model.JavaModelRenderer;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
 
@@ -42,6 +43,11 @@ public class ModelViewport {
     // Optional per-bone override transforms applied on top of the model's bind pose.
     // Keyed by bone index. null entry = use model default.
     private final Map<Integer, BoneOverride> boneOverrides = new java.util.HashMap<>();
+
+    // Optional world-space bone matrices (one 4x4 per bone index) for vertex skinning.
+    // When set (non-null), meshes with vertex weights are rendered skinned; otherwise
+    // the mesh is rendered in bind pose exactly like the entity path.
+    private float[][] boneMatrices;
 
     /**
      * @param pos local position offset (added to bind pos)
@@ -92,6 +98,23 @@ public class ModelViewport {
 
     public void clearBoneOverrides() {
         boneOverrides.clear();
+    }
+
+    /**
+     * Provide world-space bone matrices (one 4x4 per bone index, column-major) used for
+     * vertex skinning. When non-null, meshes with vertex weights render skinned.
+     * Pass {@code null} to fall back to bind-pose rendering.
+     */
+    public void setBoneMatrices(float[][] boneMatrices) {
+        this.boneMatrices = boneMatrices;
+    }
+
+    public void clearBoneMatrices() {
+        this.boneMatrices = null;
+    }
+
+    public boolean hasBoneMatrices() {
+        return boneMatrices != null;
     }
 
     public void orbit(float dYaw, float dPitch) {
@@ -167,7 +190,11 @@ public class ModelViewport {
         Matrix3f normalMatrix = pose.normal();
 
         for (SourceModelData.MeshData mesh : model.meshes) {
-            renderMesh(mesh, matrix, normalMatrix, bufferSource, light);
+            if (boneMatrices != null && hasVertexWeights(mesh)) {
+                JavaModelRenderer.renderMeshSkinned(mesh, matrix, normalMatrix, bufferSource, light, boneMatrices);
+            } else {
+                renderMesh(mesh, matrix, normalMatrix, bufferSource, light);
+            }
         }
 
         bufferSource.endBatch();
@@ -221,6 +248,16 @@ public class ModelViewport {
                 .uv2(light)
                 .normal(normalMatrix, v[o + 3], v[o + 4], v[o + 5])
                 .endVertex();
+    }
+
+    /** Whether a mesh carries per-vertex bone weights usable for skinning. */
+    private static boolean hasVertexWeights(SourceModelData.MeshData mesh) {
+        float[] weights = mesh.boneWeights;
+        int[] boneIdx = mesh.boneIndices;
+        return weights != null && boneIdx != null
+                && weights.length >= 4 && boneIdx.length >= 4
+                && weights.length >= (mesh.indices.length / 3) * 4
+                && boneIdx.length >= (mesh.indices.length / 3) * 4;
     }
 
     private static RenderType selectRenderType(ResourceLocation texture, boolean translucent,

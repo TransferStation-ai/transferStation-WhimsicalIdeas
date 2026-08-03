@@ -115,7 +115,7 @@ public class GmodModelScreen extends Screen {
                         minecraft.setScreen(new AiConfigScreen());
                     }
                 }
-        ).pos(x + 4, y + 226).size(126, 14).build());
+        ).pos(x + 4, y + 226).size(98, 14).build());
 
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.transferstation_whimsicalideas.model_editor"),
@@ -124,7 +124,7 @@ public class GmodModelScreen extends Screen {
                         minecraft.setScreen(new transferstation.transferstation_whimsicalideas.client.editor.ModelEditorScreen(this));
                     }
                 }
-        ).pos(x + 134, y + 226).size(126, 14).build());
+        ).pos(x + 106, y + 226).size(98, 14).build());
 
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.transferstation_whimsicalideas.anim_editor"),
@@ -133,7 +133,16 @@ public class GmodModelScreen extends Screen {
                         minecraft.setScreen(new transferstation.transferstation_whimsicalideas.client.editor.AnimationEditorScreen(this));
                     }
                 }
-        ).pos(x + 264, y + 226).size(126, 14).build());
+        ).pos(x + 208, y + 226).size(98, 14).build());
+
+        addRenderableWidget(Button.builder(
+                Component.translatable("gui.transferstation_whimsicalideas.debug"),
+                btn -> {
+                    if (minecraft != null) {
+                        minecraft.setScreen(new transferstation.transferstation_whimsicalideas.client.debug.ModelDebugScreen(this));
+                    }
+                }
+        ).pos(x + 310, y + 226).size(98, 14).build());
 
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.transferstation_whimsicalideas.prev_page"),

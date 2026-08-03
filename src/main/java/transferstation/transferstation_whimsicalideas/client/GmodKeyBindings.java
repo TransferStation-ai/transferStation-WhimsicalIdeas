@@ -61,6 +61,14 @@ public class GmodKeyBindings {
             "key.categories.transferstation_whimsicalideas"
     );
 
+    public static final KeyMapping OPEN_DEBUG_KEY = new KeyMapping(
+            "key.transferstation_whimsicalideas.model_debug",
+            KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_M,
+            "key.categories.transferstation_whimsicalideas"
+    );
+
     private static boolean physicsEnabled = true;
 
     @SubscribeEvent
@@ -70,6 +78,7 @@ public class GmodKeyBindings {
         event.register(TOGGLE_PHYSICS_KEY);
         event.register(OPEN_MODEL_EDITOR_KEY);
         event.register(OPEN_ANIM_EDITOR_KEY);
+        event.register(OPEN_DEBUG_KEY);
     }
 
     @SubscribeEvent
@@ -91,6 +100,10 @@ public class GmodKeyBindings {
 
         if (OPEN_ANIM_EDITOR_KEY.consumeClick()) {
             mc.setScreen(new AnimationEditorScreen(mc.screen));
+        }
+
+        if (OPEN_DEBUG_KEY.consumeClick()) {
+            mc.setScreen(new transferstation.transferstation_whimsicalideas.client.debug.ModelDebugScreen(mc.screen));
         }
 
         if (TOGGLE_PHYSICS_KEY.consumeClick()) {

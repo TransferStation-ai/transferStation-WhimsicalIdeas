@@ -5,6 +5,7 @@
     "key.transferstation_whimsicalideas.toggle_physics": "Toggle Physics Simulation",
     "key.transferstation_whimsicalideas.model_editor": "Open 3D Model Editor",
     "key.transferstation_whimsicalideas.anim_editor": "Open 3D Animation Editor",
+    "key.transferstation_whimsicalideas.model_debug": "Open Model Debug Screen",
 
     "gui.transferstation_whimsicalideas.model_selection": "GMOD Model Selection",
     "gui.transferstation_whimsicalideas.player_on": "Player: ON",
@@ -108,6 +109,11 @@
 
     "gui.transferstation_whimsicalideas.model_editor": "3D Model Editor",
     "gui.transferstation_whimsicalideas.anim_editor": "3D Animation Editor",
+    "gui.transferstation_whimsicalideas.debug": "Debug",
+    "gui.transferstation_whimsicalideas.model_debug": "Model Debug",
+    "gui.transferstation_whimsicalideas.debug_reload": "Reload",
+    "gui.transferstation_whimsicalideas.debug_switch_parser": "Switch to %2$s (now %1$s)",
+    "gui.transferstation_whimsicalideas.debug_integrity_scan": "Scan File Integrity",
     "gui.transferstation_whimsicalideas.editor_no_model": "No model loaded. Select a model first.",
     "gui.transferstation_whimsicalideas.editor_bones": "Bones",
     "gui.transferstation_whimsicalideas.editor_morphs": "Morphs",

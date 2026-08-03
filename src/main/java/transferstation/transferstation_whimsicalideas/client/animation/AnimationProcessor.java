@@ -616,6 +616,62 @@ public class AnimationProcessor {
         return -1;
     }
 
+    /**
+     * Compute world-space bone matrices for a neutral stance (reference pose →
+     * A-pose → bind pose fallback) without requiring a living entity. Used by the
+     * model debug screen to show the model in its rest pose.
+     */
+    public static float[][] getReferencePoseBoneTransforms(SourceModelData modelData) {
+        if (modelData == null || modelData.bones.isEmpty()) return null;
+        int boneCount = modelData.bones.size();
+        float[][] localTransforms = new float[boneCount][16];
+
+        // 1. Bind pose init (prefers reference pose from srcBoneTransforms, else bone pos/quat)
+        initializeBindPose(modelData, localTransforms);
+
+        // 2. No reference pose source (srcBoneTransforms empty) but A-pose frame data
+        // exists: apply the A-pose as the neutral stance, matching the entity path.
+        if (modelData.srcBoneTransforms.isEmpty() && modelData.hasAPose()) {
+            MdlDataTypes.AnimFrameData aPose = modelData.getAPoseFrameData();
+            if (aPose != null && !aPose.boneTransforms.isEmpty()) {
+                for (MdlDataTypes.AnimFrameBone fb : aPose.boneTransforms) {
+                    int idx = findBoneIndex(modelData, fb.boneName);
+                    if (idx < 0 || idx >= boneCount) continue;
+                    org.joml.Matrix4f bind = new org.joml.Matrix4f();
+                    bind.set(localTransforms[idx]);
+                    bind.mul(deltaToMatrix(toFrameDelta(fb)));
+                    bind.get(localTransforms[idx]);
+                }
+            }
+        }
+
+        // 3. Convert local → world space by walking the hierarchy
+        Set<Integer> computed = new HashSet<>();
+        for (int i = 0; i < boneCount; i++) {
+            computeWorldBone(i, modelData, localTransforms, computed);
+        }
+        return localTransforms;
+    }
+
+    /** {@code AnimFrameBone} pos/quat/scale → delta 分量（与 KeyFrame delta 布局一致）。 */
+    private static float[] toFrameDelta(MdlDataTypes.AnimFrameBone fb) {
+        float[] d = new float[DELTA_LEN];
+        if (fb.pos != null) {
+            d[0] = fb.pos[0]; d[1] = fb.pos[1]; d[2] = fb.pos[2];
+        }
+        if (fb.quat != null) {
+            d[3] = fb.quat[0]; d[4] = fb.quat[1]; d[5] = fb.quat[2]; d[6] = fb.quat[3];
+        } else {
+            d[6] = 1.0f;
+        }
+        if (fb.scale != null) {
+            d[7] = fb.scale[0]; d[8] = fb.scale[1]; d[9] = fb.scale[2];
+        } else {
+            d[7] = 1.0f; d[8] = 1.0f; d[9] = 1.0f;
+        }
+        return d;
+    }
+
     public static void setCurrentMorph(String morphName) {
         currentMorph = morphName;
     }
