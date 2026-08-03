@@ -32,6 +32,8 @@ Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 
 是的，不同于GMOD我们有一定的防穿模功能
 
+（已实现：布娃娃骨骼球体与周围方块表面构建的环境网格 MESH 碰撞，防止衣物/下摆插地穿墙
+
 是的，为了方便1.0之后我们全部使用 /TransferStation TransferStationWhimsicalIdeas开头的指令
 
 
@@ -43,13 +45,13 @@ Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 
  Linux/安卓:完全支持
 
- 苹果:不支持并且不处理来自苹果的任何问题
+ 苹果:不支持并且不处理来自苹果的任何问题  ----如果你想让我支持苹果，你换台设备去吧 SB！
 
  ------------------------
 
 关于内置的引擎
 
-1.起源引擎:正在准备内置工作
+1.起源引擎:已有与其相似的相似功能
 
 2.虚幻引擎:未来会内置
 
