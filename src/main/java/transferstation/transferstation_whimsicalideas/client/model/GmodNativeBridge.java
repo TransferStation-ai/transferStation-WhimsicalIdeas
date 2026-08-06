@@ -16,6 +16,7 @@ public class GmodNativeBridge {
 
     private static boolean nativeLoaded = false;
     private static boolean initAttempted = false;
+    private static boolean dllLoaded = false;
 
     private static Path extractedDllPath = null;
 
@@ -42,6 +43,7 @@ public class GmodNativeBridge {
         try {
             if (tryLoadFromResources()) {
                 nativeLoaded = true;
+                dllLoaded = true;
             } else {
                 lastLoadError = "native DLL not found in bundled resources";
             }
@@ -69,6 +71,7 @@ public class GmodNativeBridge {
                     if (Files.exists(resolved)) {
                         System.load(resolved.toAbsolutePath().toString());
                         nativeLoaded = true;
+                        dllLoaded = true;
                         break;
                     }
                     // Relative to working directory
@@ -79,6 +82,7 @@ public class GmodNativeBridge {
                     if (Files.exists(resolved)) {
                         System.load(resolved.toAbsolutePath().toString());
                         nativeLoaded = true;
+                        dllLoaded = true;
                         break;
                     }
                 } catch (UnsatisfiedLinkError e) {
@@ -96,6 +100,7 @@ public class GmodNativeBridge {
             try {
                 System.loadLibrary("native-renderer");
                 nativeLoaded = true;
+                dllLoaded = true;
             } catch (UnsatisfiedLinkError e) {
                 lastLoadError = "native-renderer not found on system library path";
             }
@@ -133,6 +138,33 @@ public class GmodNativeBridge {
             LOGGER.info("[GmodNative] Native renderer unavailable — using Java (cross-platform) model parser. Models will still load, possibly slower. Reason: {}", reason);
         }
 
+        return nativeLoaded;
+    }
+
+    /**
+     * Retry native initialization once a GL context is available (render thread).
+     * The DLL itself may already be loaded via {@link #tryLoadNative()}; only the
+     * GL-dependent {@code nativeInitialize()} step needs an active GL context, which
+     * does not exist during {@code FMLClientSetupEvent}.
+     */
+    public static synchronized boolean retryInitialize() {
+        if (nativeLoaded) return true;
+        if (!dllLoaded) return tryLoadNative();
+        try {
+            boolean ok = nativeInitialize();
+            if (ok) {
+                nativeLoaded = true;
+                initAttempted = true;
+                LOGGER.info("[GmodNative] Native renderer initialized successfully (render thread)");
+            } else {
+                initAttempted = false;
+                lastLoadError = "nativeInitialize() returned false (retry on render thread)";
+            }
+        } catch (UnsatisfiedLinkError e) {
+            LOGGER.error("[GmodNative] Native method not found (retry)", e);
+            initAttempted = false;
+            lastLoadError = "native method not found (retry): " + e.getMessage();
+        }
         return nativeLoaded;
     }
 
@@ -187,6 +219,7 @@ public class GmodNativeBridge {
     static native void nativeRenderModel(long handle, float[] modelMatrix, int packedLight, float partialTicks);
     static native void nativeRenderModelLOD(long handle, float[] modelMatrix, int packedLight, float partialTicks, int lodLevel);
     static native void nativeSetCameraPosition(float x, float y, float z);
+    static native void nativeSetViewProjection(float[] viewProjection);
     static native float nativeGetMinZ(long handle);
     static native float nativeGetModelScale(long handle);
     static native String nativeGetDisplayName(long handle);

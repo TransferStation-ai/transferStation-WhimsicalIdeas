@@ -176,31 +176,84 @@ VtxParser::ParsedVtx VtxParser::parse(const std::vector<uint8_t>& data) {
                             int sFlags = buf[sAddr + VTX_STRIP_FLAGS_OFFSET];
 
                             if (sNumIndices < 3) continue;
-                            // The triangle assembly loop below accesses indices up to
-                            // sIndexOffset + sNumIndices + 1, so guard one past the end.
-                            if (sIndexOffset < 0 || sIndexOffset + sNumIndices + 1 > maxIndices) continue;
+                            // The triangle assembly loop below accesses cacheIndices up to
+                            // sIndexOffset + sNumIndices - 1 (last triangle window starts at
+                            // i + 2 == sNumIndices - 1), so the buffer must hold up to
+                            // sIndexOffset + sNumIndices entries. This mirrors the Java
+                            // parser check (sIndexOffset + sNumIndices > maxIndices). Some
+                            // files (e.g. pm) have strips that cover the entire index buffer
+                            // (sIndexOffset == 0, sNumIndices == numIndices); the previous
+                            // "+1" guard falsely rejected all of them.
+                            if (sIndexOffset < 0 || sIndexOffset + sNumIndices > maxIndices) continue;
 
                             bool isTriList = (sFlags & 0x01) != 0;
                             StripGroupInfo::Strip strip;
                             strip.isTriList = isTriList;
-                            int triEnd = isTriList ? sNumIndices : sNumIndices - 2;
-                            int step = isTriList ? 3 : 1;
+                            // D3D strip restart marker: an index equal to this value ends the
+                            // current strip segment and starts a new one. Mirror the Java
+                            // VtxParser (STRIP_RESTART_INDEX = 0xFFFF): without detecting it,
+                            // the sliding window crosses the restart boundary and emits huge
+                            // diagonal triangles that connect far-apart vertices (visible as
+                            // random lines spanning the model surface).
+                            static constexpr uint16_t STRIP_RESTART_INDEX = 0xFFFF;
 
-                            for (int i = 0; i + 2 < sNumIndices; i += step) {
-                                uint32_t ci0, ci1, ci2;
-                                if (isTriList || (i & 1) == 0) {
-                                    ci0 = cacheIndices[sIndexOffset + i];
-                                    ci1 = cacheIndices[sIndexOffset + i + 1];
-                                    ci2 = cacheIndices[sIndexOffset + i + 2];
-                                } else {
-                                    ci0 = cacheIndices[sIndexOffset + i + 1];
-                                    ci1 = cacheIndices[sIndexOffset + i];
-                                    ci2 = cacheIndices[sIndexOffset + i + 2];
+                            if (isTriList) {
+                                for (int i = 0; i + 2 < sNumIndices; i += 3) {
+                                    uint32_t ci0 = cacheIndices[sIndexOffset + i];
+                                    uint32_t ci1 = cacheIndices[sIndexOffset + i + 1];
+                                    uint32_t ci2 = cacheIndices[sIndexOffset + i + 2];
+                                    // Skip restart markers and degenerate triangles
+                                    if (ci0 == STRIP_RESTART_INDEX || ci1 == STRIP_RESTART_INDEX || ci2 == STRIP_RESTART_INDEX) continue;
+                                    if (ci0 == ci1 || ci1 == ci2 || ci0 == ci2) continue;
+                                    if (ci0 >= static_cast<uint32_t>(numVerts) || ci1 >= static_cast<uint32_t>(numVerts) || ci2 >= static_cast<uint32_t>(numVerts)) continue;
+                                    strip.indices.push_back(ci0);
+                                    strip.indices.push_back(ci1);
+                                    strip.indices.push_back(ci2);
                                 }
-                                if (ci0 >= static_cast<uint32_t>(numVerts) || ci1 >= static_cast<uint32_t>(numVerts) || ci2 >= static_cast<uint32_t>(numVerts)) continue;
-                                strip.indices.push_back(ci0);
-                                strip.indices.push_back(ci1);
-                                strip.indices.push_back(ci2);
+                            } else {
+                                // Triangle strip: sliding window of 3 advancing by 1 each step,
+                                // with alternating winding and D3D restart (0xFFFF) handling.
+                                // Winding parity is keyed on a strip-relative counter (stripRel)
+                                // that resets to 0 after a restart marker, so the new strip's
+                                // first triangle always uses even winding regardless of where the
+                                // restart occurred. stripRel increments every iteration (including
+                                // degenerate skips, which are part of the strip's vertex stream)
+                                // and resets to -1 on restart (loop increment makes it 0 = even).
+                                for (int i = 0, stripRel = 0; i + 2 < sNumIndices; i++, stripRel++) {
+                                    uint32_t ci0 = cacheIndices[sIndexOffset + i];
+                                    uint32_t ci1 = cacheIndices[sIndexOffset + i + 1];
+                                    uint32_t ci2 = cacheIndices[sIndexOffset + i + 2];
+
+                                    // Handle strip restart marker: advance past it and reset the
+                                    // strip-relative counter so the new strip starts with even winding.
+                                    if (ci0 == STRIP_RESTART_INDEX || ci1 == STRIP_RESTART_INDEX || ci2 == STRIP_RESTART_INDEX) {
+                                        int advance = (ci0 == STRIP_RESTART_INDEX) ? 1
+                                                    : (ci1 == STRIP_RESTART_INDEX) ? 2 : 3;
+                                        i += advance - 1; // -1 because loop increments
+                                        stripRel = -1;    // loop increments to 0 -> even for new strip
+                                        continue;
+                                    }
+
+                                    // Skip degenerate triangles (zero-area connectors). stripRel still
+                                    // increments (they are part of the strip's vertex stream), preserving
+                                    // the alternating parity for subsequent non-degenerate triangles.
+                                    if (ci0 == ci1 || ci1 == ci2 || ci0 == ci2) continue;
+
+                                    // Alternating winding keyed on the strip-relative counter:
+                                    // even stripRel -> (ci0, ci1, ci2), odd stripRel -> (ci1, ci0, ci2).
+                                    uint32_t tri0, tri1, tri2;
+                                    if ((stripRel & 1) == 0) {
+                                        tri0 = ci0; tri1 = ci1;
+                                    } else {
+                                        tri0 = ci1; tri1 = ci0;
+                                    }
+                                    tri2 = ci2;
+
+                                    if (tri0 >= static_cast<uint32_t>(numVerts) || tri1 >= static_cast<uint32_t>(numVerts) || tri2 >= static_cast<uint32_t>(numVerts)) continue;
+                                    strip.indices.push_back(tri0);
+                                    strip.indices.push_back(tri1);
+                                    strip.indices.push_back(tri2);
+                                }
                             }
 
                             if (!strip.indices.empty()) {

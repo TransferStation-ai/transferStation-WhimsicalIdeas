@@ -6,6 +6,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import org.jetbrains.annotations.NotNull;
 import transferstation.transferstation_whimsicalideas.client.model.NpcEntity;
@@ -23,6 +24,15 @@ public class NpcChatScreen extends Screen {
 
     private static final int MAX_MESSAGES = 100;
     private static final int INPUT_MAX_LENGTH = 256;
+    private static final int QUICK_REPLY_COUNT = 6;
+    private static final String[] DEFAULT_QUICK_REPLIES = {
+        "Hello!",
+        "Follow me",
+        "Stay here",
+        "What do you think?",
+        "Goodbye!",
+        "Thank you"
+    };
 
     private final UUID npcUuid;
     private final String npcName;
@@ -31,6 +41,7 @@ public class NpcChatScreen extends Screen {
     private int scrollOffset;
     private long lastSendTime = 0;
     private boolean awaitingReply = false;
+    private boolean showQuickReplies = false;
 
     // Voice input state
     private boolean voiceModeAvailable = false;
@@ -44,6 +55,10 @@ public class NpcChatScreen extends Screen {
     private String displayReply = "";
     private int typewriterIndex = 0;
     private int typewriterTimer = 0;
+
+    // Message history navigation
+    private int historyIndex = -1;
+    private final List<String> sentHistory = new ArrayList<>();
 
     public NpcChatScreen(NpcEntity npc) {
         super(Component.translatable("gui.transferstation_whimsicalideas.npc_chat.title", npc.getDisplayName().getString()));
@@ -61,7 +76,7 @@ public class NpcChatScreen extends Screen {
                 && VoiceConfig.isEnabled()
                 && VoskSttEngine.isInitialized();
         micButton = addRenderableWidget(Button.builder(
-            Component.literal(micAvail ? "🎤" : "§7🎤"),
+            Component.literal(micAvail ? "\uD83C\uDFA4" : "\u00A77\uD83C\uDFA4"),
             btn -> handleMicPress()
         ).bounds(cx - 165, height - 30, 20, 18).build());
         micButton.active = micAvail;
@@ -79,6 +94,32 @@ public class NpcChatScreen extends Screen {
             Component.translatable("gui.transferstation_whimsicalideas.npc_chat.send"),
             btn -> sendMessage()
         ).bounds(cx + 125, height - 30, 40, 18).build());
+
+        // Quick reply toggle button
+        addRenderableWidget(Button.builder(
+            Component.literal(showQuickReplies ? "\u25BC Quick" : "\u25B6 Quick"),
+            btn -> {
+                showQuickReplies = !showQuickReplies;
+                btn.setMessage(Component.literal(showQuickReplies ? "\u25BC Quick" : "\u25B6 Quick"));
+            }
+        ).bounds(cx + 167, height - 30, 52, 18).build());
+
+        // Quick reply buttons (hidden by default, shown when toggled)
+        if (showQuickReplies) {
+            int qrStartY = height - 56;
+            for (int i = 0; i < QUICK_REPLY_COUNT; i++) {
+                final int idx = i;
+                String label = i < DEFAULT_QUICK_REPLIES.length ? DEFAULT_QUICK_REPLIES[i] : "";
+                if (label.isEmpty()) continue;
+                addRenderableWidget(Button.builder(
+                    Component.literal(label),
+                    btn -> {
+                        inputField.setValue(DEFAULT_QUICK_REPLIES[idx]);
+                        sendMessage();
+                    }
+                ).bounds(cx - 150 + (i % 3) * 102, qrStartY - (i / 3) * 20, 98, 16).build());
+            }
+        }
 
         // Close button
         addRenderableWidget(Button.builder(
@@ -101,6 +142,9 @@ public class NpcChatScreen extends Screen {
         // Title
         graphics.drawCenteredString(font, getTitle(), cx, 18, 0xF3EFE0);
 
+        // Chat area background
+        graphics.fillGradient(cx - 152, chatTop - 2, cx + 152, chatBottom + 2, 0xFF1A1A1A, 0xFF1A1A1A);
+
         // Chat area clipping
         RenderSystem.enableScissor(
             (int) ((cx - 150) * getMinecraft().getWindow().getGuiScale()),
@@ -119,36 +163,53 @@ public class NpcChatScreen extends Screen {
         // Draw messages from bottom
         for (int i = messages.size() - 1; i >= 0 && y > chatTop; i--) {
             ChatMessage msg = messages.get(i);
-            String text = msg.isPlayer ? ("§e你§r: " + msg.text) : ("§b" + npcName + "§r: " + msg.text);
-            int textWidth = font.width(text);
-            int maxWidth = 290;
-            if (textWidth > maxWidth) {
-                // Wrap long text
-                var lines = font.split(Component.literal(text), maxWidth);
-                for (int li = lines.size() - 1; li >= 0 && y > chatTop; li--) {
-                    y -= lineHeight;
-                    if (y >= chatTop - 5) {
-                        graphics.drawString(font, lines.get(li), cx - 145, y, 0xFFFFFF);
-                    }
-                }
-            } else {
+
+            // Draw message bubble background
+            int msgMaxWidth = 280;
+            String rawText = msg.isPlayer ? msg.text : msg.text;
+            List<FormattedCharSequence> lines = font.split(Component.literal(rawText), msgMaxWidth);
+            int bubbleHeight = lines.size() * lineHeight + 4;
+            int bubbleX = msg.isPlayer ? cx + 5 : cx - 148;
+            int bubbleW = 0;
+            for (FormattedCharSequence line : lines) {
+                bubbleW = Math.max(bubbleW, font.width(line));
+            }
+            bubbleW = Math.min(bubbleW + 8, msgMaxWidth);
+
+            // Render bubble
+            int bubbleColor = msg.isPlayer ? 0xFF2A5296 : 0xFF3A3A3A;
+            graphics.fillGradient(bubbleX, y - bubbleHeight + lineHeight, bubbleX + bubbleW, y + lineHeight, bubbleColor, bubbleColor);
+
+            // Render text
+            String prefix = msg.isPlayer ? "\u00A7e\u4F60\u00A7r: " : "\u00A7b" + npcName + "\u00A7r: ";
+            String text = prefix + rawText;
+            var wrappedLines = font.split(Component.literal(text), msgMaxWidth);
+            for (int li = wrappedLines.size() - 1; li >= 0 && y > chatTop; li--) {
                 y -= lineHeight;
                 if (y >= chatTop - 5) {
-                    graphics.drawString(font, text, cx - 145, y, 0xFFFFFF);
+                    int textColor = msg.isPlayer ? 0xFFFFFF : 0xE0E0E0;
+                    graphics.drawString(font, wrappedLines.get(li), cx - 145, y, textColor);
                 }
             }
         }
 
         // Typewriter effect pending reply
         if (!pendingReply.isEmpty()) {
-            String display = "§b" + npcName + "§r: " + displayReply;
+            String display = "\u00A7b" + npcName + "\u00A7r: " + displayReply;
             y -= lineHeight;
             if (y >= chatTop - 5) {
-                graphics.drawString(font, display, cx - 145, y, 0xFFFFFF);
+                graphics.drawString(font, display, cx - 145, y, 0xE0E0E0);
             }
         }
 
         RenderSystem.disableScissor();
+
+        // Scroll indicator
+        if (maxScroll > 0) {
+            int scrollBarHeight = Math.max(20, (int) ((float) chatHeight / totalContentHeight * chatHeight));
+            int scrollBarY = chatTop + (int) ((float) scrollOffset / maxScroll * (chatHeight - scrollBarHeight));
+            graphics.fillGradient(cx + 148, scrollBarY, cx + 150, scrollBarY + scrollBarHeight, 0xFF888888, 0xFF888888);
+        }
 
         // Input field label
         graphics.drawString(font, Component.translatable("gui.transferstation_whimsicalideas.npc_chat.input_label"), cx - 140, height - 46, 0x888888);
@@ -175,13 +236,13 @@ public class NpcChatScreen extends Screen {
         if (!isRecording) {
             // Start recording
             isRecording = true;
-            micButton.setMessage(Component.literal("§c🔴"));
-            voiceStatusText = "§c录音中...";
+            micButton.setMessage(Component.literal("\u00A7c\uD83D\uDD34"));
+            voiceStatusText = "\u00A7c\u5F55\u97F3\u4E2D...";
             voiceStatusTimer = 0;
 
             VoiceCaptureService.startRecording(wavData -> net.minecraft.client.Minecraft.getInstance().execute(() -> {
-                micButton.setMessage(Component.literal("§e⏳"));
-                voiceStatusText = "§e识别中...";
+                micButton.setMessage(Component.literal("\u00A7e\u23F3"));
+                voiceStatusText = "\u00A7e\u8BC6\u522B\u4E2D...";
 
                 VoskSttEngine.transcribe(wavData)
                     .thenAccept(text -> net.minecraft.client.Minecraft.getInstance().execute(() -> {
@@ -195,10 +256,10 @@ public class NpcChatScreen extends Screen {
                             }
                             voiceStatusText = "";
                         } else {
-                            voiceStatusText = "§7未检测到语音";
+                            voiceStatusText = "\u00A77\u672A\u68C0\u6D4B\u5230\u8BED\u97F3";
                             voiceStatusTimer = 40;
                         }
-                        micButton.setMessage(Component.literal("🎤"));
+                        micButton.setMessage(Component.literal("\uD83C\uDFA4"));
                     }));
             }));
         } else {
@@ -218,10 +279,12 @@ public class NpcChatScreen extends Screen {
 
         // Add player message locally
         messages.add(new ChatMessage(text, true));
+        sentHistory.add(text);
+        historyIndex = sentHistory.size();
         inputField.setValue("");
         awaitingReply = true;
 
-        // Send to server — use PacketDistributor.SERVER.noArg() for client→server
+        // Send to server
         NpcChatNetwork.CHANNEL.send(net.minecraftforge.network.PacketDistributor.SERVER.noArg(), new ChatC2SPacket(npcUuid, text));
     }
 
@@ -246,7 +309,7 @@ public class NpcChatScreen extends Screen {
         // Typewriter effect
         if (!pendingReply.isEmpty()) {
             typewriterTimer++;
-            if (typewriterTimer >= 2) { // 2 ticks per character ≈ 10 chars/sec
+            if (typewriterTimer >= 2) { // 2 ticks per character ~ 10 chars/sec
                 typewriterTimer = 0;
                 typewriterIndex++;
                 if (typewriterIndex <= pendingReply.length()) {
@@ -282,6 +345,26 @@ public class NpcChatScreen extends Screen {
         }
         if (keyCode == 257 || keyCode == 335) { // Enter
             sendMessage();
+            return true;
+        }
+        // Up/Down arrow for sent message history
+        if (keyCode == 265 && inputField.isFocused() && !sentHistory.isEmpty()) { // Up
+            if (historyIndex > 0) {
+                historyIndex--;
+                inputField.setValue(sentHistory.get(historyIndex));
+                inputField.moveCursorToEnd();
+            }
+            return true;
+        }
+        if (keyCode == 264 && inputField.isFocused() && !sentHistory.isEmpty()) { // Down
+            if (historyIndex < sentHistory.size() - 1) {
+                historyIndex++;
+                inputField.setValue(sentHistory.get(historyIndex));
+                inputField.moveCursorToEnd();
+            } else {
+                historyIndex = sentHistory.size();
+                inputField.setValue("");
+            }
             return true;
         }
         if (inputField.isFocused()) {

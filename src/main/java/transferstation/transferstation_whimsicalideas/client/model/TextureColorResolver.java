@@ -14,10 +14,19 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 
 public class TextureColorResolver {
 
     private static final Logger LOGGER = LogUtils.getLogger();
+
+    /** 最大纹理尺寸限制，防止 OOM */
+    private static final int MAX_TEXTURE_DIMENSION = 4096;
+    /** 最大纹理像素总数 (4096x4096 = 16,777,216) */
+    private static final long MAX_TEXTURE_PIXELS = 16_777_216L;
+
+    /** 纹理上传信号量，限制并发上传数量防止 GPU 内存溢出 */
+    private static final Semaphore textureUploadSemaphore = new Semaphore(4, true);
 
     /**
      * 世代计数器，每次资源重载后递增    * 用于替代 boolean texturesNeedRefresh，避免竞态条件     * TextureEntry 记录自己最后注册的世代，ensureTextureRegistered 比较
@@ -130,9 +139,7 @@ public class TextureColorResolver {
             NativeImage old = entry.getCachedNativeImage();
             if (old != null && old != nativeImage) old.close();
             // Store a copy so the cache survives DynamicTexture.close()
-            NativeImage cacheCopy = new NativeImage(nativeImage.getWidth(), nativeImage.getHeight(), false);
-            cacheCopy.copyFrom(nativeImage);
-            entry.setCachedNativeImage(cacheCopy);
+            entry.setCachedNativeImage(safeCacheCopy(nativeImage));
         }
         if (loc != null) {
             textureRegistry.put(texturePath, loc);
@@ -280,6 +287,10 @@ public class TextureColorResolver {
     private void buildAndRegister(String regKey, ResourceLocation loc, BufferedImage image) {
         try {
             NativeImage nativeImage = bufferedImageToNativeImage(image);
+            if (nativeImage == null) {
+                LOGGER.warn("[TextureColorResolver] Skipping texture {}: invalid source image", regKey);
+                return;
+            }
             Minecraft mc = Minecraft.getInstance();
             TextureEntry entry = entries.get(regKey);
             DynamicTexture dynamicTex = (entry != null) ? entry.getDynamicTexture() : null;
@@ -299,10 +310,9 @@ public class TextureColorResolver {
             textureRegistry.put(regKey, loc);
             if (entry != null) {
                 // Store a copy so the cache survives DynamicTexture.close()
-                NativeImage cacheCopy = new NativeImage(nativeImage.getWidth(), nativeImage.getHeight(), false);
-                cacheCopy.copyFrom(nativeImage);
+                NativeImage cacheCopy = safeCacheCopy(nativeImage);
                 NativeImage old = entry.getCachedNativeImage();
-                if (old != null && old != cacheCopy) old.close();
+                if (old != null && old != cacheCopy && cacheCopy != null) old.close();
                 entry.setCachedNativeImage(cacheCopy);
                 entry.setLastRegisteredGeneration(textureGeneration);
             }
@@ -318,6 +328,11 @@ public class TextureColorResolver {
      */
     public void applyNativeImage(ResourceLocation loc, NativeImage nativeImage) {
         if (loc == null || nativeImage == null) return;
+        if (nativeImage.getWidth() <= 0 || nativeImage.getHeight() <= 0
+                || (long) nativeImage.getWidth() * nativeImage.getHeight() > MAX_TEXTURE_PIXELS) {
+            LOGGER.warn("[TextureColorResolver] Rejecting invalid/oversized NativeImage for {}", loc);
+            return;
+        }
         String path = loc.getPath();
         if (!path.startsWith("textures/generated/")) return;
         String regKey = path.substring("textures/generated/".length());
@@ -388,8 +403,8 @@ public class TextureColorResolver {
             if (entry == null) return;
             NativeImage cached = entry.getCachedNativeImage();
             if (cached == null) return;
-            NativeImage copy = new NativeImage(cached.getWidth(), cached.getHeight(), false);
-            copy.copyFrom(cached);
+            NativeImage copy = safeNativeImageCopy(cached);
+            if (copy == null) return;
             Minecraft mc = Minecraft.getInstance();
             DynamicTexture dynamicTex = entry.getDynamicTexture();
             // If the existing instance was closed by a resource reload, create a fresh one.
@@ -633,13 +648,16 @@ public class TextureColorResolver {
     }
 
     static com.mojang.blaze3d.platform.NativeImage bufferedImageToNativeImage(BufferedImage image) {
-        int w = image.getWidth();
-        int h = image.getHeight();
+        BufferedImage limited = limitImage(image);
+        if (limited == null) return null;
+        int w = limited.getWidth();
+        int h = limited.getHeight();
+        if (w <= 0 || h <= 0) return null;
         com.mojang.blaze3d.platform.NativeImage nativeImage =
             new com.mojang.blaze3d.platform.NativeImage(
                 com.mojang.blaze3d.platform.NativeImage.Format.RGBA, w, h, false);
         int[] pixels = new int[w * h];
-        image.getRGB(0, 0, w, h, pixels, 0, w);
+        limited.getRGB(0, 0, w, h, pixels, 0, w);
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int argb = pixels[y * w + x];
@@ -651,6 +669,62 @@ public class TextureColorResolver {
             }
         }
         return nativeImage;
+    }
+
+    /** 超过上限的贴图降采样，防止 Java 堆 OOM 与 GPU 内存溢出 */
+    private static BufferedImage limitImage(BufferedImage image) {
+        if (image == null) return null;
+        int w = image.getWidth();
+        int h = image.getHeight();
+        if (w <= 0 || h <= 0) return image;
+        if (w <= MAX_TEXTURE_DIMENSION && h <= MAX_TEXTURE_DIMENSION
+                && (long) w * h <= MAX_TEXTURE_PIXELS) {
+            return image;
+        }
+        double scale = Math.min((double) MAX_TEXTURE_DIMENSION / w, (double) MAX_TEXTURE_DIMENSION / h);
+        int nw = Math.max(1, (int) (w * scale));
+        int nh = Math.max(1, (int) (h * scale));
+        BufferedImage scaled = new BufferedImage(nw, nh, BufferedImage.TYPE_INT_ARGB);
+        java.awt.Graphics2D g = scaled.createGraphics();
+        try {
+            g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.drawImage(image, 0, 0, nw, nh, null);
+        } finally {
+            g.dispose();
+        }
+        LOGGER.warn("[TextureColorResolver] Downscaled oversized texture {}x{} -> {}x{}", w, h, nw, nh);
+        return scaled;
+    }
+
+    /** 安全复制 NativeImage，源无效或已关闭时返回 null，避免 "Image is not allocated" */
+    private static NativeImage safeNativeImageCopy(NativeImage src) {
+        if (src == null) return null;
+        int w = src.getWidth();
+        int h = src.getHeight();
+        if (w <= 0 || h <= 0 || (long) w * h > MAX_TEXTURE_PIXELS) return null;
+        NativeImage copy = new NativeImage(w, h, false);
+        try {
+            copy.copyFrom(src);
+        } catch (Exception e) {
+            copy.close();
+            LOGGER.warn("[TextureColorResolver] NativeImage copy failed: {}", e.getMessage());
+            return null;
+        }
+        return copy;
+    }
+
+    /** 受并发信号量保护的安全缓存复制，限制并发大块分配防止 OOM */
+    private static NativeImage safeCacheCopy(NativeImage src) {
+        try {
+            textureUploadSemaphore.acquire();
+            return safeNativeImageCopy(src);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return null;
+        } finally {
+            textureUploadSemaphore.release();
+        }
     }
 
     public record TextureRenderProps(boolean translucent, boolean alphaTest, boolean noCull) {

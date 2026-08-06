@@ -1,6 +1,7 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
 import com.mojang.logging.LogUtils;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -13,6 +14,8 @@ import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 
+import transferstation.transferstation_whimsicalideas.client.physics.EnvironmentMeshBuilder;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,6 +26,11 @@ import java.util.stream.Stream;
 public class NpcRagdoll extends Entity {
 
     private static final Logger LOGGER = LogUtils.getLogger();
+
+    /** Radius (in blocks) around the ragdoll used to build the collision mesh. */
+    private static final int MESH_RADIUS = 4;
+    /** Rebuild the collision mesh every N ticks (10 ticks = 0.5s). */
+    private static final int MESH_REFRESH_TICKS = 10;
 
     private static final EntityDataAccessor<String> DATA_MODEL_NAME =
             SynchedEntityData.defineId(NpcRagdoll.class, EntityDataSerializers.STRING);
@@ -38,6 +46,8 @@ public class NpcRagdoll extends Entity {
     private long[] boneBodyIds = new long[0];
     private long[] jointIds = new long[0];
     private boolean physicsInitialized = false;
+
+    private boolean meshOwned = false;
 
     private float deathVelocityX = 0;
     private float deathVelocityY = 0.2f;
@@ -115,6 +125,10 @@ public class NpcRagdoll extends Entity {
             }
 
             updatePhysics();
+
+            if (age % MESH_REFRESH_TICKS == 0) {
+                refreshEnvironmentMesh();
+            }
 
             if (age > DESPAWN_START && age % 10 == 0) {
                 float fade = 1.0f - ((float)(age - DESPAWN_START) / (MAX_AGE - DESPAWN_START));
@@ -238,6 +252,8 @@ public class NpcRagdoll extends Entity {
                     boneBodyIds[bone.parent], boneBodyIds[i], jx, jy, jz, jx, jy, jz);
             }
         }
+
+        meshOwned = true;
     }
 
     private static float getMass(int[] boneDepths, int i, MdlDataTypes.Bone bone) {
@@ -369,13 +385,29 @@ public class NpcRagdoll extends Entity {
         for (int i = 0; i < boneCount - 1; i++) {
             jointIds[i] = PhysicsBridge.createJoint(boneBodyIds[i], boneBodyIds[i + 1], 0, 0, 0, 0, 0, 0);
         }
+
+        meshOwned = true;
+    }
+
+    /**
+     * Rebuild the native collision mesh from the block surfaces around this ragdoll.
+     * Only takes ownership of the (global) mesh if this ragdoll currently owns it,
+     * so concurrent ragdolls don't steal each other's mesh.
+     */
+    private void refreshEnvironmentMesh() {
+        if (!PhysicsBridge.isAvailable()) return;
+        if (!meshOwned) return;
+
+        Level level = level();
+        BlockPos center = blockPosition();
+        EnvironmentMeshBuilder.MeshData mesh = EnvironmentMeshBuilder.build(level, center, MESH_RADIUS);
+        PhysicsBridge.setEnvironmentMesh(mesh.vertices(), mesh.indices());
     }
 
     private void updatePhysics() {
         if (!PhysicsBridge.isAvailable() || boneBodyIds.length == 0) return;
 
         PhysicsBridge.stepSimulation(1.0f / 20.0f);
-
         float avgX = 0, avgY = 0, avgZ = 0;
         for (long bodyId : boneBodyIds) {
             float[] pos = PhysicsBridge.getPosition(bodyId);
@@ -392,6 +424,11 @@ public class NpcRagdoll extends Entity {
 
     private void cleanupPhysics() {
         if (!PhysicsBridge.isAvailable()) return;
+
+        if (meshOwned) {
+            PhysicsBridge.clearEnvironmentMesh();
+            meshOwned = false;
+        }
 
         for (long jointId : jointIds) {
             if (jointId != 0) {

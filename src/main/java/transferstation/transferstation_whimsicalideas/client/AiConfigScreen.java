@@ -1,5 +1,7 @@
 package transferstation.transferstation_whimsicalideas.client;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.gui.GuiGraphics;
@@ -23,12 +25,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 
 public class AiConfigScreen extends Screen {
 
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private EditBox apiKeyField;
     private EditBox endpointField;
@@ -37,12 +42,40 @@ public class AiConfigScreen extends Screen {
     private String statusMessage = "";
     private int statusTimer = 0;
     private StatusType statusType = StatusType.INFO;
+    private int scrollOffset = 0;
     private enum StatusType { INFO, SUCCESS, ERROR }
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5)).build();
 
     private static final Path CONFIG_PATH = net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get()
             .resolve("transferstation_whimsicalideas").resolve("ai_provider.properties");
+
+    // Preset configurations
+    private static final Map<String, PresetConfig> PRESETS = new LinkedHashMap<>();
+    static {
+        PRESETS.put("OpenAI GPT-3.5", new PresetConfig(
+            "https://api.openai.com/v1/chat/completions", "gpt-3.5-turbo", NpcChatHandler.AiProvider.OPENAI));
+        PRESETS.put("OpenAI GPT-4", new PresetConfig(
+            "https://api.openai.com/v1/chat/completions", "gpt-4", NpcChatHandler.AiProvider.OPENAI));
+        PRESETS.put("DeepSeek Chat", new PresetConfig(
+            "https://api.deepseek.com/v1/chat/completions", "deepseek-chat", NpcChatHandler.AiProvider.DEEPSEEK));
+        PRESETS.put("Ollama Local", new PresetConfig(
+            "http://localhost:11434/api/chat", "llama3", NpcChatHandler.AiProvider.OLLAMA));
+        PRESETS.put("Custom", new PresetConfig(
+            "https://api.player2.game/v1/chat", "gmod-npc", NpcChatHandler.AiProvider.CUSTOM));
+    }
+
+    private static class PresetConfig {
+        final String endpoint;
+        final String model;
+        final NpcChatHandler.AiProvider provider;
+
+        PresetConfig(String endpoint, String model, NpcChatHandler.AiProvider provider) {
+            this.endpoint = endpoint;
+            this.model = model;
+            this.provider = provider;
+        }
+    }
 
     protected AiConfigScreen() {
         super(Component.translatable("gui.transferstation_whimsicalideas.ai_provider_config"));
@@ -87,6 +120,66 @@ public class AiConfigScreen extends Screen {
             statusType = StatusType.SUCCESS;
         } catch (IOException e) {
             statusMessage = Component.translatable("gui.transferstation_whimsicalideas.save_failed", e.getMessage()).getString();
+            statusTimer = 100;
+            statusType = StatusType.ERROR;
+        }
+    }
+
+    private void applyPreset(String presetName) {
+        PresetConfig preset = PRESETS.get(presetName);
+        if (preset == null) return;
+        endpointField.setValue(preset.endpoint);
+        modelField.setValue(preset.model);
+        NpcChatHandler.setProvider(preset.provider);
+        statusMessage = "Applied preset: " + presetName;
+        statusTimer = 60;
+        statusType = StatusType.SUCCESS;
+    }
+
+    private void exportSettings() {
+        Path exportPath = net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get()
+                .resolve("transferstation_whimsicalideas").resolve("ai_config_export.json");
+        try {
+            Files.createDirectories(exportPath.getParent());
+            JsonObject json = new JsonObject();
+            json.addProperty("apiKey", apiKeyField.getValue());
+            json.addProperty("endpoint", endpointField.getValue());
+            json.addProperty("enabled", enabled);
+            json.addProperty("provider", NpcChatHandler.getProvider().id);
+            json.addProperty("model", modelField.getValue());
+            Files.writeString(exportPath, GSON.toJson(json));
+            statusMessage = "Exported to: " + exportPath.getFileName();
+            statusTimer = 80;
+            statusType = StatusType.SUCCESS;
+        } catch (IOException e) {
+            statusMessage = "Export failed: " + e.getMessage();
+            statusTimer = 100;
+            statusType = StatusType.ERROR;
+        }
+    }
+
+    private void importSettings() {
+        Path importPath = net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get()
+                .resolve("transferstation_whimsicalideas").resolve("ai_config_export.json");
+        if (!Files.exists(importPath)) {
+            statusMessage = "No export file found";
+            statusTimer = 80;
+            statusType = StatusType.ERROR;
+            return;
+        }
+        try {
+            String json = Files.readString(importPath);
+            JsonObject obj = GSON.fromJson(json, JsonObject.class);
+            if (obj.has("apiKey")) apiKeyField.setValue(obj.get("apiKey").getAsString());
+            if (obj.has("endpoint")) endpointField.setValue(obj.get("endpoint").getAsString());
+            if (obj.has("enabled")) enabled = obj.get("enabled").getAsBoolean();
+            if (obj.has("provider")) NpcChatHandler.setProvider(NpcChatHandler.AiProvider.fromId(obj.get("provider").getAsString()));
+            if (obj.has("model")) modelField.setValue(obj.get("model").getAsString());
+            statusMessage = "Imported settings";
+            statusTimer = 60;
+            statusType = StatusType.SUCCESS;
+        } catch (Exception e) {
+            statusMessage = "Import failed: " + e.getMessage();
             statusTimer = 100;
             statusType = StatusType.ERROR;
         }
@@ -170,13 +263,40 @@ public class AiConfigScreen extends Screen {
         modelField.setTextColor(0xF3EFE0);
         addWidget(modelField);
 
+        // === Preset Selection Section ===
         y += 28;
+        int presetBtnW = 90;
+        int presetIdx = 0;
+        for (var entry : PRESETS.entrySet()) {
+            final String name = entry.getKey();
+            int col = presetIdx % 3;
+            int row = presetIdx / 3;
+            addRenderableWidget(Button.builder(
+                Component.literal(name),
+                btn -> applyPreset(name)
+            ).pos(cx - 50 + col * (presetBtnW + 5), y + row * 20).size(presetBtnW, 16).build());
+            presetIdx++;
+        }
+        y += ((presetIdx + 2) / 3) * 20 + 4;
+
+        // === Import/Export Section ===
+        addRenderableWidget(Button.builder(
+                Component.literal("Export Settings"),
+                btn -> exportSettings()
+        ).pos(cx - 50, y).size(137, 18).build());
+
+        addRenderableWidget(Button.builder(
+                Component.literal("Import Settings"),
+                btn -> importSettings()
+        ).pos(cx + 91, y).size(139, 18).build());
+
+        y += 24;
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.transferstation_whimsicalideas.save_config"),
                 btn -> saveConfig()
         ).pos(cx - 50, y).size(280, 18).build());
 
-        y += 28;
+        y += 24;
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.transferstation_whimsicalideas.clear_history"),
                 btn -> {
@@ -187,11 +307,10 @@ public class AiConfigScreen extends Screen {
                 }
         ).pos(cx - 50, y).size(280, 18).build());
 
-        // ──── Voice Input Section ────
-        y += 16;
-        y += 16;
+        // --- Voice Input Section ---
+        y += 24;
         // Enable voice toggle
-        var voiceToggle = addRenderableWidget(Button.builder(
+        addRenderableWidget(Button.builder(
             Component.translatable(
                 VoiceConfig.isEnabled()
                     ? "gui.transferstation_whimsicalideas.voice_enabled"
@@ -207,7 +326,7 @@ public class AiConfigScreen extends Screen {
 
         y += 22;
         // Auto-send toggle
-        var autoSendToggle = addRenderableWidget(Button.builder(
+        addRenderableWidget(Button.builder(
             Component.translatable(
                 VoiceConfig.isAutoSend()
                     ? "gui.transferstation_whimsicalideas.voice_autosend_on"
@@ -227,12 +346,12 @@ public class AiConfigScreen extends Screen {
             Component.translatable("gui.transferstation_whimsicalideas.voice_download_model"),
             btn -> {
                 btn.active = false;
-                btn.setMessage(Component.literal("§e下载中..."));
+                btn.setMessage(Component.literal("\u00A7e\u4E0B\u8F7D\u4E2D..."));
                 java.util.concurrent.CompletableFuture.runAsync(() -> {
                     boolean ok = VoiceConfig.downloadDefaultModel();
                     net.minecraft.client.Minecraft.getInstance().execute(() -> {
                         if (ok) {
-                            btn.setMessage(Component.literal("§a下载完成"));
+                            btn.setMessage(Component.literal("\u00A7a\u4E0B\u8F7D\u5B8C\u6210"));
                             statusMessage = net.minecraft.network.chat.Component.translatable(
                                 "gui.transferstation_whimsicalideas.voice_download_done").getString();
                             statusTimer = 80;
@@ -273,7 +392,7 @@ public class AiConfigScreen extends Screen {
                         statusTimer = 80;
                         statusType = StatusType.SUCCESS;
                     }));
-                    btn.setMessage(Component.literal("§c停止测试"));
+                    btn.setMessage(Component.literal("\u00A7c\u505C\u6B62\u6D4B\u8BD5"));
                     statusMessage = net.minecraft.network.chat.Component.translatable(
                         "gui.transferstation_whimsicalideas.voice_test_recording").getString();
                     statusTimer = 0;
@@ -363,6 +482,13 @@ public class AiConfigScreen extends Screen {
 
         graphics.drawString(font, Component.translatable("gui.transferstation_whimsicalideas.api_key_label"), cx - 150, 54, 0xF3EFE0);
         graphics.drawString(font, Component.translatable("gui.transferstation_whimsicalideas.endpoint_label"), cx - 150, 82, 0xF3EFE0);
+
+        // Section headers
+        int y = 170;
+        graphics.drawString(font, "\u00A7lPresets", cx - 150, y, 0xF3EFE0);
+        y += 20 + ((PRESETS.size() + 2) / 3) * 20;
+
+        graphics.drawString(font, "\u00A7lImport / Export", cx - 150, y, 0xF3EFE0);
 
         graphics.drawString(font,
                 Component.translatable("gui.transferstation_whimsicalideas.provider_info"), cx - 150, 180, 0x888888);

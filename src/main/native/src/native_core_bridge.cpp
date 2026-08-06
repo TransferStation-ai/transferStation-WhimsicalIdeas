@@ -212,16 +212,30 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeCore
         w.writeInt(parsed.numBodyParts);
         w.writeInt(parsed.numLODs);
 
-        int meshCount = static_cast<int>(parsed.meshStripGroups.size());
+        // Flatten per-model entries to per-mesh: the native VTX parser groups
+        // strip groups per-model (60 entries for 60 models), but the Java
+        // buildMeshesForLod walker expects one entry per-mesh (40 entries for
+        // 40 meshes). Flatten so the Java side can pair VTX meshes 1:1 with
+        // MDL meshes.
+        std::vector<std::vector<VtxParser::StripGroupInfo>> flatMeshes;
+        for (const auto& modelGroups : parsed.meshStripGroups) {
+            for (const auto& sg : modelGroups) {
+                flatMeshes.push_back({sg});
+            }
+        }
+        int meshCount = static_cast<int>(flatMeshes.size());
         w.writeInt(meshCount);
         for (int m = 0; m < meshCount; m++) {
             std::vector<uint32_t> triangles;
-            for (const auto& sg : parsed.meshStripGroups[m]) {
+            for (const auto& sg : flatMeshes[m]) {
                 for (const auto& strip : sg.strips) {
                     triangles.insert(triangles.end(), strip.indices.begin(), strip.indices.end());
                 }
             }
-            int triCount = static_cast<int>(triangles.size());
+            // triangles holds a flat list of index triplets. Write the triangle
+            // count (size()/3), NOT the raw index count, so the Java side which
+            // reads one triangle (3 ints) per iteration stays in sync.
+            int triCount = static_cast<int>(triangles.size() / 3);
             w.writeInt(triCount);
             for (size_t t = 0; t + 2 < triangles.size(); t += 3) {
                 w.writeInt(static_cast<int32_t>(triangles[t]));

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
+#include <map>
 #include <sstream>
 #include <cstring>
 #include <atomic>
@@ -453,8 +454,9 @@ static void discoverTextures(
         }
     };
 
-    // Launch parallel VTF decoding
-    size_t numThreads = std::min(vtfCount, static_cast<size_t>(std::thread::hardware_concurrency()));
+    // Launch parallel VTF decoding (capped: 2 threads per model to bound memory
+    // burst while multiple models pre-warm concurrently)
+    size_t numThreads = std::min(vtfCount, static_cast<size_t>(2));
     std::vector<std::future<void>> vtfFutures;
     for (size_t t = 0; t < numThreads; t++) {
         vtfFutures.push_back(std::async(std::launch::async, decodeVtfTask));
@@ -509,26 +511,128 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromDirectory(
     }
 
     // Collect file paths
-    std::string mdlPath, vvdPath, vtxPath, luaPath, smdPath;
+    std::string mdlPath, vvdPath, vtxPath, smdPath;
     std::string materialsDir;
     std::vector<std::string> allFiles;
+    std::vector<std::string> luaPaths;
 
+    // GMod model packs (e.g. 0v0NekoWork*) keep the player body under models/pm
+    // or models/npc, first-person hands under models/arms and props under
+    // models/shoes. GMod itself classifies models in Lua:
+    //   player_manager.AddValidModel(name, "models/PM/x.mdl")       -> player body
+    //   player_manager.AddValidHands(name, "models/arms/x.mdl", ...) -> hands
+    //   list.Set("NPC", { Model = "models/NPC/x.mdl", ... })        -> NPC
+    // and *_nopussy is just an alternate body of the same rig. We mirror that:
+    // the AddValidModel path (matched case-insensitively against the on-disk
+    // relative path) wins, falling back to a "pm"/"npc" folder-name heuristic.
+    // Windows directory iteration is in on-disk order (visits "arms" before
+    // "pm/npc" alphabetically), so grouping by directory and matching base names
+    // keeps the MDL/VVD/VTX trio from a single folder and never mixes variants.
+    struct DirFiles {
+        std::vector<std::string> mdls, vvds, vtxs;
+    };
+    std::map<std::string, DirFiles> filesByDir;
     for (auto& entry : fs::recursive_directory_iterator(pkgDir)) {
         if (!entry.is_regular_file()) continue;
         std::string fileName = entry.path().filename().string();
         std::string lowerName = fileName;
         std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
 
-        if (lowerName.ends_with(".mdl")) {
-            if (mdlPath.empty()) mdlPath = entry.path().string();
-        } else if (lowerName.ends_with(".vvd")) {
-            if (vvdPath.empty()) vvdPath = entry.path().string();
-        } else if (lowerName.ends_with(".dx90.vtx")) {
-            if (vtxPath.empty()) vtxPath = entry.path().string();
+        if (lowerName.ends_with(".mdl") || lowerName.ends_with(".vvd") || lowerName.ends_with(".dx90.vtx")) {
+            DirFiles& df = filesByDir[entry.path().parent_path().string()];
+            if (lowerName.ends_with(".mdl")) df.mdls.push_back(entry.path().string());
+            else if (lowerName.ends_with(".vvd")) df.vvds.push_back(entry.path().string());
+            else if (lowerName.ends_with(".dx90.vtx")) df.vtxs.push_back(entry.path().string());
         } else if (lowerName.ends_with(".lua")) {
-            luaPath = entry.path().string();
+            luaPaths.push_back(entry.path().string());
         } else if (lowerName.ends_with(".smd")) {
             if (smdPath.empty()) smdPath = entry.path().string();
+        }
+    }
+
+    // Parse the official GMod classification: collect every model path registered
+    // as a PLAYER body via player_manager.AddValidModel(name, "models/..."). This
+    // is GMod's canonical "this is the player model" signal and outranks any
+    // folder-name heuristic. Paths are normalised to lower-case, matching what we
+    // compare against the on-disk relative path (case-insensitive on Windows).
+    std::vector<std::string> playerModelRefs;
+    for (const auto& lp : luaPaths) {
+        std::ifstream luaFile(lp);
+        std::string line;
+        while (std::getline(luaFile, line)) {
+            size_t s = line.find("player_manager.AddValidModel");
+            if (s == std::string::npos) continue;
+            size_t open = line.find('(', s);
+            if (open == std::string::npos) continue;
+            size_t quote = line.find('"', open);
+            if (quote == std::string::npos) continue;
+            size_t endQuote = line.find('"', quote + 1);
+            if (endQuote == std::string::npos) continue;
+            std::string p = line.substr(quote + 1, endQuote - quote - 1);
+            if (p.find(".mdl") == std::string::npos) continue;
+            for (auto& ch : p) ch = (char)::tolower((unsigned char)ch);
+            playerModelRefs.push_back(p);
+        }
+    }
+
+    auto normRel = [](const std::string& abs, const std::string& root) -> std::string {
+        std::string rel = fs::relative(abs, root).generic_string();
+        std::transform(rel.begin(), rel.end(), rel.begin(), ::tolower);
+        return rel;
+    };
+
+    // Elect the best matched MDL trio. Priority:
+    //   3 = exact match on a player_manager.AddValidModel path (GMod official),
+    //   2 = inside a "pm" folder, 1 = inside an "npc" folder, else 0,
+    //   then shallower wins. Within a folder the trio is paired by base name, so
+    //   a main body vs a "_nopussy" variant never get mixed together.
+    int bestScore = -1, bestDepth = -1;
+    for (const auto& kv : filesByDir) {
+        const DirFiles& t = kv.second;
+        if (t.mdls.empty() || t.vvds.empty() || t.vtxs.empty()) continue;
+        fs::path dir(kv.first);
+        std::string fold = dir.filename().string();
+        std::transform(fold.begin(), fold.end(), fold.begin(), ::tolower);
+
+        // Build the best (baseName) trio for this dir, honouring an AddValidModel
+        // match as top priority.
+        std::string bestBase;
+        int dirBestScore = -1;
+        for (const auto& mdl : t.mdls) {
+            std::string mdlRel = normRel(mdl, pkgDir);
+            // Is this exact mdl path registered as a GMod player model?
+            bool isRegisteredPlayer =
+                std::find(playerModelRefs.begin(), playerModelRefs.end(), mdlRel) != playerModelRefs.end();
+            int sc = isRegisteredPlayer ? 3 : (fold == "pm") ? 2 : (fold == "npc") ? 1 : 0;
+            if (sc > dirBestScore) {
+                dirBestScore = sc;
+                std::string base = fs::path(mdl).stem().string();
+                // Require a matching .vvd and .dx90.vtx for this base.
+                bool hasVvd = false, hasVtx = false;
+                for (const auto& v : t.vvds)
+                    if (fs::path(v).stem().string() == base) hasVvd = true;
+                for (const auto& v : t.vtxs)
+                    if (fs::path(v).stem().string() == base) hasVtx = true;
+                if (hasVvd && hasVtx) { bestBase = base; }
+            }
+        }
+        if (bestBase.empty()) continue;
+
+        int depth = 0;
+        for (const auto& comp : fs::relative(dir, pkgDir)) { (void)comp; depth++; }
+        auto findWithBase = [](const std::vector<std::string>& list, const std::string& base) -> std::string {
+            for (const auto& p : list)
+                if (fs::path(p).stem().string() == base) return p;
+            return "";
+        };
+        std::string chosenMdl = findWithBase(t.mdls, bestBase);
+        std::string chosenVvd = findWithBase(t.vvds, bestBase);
+        std::string chosenVtx = findWithBase(t.vtxs, bestBase);
+        if (chosenMdl.empty() || chosenVvd.empty() || chosenVtx.empty()) continue;
+
+        if (dirBestScore > bestScore || (dirBestScore == bestScore && (bestDepth < 0 || depth < bestDepth))) {
+            bestScore = dirBestScore; bestDepth = depth;
+            mdlPath = chosenMdl; vvdPath = chosenVvd; vtxPath = chosenVtx;
         }
     }
 
@@ -554,8 +658,8 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromDirectory(
     }
 
     // Parse Lua metadata
-    if (!luaPath.empty()) {
-        std::ifstream luaFile(luaPath);
+    for (const auto& lp : luaPaths) {
+        std::ifstream luaFile(lp);
         std::string line;
         while (std::getline(luaFile, line)) {
             size_t s = line.find_first_not_of(" \t\r");
@@ -1084,7 +1188,21 @@ std::vector<MeshData> ModelLoader::buildMeshes(
         return result;
     }
 
-    struct MeshInfo { int modelIdx; int vertexOffset; };
+    // Build a per-VTX-mesh descriptor that stays in LOCKSTEP with the VTX mesh list.
+    // The VTX mesh list is ordered (bodypart -> model -> LOD0 mesh), identical to the
+    // MDL bodypart/model/mesh nesting, so we walk the same nesting and emit one entry
+    // per MDL mesh. This mirrors ModelLoadManager.buildMeshesForLod (Java):
+    //   - vvdModelBase : per-model VVD vertex base. When the VVD has no fixup table the
+    //     vertices are tightly packed in MDL model order, so the correct base is the
+    //     running sum of preceding models' numvertices (NOT model.vertexindex, which is
+    //     an offset inside the .mdl file and unrelated to the .vvd layout; using it
+    //     pulls every model after the first from the wrong vertex block and mangles the
+    //     whole mesh). With a fixup table present we fall back to the model.vertexindex
+    //     math (those models need a fixup-aware path resolved per triangle).
+    //   - shadowOnly   : bodygroup variants are mutually exclusive alternatives; only
+    //     the first model per bodypart emits geometry, later ones advance the cursors
+    //     (lockstep) but are skipped so alternatives don't overlap.
+    struct MeshInfo { int modelIdx; int vertexOffset; int vvdModelBase; bool shadowOnly; };
     size_t totalMeshes = 0;
     for (const auto& mdlModel : mdl.models) {
         totalMeshes += static_cast<size_t>(mdlModel.nummeshes);
@@ -1096,13 +1214,44 @@ std::vector<MeshData> ModelLoader::buildMeshes(
         int meshCounter = 0;
         int numModels = static_cast<int>(mdl.models.size());
         int numMeshes = static_cast<int>(mdl.meshes.size());
-        for (int mi = 0; mi < numModels; mi++) {
-            for (int j = 0; j < mdl.models[mi].nummeshes; j++) {
-                MeshInfo info;
-                info.modelIdx = mi;
-                info.vertexOffset = (meshCounter < numMeshes) ? mdl.meshes[meshCounter].vertexoffset : 0;
-                meshInfos.push_back(info);
-                meshCounter++;
+        int numBodyParts = static_cast<int>(mdl.bodyParts.size());
+        int numVvdVerts = static_cast<int>(vvdVerts.size());
+        bool vvdTightlyPacked = vvd.fixups.empty();
+        int vvdAccumBase = 0;
+        std::vector<bool> bodygroupActiveModelSeen(numBodyParts > 0 ? numBodyParts : 1, false);
+        for (int bpIdx = 0; bpIdx < numBodyParts; bpIdx++) {
+            for (int mi = 0; mi < numModels; mi++) {
+                if (mi >= static_cast<int>(mdl.modelBodyPartIndices.size())) continue;
+                if (mdl.modelBodyPartIndices[mi] != bpIdx) continue;
+                const auto& model = mdl.models[mi];
+
+                bool shadowOnly = bodygroupActiveModelSeen[bpIdx];
+                if (model.nummeshes > 0) bodygroupActiveModelSeen[bpIdx] = true;
+
+                int vvdModelBase;
+                if (vvdTightlyPacked) {
+                    vvdModelBase = vvdAccumBase;
+                } else {
+                    int rawBase = model.vertexindex - vvd.header.vertexDataStart;
+                    if (rawBase < 0) rawBase = 0;
+                    vvdModelBase = rawBase / VVD_VERTEX_SIZE;
+                }
+                if (vvdModelBase < 0) vvdModelBase = 0;
+                if (vvdModelBase > numVvdVerts) vvdModelBase = numVvdVerts;
+
+                for (int j = 0; j < model.nummeshes; j++) {
+                    MeshInfo info;
+                    info.modelIdx = mi;
+                    info.vvdModelBase = vvdModelBase;
+                    info.shadowOnly = shadowOnly;
+                    info.vertexOffset = (meshCounter < numMeshes) ? mdl.meshes[meshCounter].vertexoffset : 0;
+                    meshInfos.push_back(info);
+                    meshCounter++;
+                }
+
+                if (vvdTightlyPacked) {
+                    vvdAccumBase += model.numvertices;
+                }
             }
         }
     }
@@ -1120,19 +1269,49 @@ std::vector<MeshData> ModelLoader::buildMeshes(
     result.reserve(vtxMeshCount);
 
     for (int meshIdx = 0; meshIdx < vtxMeshCount; meshIdx++) {
+        // Skip bodygroup variant meshes (only the first model per bodypart emits geometry).
+        if (meshIdx < numMeshInfos && meshInfos[meshIdx].shadowOnly) {
+            continue;
+        }
+
         MeshData mesh;
 
         int vvdBase = 0;
+        int vertexOffset = 0;
         if (meshIdx < numMeshInfos) {
             const auto& info = meshInfos[meshIdx];
-            if (info.modelIdx >= 0 && info.modelIdx < static_cast<int>(mdl.models.size())) {
-                {
-                    int rawBase = mdl.models[info.modelIdx].vertexindex - vvd.header.vertexDataStart;
-                    if (rawBase < 0) rawBase = 0;
-                    vvdBase = rawBase / VVD_VERTEX_SIZE + info.vertexOffset;
-                }
-            }
+            vvdBase = info.vvdModelBase;
+            vertexOffset = info.vertexOffset;
         }
+
+        int vvdVertexCount = static_cast<int>(vvdVerts.size());
+        // Resolve a VTX origMeshVertID to a raw VVD vertex index. Mirrors the Java
+        // ModelLoadManager.resolveVvdIndex: when a fixup table is present the VTX id is a
+        // sequential index across the concatenation of all fixup vertex blocks, so walk the
+        // fixups subtracting each block's count until the id lands inside one, then map it
+        // into the raw VVD vertex array via that fixup's sourceVertexID. Without fixups,
+        // try the id as an absolute raw index first and only fall back to base+offset when
+        // the absolute one is out of range (some models store absolute indices directly).
+        auto resolveVvdIndex = [&](int origMeshVertId) -> int {
+            if (origMeshVertId < 0) return -1;
+            if (!vvd.fixups.empty()) {
+                int id = origMeshVertId;
+                for (const auto& f : vvd.fixups) {
+                    if (f.numVertexes <= 0) continue;
+                    if (id < f.numVertexes) {
+                        int raw = f.sourceVertexID + id;
+                        return (raw >= 0 && raw < vvdVertexCount) ? raw : -1;
+                    }
+                    id -= f.numVertexes;
+                }
+                return -1;
+            }
+            if (origMeshVertId < vvdVertexCount) {
+                return origMeshVertId;
+            }
+            int adjusted = vvdBase + vertexOffset + origMeshVertId;
+            return (adjusted >= 0 && adjusted < vvdVertexCount) ? adjusted : -1;
+        };
 
         const auto& stripGroups = stripGroupsList[meshIdx];
         size_t estimatedVerts = 0;
@@ -1158,12 +1337,11 @@ std::vector<MeshData> ModelLoader::buildMeshes(
 
                     if (ci0 >= numVerts || ci1 >= numVerts || ci2 >= numVerts) continue;
 
-                    int vvdIdx0 = vvdBase + sg.vertices[ci0].origMeshVertID;
-                    int vvdIdx1 = vvdBase + sg.vertices[ci1].origMeshVertID;
-                    int vvdIdx2 = vvdBase + sg.vertices[ci2].origMeshVertID;
+                    int vvdIdx0 = resolveVvdIndex(sg.vertices[ci0].origMeshVertID);
+                    int vvdIdx1 = resolveVvdIndex(sg.vertices[ci1].origMeshVertID);
+                    int vvdIdx2 = resolveVvdIndex(sg.vertices[ci2].origMeshVertID);
 
-                    int numVvdVerts = static_cast<int>(vvdVerts.size());
-                    if (vvdIdx0 >= numVvdVerts || vvdIdx1 >= numVvdVerts || vvdIdx2 >= numVvdVerts) continue;
+                    if (vvdIdx0 < 0 || vvdIdx1 < 0 || vvdIdx2 < 0) continue;
 
                     auto addVert = [&](const StudioVertexExt& sv) {
                         SkinnedVertex sk;

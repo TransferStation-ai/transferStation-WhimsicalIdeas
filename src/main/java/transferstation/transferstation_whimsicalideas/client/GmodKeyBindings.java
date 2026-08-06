@@ -17,6 +17,7 @@ import transferstation.transferstation_whimsicalideas.client.editor.AnimationEdi
 import transferstation.transferstation_whimsicalideas.client.editor.ModelEditorScreen;
 import transferstation.transferstation_whimsicalideas.client.morph.ExpressionWheelScreen;
 import transferstation.transferstation_whimsicalideas.client.physics.PhysicsSimulationManager;
+import transferstation.transferstation_whimsicalideas.client.renderer.ModelLoadProgressOverlay;
 
 @Mod.EventBusSubscriber(modid = Transferstation_whimsicalideas.MODID, value = Dist.CLIENT)
 public class GmodKeyBindings {
@@ -69,6 +70,14 @@ public class GmodKeyBindings {
             "key.categories.transferstation_whimsicalideas"
     );
 
+    public static final KeyMapping TOGGLE_OVERLAY_DETAIL_KEY = new KeyMapping(
+            "key.transferstation_whimsicalideas.overlay_detail",
+            KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_F11,
+            "key.categories.transferstation_whimsicalideas"
+    );
+
     private static boolean physicsEnabled = true;
 
     @SubscribeEvent
@@ -79,6 +88,7 @@ public class GmodKeyBindings {
         event.register(OPEN_MODEL_EDITOR_KEY);
         event.register(OPEN_ANIM_EDITOR_KEY);
         event.register(OPEN_DEBUG_KEY);
+        event.register(TOGGLE_OVERLAY_DETAIL_KEY);
     }
 
     @SubscribeEvent
@@ -113,6 +123,16 @@ public class GmodKeyBindings {
                 Component.translatable(
                     physicsEnabled ? "message.transferstation_whimsicalideas.physics_enabled"
                                    : "message.transferstation_whimsicalideas.physics_disabled"),
+                true);
+        }
+
+        if (TOGGLE_OVERLAY_DETAIL_KEY.consumeClick()) {
+            ModelLoadProgressOverlay.toggleDetailedMode();
+            mc.player.displayClientMessage(
+                Component.literal(
+                    ModelLoadProgressOverlay.isDetailedMode()
+                        ? "Overlay: Detailed view"
+                        : "Overlay: Compact view"),
                 true);
         }
     }

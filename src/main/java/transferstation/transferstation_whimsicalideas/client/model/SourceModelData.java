@@ -375,79 +375,69 @@ public class SourceModelData {
     }
 
     /**
-     * Returns a LOD-reduced copy of this model data.
+     * Returns a LOD-reduced view of this model data, sharing bones/animations/metadata
+     * with the parent to avoid duplicating all model metadata in memory.
+     * Only the mesh vertex/index arrays are copied (via decimation).
      * LOD 1 = remove 50% of triangles, LOD 2 = remove 75%, LOD 3 = remove 90%.
      */
     public SourceModelData getMeshesForLod(int lodLevel) {
         if (lodLevel <= 0) {
-            return copyFullMeshData();
+            return this;
         }
 
-        // Use pre-built LOD lists if available
+        List<MeshData> targetMeshes = null;
         if (lodLevel == 1 && !lodMeshes1.isEmpty()) {
-            return copyWithMeshes(lodMeshes1);
-        }
-        if (lodLevel == 2 && !lodMeshes2.isEmpty()) {
-            return copyWithMeshes(lodMeshes2);
-        }
-        if (lodLevel == 3 && !lodMeshes3.isEmpty()) {
-            return copyWithMeshes(lodMeshes3);
+            targetMeshes = lodMeshes1;
+        } else if (lodLevel == 2 && !lodMeshes2.isEmpty()) {
+            targetMeshes = lodMeshes2;
+        } else if (lodLevel == 3 && !lodMeshes3.isEmpty()) {
+            targetMeshes = lodMeshes3;
         }
 
-        // Dynamically reduce triangle count by decimation
-        SourceModelData result = copyFullMeshData();
-        result.meshes.clear();
+        if (targetMeshes != null) {
+            return new LodView(this, targetMeshes);
+        }
+
+        List<MeshData> decimated = new ArrayList<>();
         for (MeshData mesh : this.meshes) {
             MeshData reduced = decimateMesh(mesh, lodLevel);
             if (reduced != null) {
-                result.meshes.add(reduced);
+                decimated.add(reduced);
             }
         }
-        return result;
+        return new LodView(this, decimated);
     }
 
-    private SourceModelData copyFullMeshData() {
-        SourceModelData result = new SourceModelData();
-        result.name = this.name;
-        result.modelScale = this.modelScale;
-        result.minX = this.minX; result.maxX = this.maxX;
-        result.minY = this.minY; result.maxY = this.maxY;
-        result.minZ = this.minZ; result.maxZ = this.maxZ;
-        result.bones.addAll(this.bones);
-        result.bodyParts.addAll(this.bodyParts);
-        result.numSkinRef = this.numSkinRef;
-        result.numSkinFamilies = this.numSkinFamilies;
-        result.skinTable.addAll(this.skinTable);
-        result.currentSkinFamily = this.currentSkinFamily;
-        result.attachments.addAll(this.attachments);
-        result.boneControllers.addAll(this.boneControllers);
-        result.hitboxSets.addAll(this.hitboxSets);
-        result.sequences.addAll(this.sequences);
-        result.ikChains.addAll(this.ikChains);
-        result.flexDescs.addAll(this.flexDescs);
-        result.flexControllers.addAll(this.flexControllers);
-        result.flexRules.addAll(this.flexRules);
-        result.localAnims.addAll(this.localAnims);
-        result.poseParams.addAll(this.poseParams);
-        result.localNodes.addAll(this.localNodes);
-        result.ikAutoplayLocks.addAll(this.ikAutoplayLocks);
-        result.mouths.addAll(this.mouths);
-        result.keyValues = this.keyValues;
-        result.surfaceProp = this.surfaceProp;
-        result.hdr2 = this.hdr2;
-        result.meshes.addAll(this.meshes);
-        result.srcBoneTransforms.addAll(this.srcBoneTransforms);
-        result.sequenceAnimData.addAll(this.sequenceAnimData);
-        result.referenceSequenceIndices.addAll(this.referenceSequenceIndices);
-        result.aPoseSequenceIndices.addAll(this.aPoseSequenceIndices);
-        return result;
-    }
-
-    private SourceModelData copyWithMeshes(List<MeshData> lodMeshes) {
-        SourceModelData result = copyFullMeshData();
-        result.meshes.clear();
-        result.meshes.addAll(lodMeshes);
-        return result;
+    /**
+     * Lightweight LOD view that shares bones/bodyParts metadata with the parent
+     * but uses its own reduced mesh list. Avoids duplicating massive animation,
+     * sequence, flex, and attachment data for each LOD level.
+     */
+    private static class LodView extends SourceModelData {
+        LodView(SourceModelData parent, List<MeshData> lodMeshes) {
+            this.name = parent.name;
+            this.modelScale = parent.modelScale;
+            this.minX = parent.minX;
+            this.maxX = parent.maxX;
+            this.minY = parent.minY;
+            this.maxY = parent.maxY;
+            this.minZ = parent.minZ;
+            this.maxZ = parent.maxZ;
+            this.meshes.addAll(lodMeshes);
+            this.physicsSimId = parent.physicsSimId;
+            this.surfaceProp = parent.surfaceProp;
+            this.keyValues = parent.keyValues;
+            this.hdr2 = parent.hdr2;
+            this.numSkinRef = parent.numSkinRef;
+            this.numSkinFamilies = parent.numSkinFamilies;
+            this.skinTable.addAll(parent.skinTable);
+            this.currentSkinFamily = parent.currentSkinFamily;
+            this.bones.addAll(parent.bones);
+            this.bodyParts.addAll(parent.bodyParts);
+            this.srcBoneTransforms.addAll(parent.srcBoneTransforms);
+            this.referenceSequenceIndices.addAll(parent.referenceSequenceIndices);
+            this.aPoseSequenceIndices.addAll(parent.aPoseSequenceIndices);
+        }
     }
 
     /**

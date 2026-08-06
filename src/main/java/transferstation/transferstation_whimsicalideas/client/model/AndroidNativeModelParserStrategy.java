@@ -121,6 +121,31 @@ public class AndroidNativeModelParserStrategy implements ModelParserStrategy {
     }
 
     @Override
+    public PhyParser.ParsedPhy parsePhy(byte[] data) throws IOException {
+        if (!isAvailable()) {
+            return PhyParser.parse(data);
+        }
+        try {
+            byte[] nativeResult = GmodNativeCoreBridge.nativeParsePhySerialized(data);
+            if (nativeResult != null && nativeResult.length > 4) {
+                PhyParser.ParsedPhy phy = WindowsNativeModelParserStrategy.deserializeParsedPhy(nativeResult);
+                if (phy != null) return phy;
+            }
+        } catch (UnsatisfiedLinkError e) {
+            LOGGER.info("[AndroidNativeParser] Native PHY parse unavailable ({}), fallback", e.getMessage());
+            nativeAvailable = false;
+        } catch (Exception e) {
+            LOGGER.debug("[AndroidNativeParser] Native PHY parse failed: {}", e.getMessage());
+        }
+        return PhyParser.parse(data);
+    }
+
+    @Override
+    public SmdParser.ParsedSmd parseSmd(byte[] data) throws IOException {
+        return SmdParser.parse(data);
+    }
+
+    @Override
     public SourceModelData loadModel(Path packageDir) throws IOException {
         return fallback.loadModel(packageDir);
     }

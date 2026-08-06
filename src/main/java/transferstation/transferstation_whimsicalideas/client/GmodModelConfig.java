@@ -11,7 +11,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public class GmodModelConfig {
@@ -64,42 +66,56 @@ public class GmodModelConfig {
     public static List<ModelPackage> scanModelPackages() {
         List<ModelPackage> result = new ArrayList<>();
         if (modelsDir == null || !Files.exists(modelsDir)) return result;
+
+        // Dirs that directly contain a model file.
+        List<Path> modelDirs = new ArrayList<>();
+        // Roots of addon packages (dirs that hold addon.json).
+        Set<Path> addonRoots = new LinkedHashSet<>();
         try (Stream<Path> dirs = Files.walk(modelsDir)) {
             dirs.filter(Files::isDirectory)
                 .filter(dir -> !dir.equals(modelsDir))
                 .forEach(dir -> {
                     if (hasAnyModelFile(dir)) {
-                        String relativePath = modelsDir.relativize(dir).toString().replace('\\', '/');
-                        ModelPackage pkg = new ModelPackage(relativePath, dir);
-                        pkg.discover();
-                        result.add(pkg);
+                        modelDirs.add(dir);
+                    }
+                    Path addonJson = dir.resolve("addon.json");
+                    if (Files.exists(addonJson) && Files.isRegularFile(addonJson)) {
+                        addonRoots.add(dir);
                     }
                 });
         } catch (IOException ignored) {
         }
 
-        try (Stream<Path> dirs = Files.walk(modelsDir)) {
-            dirs.filter(Files::isDirectory)
-                .filter(dir -> !dir.equals(modelsDir))
-                .forEach(dir -> {
-                    Path addonJson = dir.resolve("addon.json");
-                    if (Files.exists(addonJson) && Files.isRegularFile(addonJson)) {
-                        Path packDir = dir.getParent();
-                        if (packDir == null || !packDir.startsWith(modelsDir)) return;
-                        if (!hasAnyModelFile(packDir)) return;
-                        String relativePath = modelsDir.relativize(packDir).toString().replace('\\', '/');
-                        boolean alreadyAdded = result.stream()
-                            .anyMatch(p -> p.getName().equals(relativePath));
-                        if (!alreadyAdded) {
-                            ModelPackage pkg = new ModelPackage(relativePath, packDir);
-                            pkg.discover();
-                            result.add(pkg);
-                        }
-                    }
-                });
-        } catch (IOException ignored) {
+        // Each model dir belongs to its nearest ancestor (or itself) that is an addon root;
+        // otherwise it becomes a standalone package of its own.
+        Set<Path> usedDirs = new LinkedHashSet<>();
+        for (Path dir : modelDirs) {
+            Path root = findAddonRoot(dir, addonRoots);
+            usedDirs.add(root != null ? root : dir);
+        }
+
+        for (Path packDir : usedDirs) {
+            String relativePath = modelsDir.relativize(packDir).toString().replace('\\', '/');
+            ModelPackage pkg = new ModelPackage(relativePath, packDir);
+            pkg.discover();
+            result.add(pkg);
         }
         return result;
+    }
+
+    /**
+     * Search {@code dir} and its ancestors for the nearest directory that is an addon root.
+     * Returns null if none of {@code dir}'s ancestors (including itself) are addon roots.
+     */
+    private static Path findAddonRoot(Path dir, Set<Path> addonRoots) {
+        Path current = dir;
+        while (current != null && current.startsWith(modelsDir)) {
+            if (addonRoots.contains(current)) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        return null;
     }
 
     private static boolean hasAnyModelFile(Path dir) {

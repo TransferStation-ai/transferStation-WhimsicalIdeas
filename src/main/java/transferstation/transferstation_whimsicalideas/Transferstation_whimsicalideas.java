@@ -2,6 +2,7 @@ package transferstation.transferstation_whimsicalideas;
 
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraftforge.api.distmarker.Dist;
@@ -219,9 +220,8 @@ public class Transferstation_whimsicalideas {
 
         private static void loadBuiltInParticles() {
             // 从 mod jar 的 valve_content/particles/ 目录加载
-            var loc = new net.minecraft.resources.ResourceLocation(
-                    Transferstation_whimsicalideas.MODID,
-                    "valve_content/particles/builtin.pcf");
+            var loc = ResourceLocation.parse(
+                    Transferstation_whimsicalideas.MODID + ":valve_content/particles/builtin.pcf");
             var opt = net.minecraft.client.Minecraft.getInstance().getResourceManager().getResource(loc);
             if (opt.isPresent()) {
                 try (var input = opt.get().open()) {
@@ -239,6 +239,14 @@ public class Transferstation_whimsicalideas {
         @SubscribeEvent
         public static void onClientTick(net.minecraftforge.event.TickEvent.ClientTickEvent event) {
             if (event.phase == net.minecraftforge.event.TickEvent.Phase.START) {
+                // Native renderer/GL must initialize on the render thread once a GL
+                // context exists; ClientSetupEvent runs on a worker thread without one.
+                if (!transferstation.transferstation_whimsicalideas.client.model.GmodNativeBridge.isAvailable()) {
+                    transferstation.transferstation_whimsicalideas.client.model.GmodNativeBridge.retryInitialize();
+                }
+                if (!transferstation.transferstation_whimsicalideas.client.model.PhysicsBridge.isAvailable()) {
+                    transferstation.transferstation_whimsicalideas.client.model.PhysicsBridge.tryInitializeLater();
+                }
                 transferstation.transferstation_whimsicalideas.client.physics.PhysicsSimulationManager.tick();
             }
         }

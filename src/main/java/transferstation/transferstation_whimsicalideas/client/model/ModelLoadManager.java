@@ -19,6 +19,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -38,6 +39,17 @@ public class ModelLoadManager {
             return size() > 64;
         }
     });
+
+    // Retry configuration
+    private static final int MAX_RETRIES = 3;
+    private static final long BASE_RETRY_DELAY_MS = 500;
+
+    // Concurrent loading limiter (max 4 concurrent loads)
+    private static final int MAX_CONCURRENT_LOADS = 4;
+    private static final Semaphore loadSemaphore = new Semaphore(MAX_CONCURRENT_LOADS);
+
+    // Memory monitoring threshold (warn when total model memory exceeds 512 MB)
+    private static final long MEMORY_WARNING_THRESHOLD_BYTES = 512L * 1024 * 1024;
 
     private static final TextureColorResolver colorResolver = new TextureColorResolver();
     private static Path cacheDir = null;
@@ -60,6 +72,7 @@ public class ModelLoadManager {
             if (data.physicsSimId != null) {
                 transferstation.transferstation_whimsicalideas.client.physics.PhysicsSimulationManager.unregisterSimulation(data.physicsSimId);
             }
+            ModelLoadStatistics.recordModelMemoryFreed(estimateModelMemory(data));
         }
         modelCache.clear();
         loadingFutures.clear();
@@ -113,15 +126,27 @@ public class ModelLoadManager {
     public static CompletableFuture<SourceModelData> loadModelAsync(Path packageDir) {
         String cacheKey = packageDir.toAbsolutePath().toString();
         SourceModelData cached = modelCache.get(cacheKey);
-        if (cached != null) return CompletableFuture.completedFuture(cached);
+        if (cached != null) {
+            ModelLoadStatistics.recordCacheHit(false);
+            return CompletableFuture.completedFuture(cached);
+        }
 
         return loadingFutures.computeIfAbsent(cacheKey, k -> {
             CompletableFuture<SourceModelData> future = CompletableFuture.supplyAsync(() -> {
                 try {
-                    return loadModel(packageDir);
+                    loadSemaphore.acquire();
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+                ModelLoadStatistics.recordConcurrentLoad(MAX_CONCURRENT_LOADS - loadSemaphore.availablePermits());
+                try {
+                    return loadModelWithRetry(packageDir);
                 } catch (Exception e) {
                     LOGGER.error("[ModelLoadManager] Async load failed for {}", packageDir, e);
                     return null;
+                } finally {
+                    loadSemaphore.release();
                 }
             });
             future.whenComplete((data, t) -> loadingFutures.remove(k));
@@ -129,15 +154,123 @@ public class ModelLoadManager {
         });
     }
 
+    /**
+     * Attempt to load a model with exponential backoff retry logic (max 3 retries).
+     * On native parser failure, gracefully fallback to Java parser.
+     */
+    private static SourceModelData loadModelWithRetry(Path packageDir) {
+        ModelParserStrategy strategy = ModelParserProvider.getStrategy();
+        Exception lastException = null;
+
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            if (attempt > 0) {
+                long delay = BASE_RETRY_DELAY_MS * (1L << (attempt - 1));
+                LOGGER.info("[ModelLoadManager] Retry attempt {}/{} for {} after {}ms",
+                    attempt, MAX_RETRIES, packageDir, delay);
+                ModelLoadStatistics.recordRetry();
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+
+            try {
+                ModelLoadStatistics.recordLoadStart();
+                long startTime = System.nanoTime();
+                SourceModelData data = loadModel(packageDir, strategy);
+                long elapsedMs = (System.nanoTime() - startTime) / 1_000_000;
+
+                if (data != null && !data.meshes.isEmpty()) {
+                    ModelLoadStatistics.recordLoadSuccess(elapsedMs);
+                    checkMemoryThreshold();
+                    return data;
+                }
+
+                // Empty result - retry with Java fallback if native was used
+                if (strategy.isAvailable() && !(strategy instanceof JavaModelParserStrategy)) {
+                    LOGGER.warn("[ModelLoadManager] Native parser returned empty for {}, trying Java fallback",
+                        packageDir);
+                    ModelLoadStatistics.recordNativeFallback();
+                    strategy = new JavaModelParserStrategy();
+                    try {
+                        ModelLoadStatistics.recordLoadStart();
+                        long fallbackStart = System.nanoTime();
+                        data = loadModel(packageDir, strategy);
+                        long fallbackMs = (System.nanoTime() - fallbackStart) / 1_000_000;
+                        if (data != null && !data.meshes.isEmpty()) {
+                            ModelLoadStatistics.recordLoadSuccess(fallbackMs);
+                            checkMemoryThreshold();
+                            return data;
+                        }
+                    } catch (Exception fallbackEx) {
+                        lastException = fallbackEx;
+                        ModelLoadStatistics.recordLoadFailure();
+                    }
+                }
+                lastException = new IOException("Load returned empty result");
+            } catch (Exception e) {
+                lastException = e;
+                ModelLoadStatistics.recordLoadFailure();
+                LOGGER.warn("[ModelLoadManager] Load attempt {}/{} failed for {}: {}",
+                    attempt + 1, MAX_RETRIES + 1, packageDir, e.getMessage());
+
+                // On native parser error, try Java fallback before next retry
+                if (strategy.isAvailable() && !(strategy instanceof JavaModelParserStrategy)) {
+                    LOGGER.info("[ModelLoadManager] Falling back to Java parser for {}", packageDir);
+                    ModelLoadStatistics.recordNativeFallback();
+                    strategy = new JavaModelParserStrategy();
+                }
+            }
+        }
+
+        LOGGER.error("[ModelLoadManager] All {} attempts failed for {}", MAX_RETRIES + 1, packageDir, lastException);
+        return null;
+    }
+
     public static SourceModelData loadModel(Path packageDir) {
         ModelParserStrategy strategy = ModelParserProvider.getStrategy();
         return loadModel(packageDir, strategy);
+    }
+
+    /**
+     * Check if total model memory usage exceeds warning threshold.
+     */
+    private static void checkMemoryThreshold() {
+        long totalMemory = ModelLoadStatistics.getTotalMemoryUsageBytes();
+        if (totalMemory > MEMORY_WARNING_THRESHOLD_BYTES) {
+            LOGGER.warn("[ModelLoadManager] Memory usage warning: {} MB exceeds threshold {} MB ({} models tracked)",
+                String.format("%.1f", totalMemory / (1024.0 * 1024.0)),
+                MEMORY_WARNING_THRESHOLD_BYTES / (1024 * 1024),
+                ModelLoadStatistics.getTrackedModelCount());
+        }
+    }
+
+    /**
+     * Estimate memory usage of a SourceModelData in bytes.
+     */
+    private static long estimateModelMemory(SourceModelData data) {
+        if (data == null) return 0;
+        long bytes = 0;
+        for (SourceModelData.MeshData mesh : data.meshes) {
+            bytes += (long) mesh.vertices.length * 4; // float = 4 bytes
+            bytes += (long) mesh.indices.length * 4;  // int = 4 bytes
+            if (mesh.boneWeights != null) bytes += (long) mesh.boneWeights.length * 4;
+            if (mesh.boneIndices != null) bytes += (long) mesh.boneIndices.length * 4;
+            if (mesh.colorTint != null) bytes += (long) mesh.colorTint.length * 4;
+        }
+        bytes += (long) data.bones.size() * 80; // approx per BoneInfo
+        bytes += (long) data.bodyParts.size() * 64;
+        bytes += 256; // overhead for lists and metadata
+        return bytes;
     }
 
     public static synchronized SourceModelData loadModel(Path packageDir, ModelParserStrategy strategy) {
         String cacheKey = packageDir.toAbsolutePath().toString();
         SourceModelData cached = modelCache.get(cacheKey);
         if (cached != null) {
+            ModelLoadStatistics.recordCacheHit(false);
             // 模型缓存命中时：如果纹理注册表为空（清除后重建场景），
             // 从材料目录重新加载纹理。否则不操作 ——
             // 世代计数器机制已由 TextureColorResolver 处理：
@@ -157,7 +290,11 @@ public class ModelLoadManager {
         SourceModelData diskData = loadFromDiskCache(packageDir);
         if (diskData != null) {
             modelCache.put(cacheKey, diskData);
-            LOGGER.info("[ModelLoadManager] Restored model from disk cache: {} meshes", diskData.meshes.size());
+            ModelLoadStatistics.recordCacheHit(true);
+            long memBytes = estimateModelMemory(diskData);
+            ModelLoadStatistics.recordModelMemory(memBytes);
+            LOGGER.info("[ModelLoadManager] Restored model from disk cache: {} meshes (est. {} KB)",
+                diskData.meshes.size(), memBytes / 1024);
             reRegisterTexturesFromCache(packageDir, diskData);
             return diskData;
         }
@@ -173,6 +310,8 @@ public class ModelLoadManager {
             long elapsedMs = (System.nanoTime() - startTime) / 1_000_000;
             if (!data.meshes.isEmpty()) {
                 modelCache.put(cacheKey, data);
+                long memBytes = estimateModelMemory(data);
+                ModelLoadStatistics.recordModelMemory(memBytes);
                 fireModelLoadedCallbacks(cacheKey, data, strategy, elapsedMs);
                 // 磁盘缓存异步保存，不阻塞进度条和后续模型加载
                 final SourceModelData dataToCache = data;
@@ -231,8 +370,10 @@ public class ModelLoadManager {
             SourceModelData data = loadFromVpkData(archive, modelPath, vpkFiles, strategy);
             if (data != null && !data.meshes.isEmpty()) {
                 modelCache.put(cacheKey, data);
-                LOGGER.info("[ModelLoadManager] Loaded model from VPK {}: {} meshes, {} triangles, {} vertices",
-                    modelPath, data.meshes.size(), data.totalTriangles(), data.totalVertices());
+                long memBytes = estimateModelMemory(data);
+                ModelLoadStatistics.recordModelMemory(memBytes);
+                LOGGER.info("[ModelLoadManager] Loaded model from VPK {}: {} meshes, {} triangles, {} vertices (est. {} KB)",
+                    modelPath, data.meshes.size(), data.totalTriangles(), data.totalVertices(), memBytes / 1024);
             }
             ModelLoadProgress.reset();
             return data;
@@ -1342,6 +1483,8 @@ public class ModelLoadManager {
     public static void unloadModel(String cacheKey) {
         SourceModelData data = modelCache.remove(cacheKey);
         if (data != null) {
+            long memBytes = estimateModelMemory(data);
+            ModelLoadStatistics.recordModelMemoryFreed(memBytes);
             for (SourceModelData.MeshData mesh : data.meshes) {
                 if (mesh.vtfKey != null) {
                     colorResolver.unregisterTexture(mesh.vtfKey);
@@ -1354,7 +1497,8 @@ public class ModelLoadManager {
                     }
                 }
             }
-            LOGGER.info("[ModelLoadManager] Unloaded model: {} ({} meshes freed)", cacheKey, data.meshes.size());
+            LOGGER.info("[ModelLoadManager] Unloaded model: {} ({} meshes freed, ~{} KB memory released)",
+                cacheKey, data.meshes.size(), memBytes / 1024);
         }
     }
 
@@ -1363,8 +1507,10 @@ public class ModelLoadManager {
         snapshot = Map.copyOf(modelCache);
         modelCache.clear();
 
+        long totalFreed = 0;
         for (SourceModelData data : snapshot.values()) {
             if (data != null) {
+                totalFreed += estimateModelMemory(data);
                 for (SourceModelData.MeshData mesh : data.meshes) {
                     if (mesh.vtfKey != null) {
                         colorResolver.unregisterTexture(mesh.vtfKey);
@@ -1379,11 +1525,24 @@ public class ModelLoadManager {
                 }
             }
         }
-        LOGGER.info("[ModelLoadManager] Unloaded all {} models and freed textures", snapshot.size());
+        ModelLoadStatistics.recordModelMemoryFreed(totalFreed);
+        LOGGER.info("[ModelLoadManager] Unloaded all {} models and freed textures (~{} MB memory released)",
+            snapshot.size(), String.format("%.1f", totalFreed / (1024.0 * 1024.0)));
     }
 
     public static TextureColorResolver getColorResolver() {
         return colorResolver;
+    }
+
+    public static ModelLoadStatistics getStatistics() {
+        return new ModelLoadStatistics();
+    }
+
+    /**
+     * Log current model loading statistics.
+     */
+    public static void logStatistics() {
+        LOGGER.info("[ModelLoadManager] {}", ModelLoadStatistics.toSummaryString());
     }
 
     private static SourceModelData loadFromDirectory(Path packageDir, ModelParserStrategy strategy) throws IOException {

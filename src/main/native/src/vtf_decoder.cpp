@@ -17,6 +17,9 @@ typedef LONG NTSTATUS;
 
 namespace vtf {
 
+// 解码尺寸上限，防止超大 VTF 撑爆内存与显存 (4096x4096x4 = 64MB)
+constexpr int MAX_TEXTURE_DIM = 4096;
+
 constexpr int FORMAT_RGBA8888 = 0;
 constexpr int FORMAT_ABGR8888 = 1;
 constexpr int FORMAT_RGB888 = 2;
@@ -125,17 +128,19 @@ VtfDecoder::DecodedTexture VtfDecoder::decode(const std::vector<uint8_t>& data) 
     /*float bumpmapScale =*/ readInt();
     int imageFormat = readInt();
     int mipmapCount = readByte();
-    // VTF 7.x header field order: numMipLevels (byte), numX (byte, low-res
-    // image width), numY (byte, low-res image height), then lowResImageFormat
-    // (int). The previous code read lowResImageFormat (int) before the two
-    // bytes, shifting every subsequent field by 2-4 bytes and producing wrong
-    // format/dimension values -> garbage or OOB texture decode.
+    // VTF 7.x header field order (per Valve spec, matches Java VtfParser):
+    // numMipLevels (byte, offset 56), lowResImageFormat (int, offset 57),
+    // lowResImageWidth (byte, offset 61), lowResImageHeight (byte, offset 62),
+    // depth (short, offset 63). The previous code read the two bytes before
+    // the int, shifting every field and making the low-res thumbnail skip
+    // below fail (lowResImageHeight read as 0), so full-res pixel data was
+    // offset by the thumbnail size -> garbage textures.
+    int lowResImageFormat = readInt();
     int lowResImageWidth = readByte();
     int lowResImageHeight = readByte();
-    int lowResImageFormat = readInt();
     /*int16_t depth =*/ readShort();
 
-    if (width <= 0 || width > 8192 || height <= 0 || height > 8192)
+    if (width <= 0 || width > MAX_TEXTURE_DIM || height <= 0 || height > MAX_TEXTURE_DIM)
         throw std::runtime_error("Invalid VTF dimensions");
 
     result.width = width;
@@ -146,19 +151,59 @@ VtfDecoder::DecodedTexture VtfDecoder::decode(const std::vector<uint8_t>& data) 
     // Read image data starting at headerSize
     offset = headerSize;
 
+    // VTF 7.3+ stores a "resources" array between the header and the low-res
+    // thumbnail. Each resource is an 8-byte descriptor (4-byte tag + 4-byte
+    // data offset), and the data blocks they point to sit right after the
+    // descriptor array. Skip the descriptor array (and the data blocks up to
+    // the low-res thumbnail) so the thumbnail/mip skip below lands correctly.
+    // VTF 7.0-7.2 (headerSize == 80) have NO resource directory; the
+    // numResources field at offset 68 is always 0. Only 7.3+ have it, at the
+    // FIXED offset 68. Mirrors the Java VtfParser.
+    if (headerSize > 80 && static_cast<size_t>(offset + 4) <= data.size()) {
+        uint32_t numResources = readU32(data.data(), 68);
+        if (numResources > 0x10000) numResources = 0;
+        if (numResources > 0) {
+            size_t descArrayEnd = static_cast<size_t>(headerSize) + numResources * 8;
+            for (uint32_t r = 0; r < numResources; r++) {
+                size_t descOff = static_cast<size_t>(headerSize) + r * 8;
+                if (descOff + 8 > data.size()) break;
+                uint32_t dataOffset = readU32(data.data(), static_cast<int>(descOff + 4));
+                if (dataOffset > descArrayEnd && dataOffset < data.size()) {
+                    descArrayEnd = dataOffset;
+                }
+            }
+            if (descArrayEnd <= data.size()) {
+                offset = static_cast<int>(descArrayEnd);
+            }
+        }
+    }
+
+    // Compute the total size of all smaller mip levels first so the thumbnail
+    // skip below can be clamped to the space actually available in the file.
+    // Some exporters (common in GMOD model packs) write a wrong low-res
+    // thumbnail size in the header — e.g. 16x16 BGRA4444 (512 bytes) when the
+    // real thumbnail is 8x8 (128 bytes) — which shifts every mip level and
+    // garbles the full-res pixels (DXT alpha channels then read garbage and
+    // the model renders translucent).
+    int64_t mipChainBytes = 0;
+    for (int i = mipmapCount - 1; i > 0; i--) {
+        int mipW = std::max(1, width >> i);
+        int mipH = std::max(1, height >> i);
+        mipChainBytes += static_cast<int64_t>(computeImageDataSize(mipW, mipH, imageFormat)) * std::max(1, static_cast<int>(frames));
+    }
+
     // Skip low-resolution thumbnail data if present
     if (lowResImageWidth > 0 && lowResImageHeight > 0) {
-        offset += computeImageDataSize(lowResImageWidth, lowResImageHeight, lowResImageFormat);
+        int64_t thumbnailBytes = computeImageDataSize(lowResImageWidth, lowResImageHeight, lowResImageFormat);
+        int64_t available = static_cast<int64_t>(data.size()) - offset - mipChainBytes;
+        if (thumbnailBytes > available) thumbnailBytes = available;
+        if (thumbnailBytes > 0) offset += static_cast<int>(thumbnailBytes);
     }
 
     // VTF stores mipmaps from smallest (mipmapCount-1) to largest (mipmap 0).
     // For multi-frame VTFs, each mipmap level stores all frames.
     // Skip all smaller mipmaps to reach the full-resolution image data.
-    for (int i = mipmapCount - 1; i > 0; i--) {
-        int mipW = std::max(1, width >> i);
-        int mipH = std::max(1, height >> i);
-        offset += computeImageDataSize(mipW, mipH, imageFormat) * std::max(1, static_cast<int>(frames));
-    }
+    offset += static_cast<int>(mipChainBytes);
 
     size_t dataSize = computeImageDataSize(width, height, imageFormat);
 
@@ -503,10 +548,9 @@ int VtfDecoder::computeImageDataSize(int w, int h, int format) {
         int bh = (h + 3) / 4;
         int blockSize = (format == FORMAT_DXT1 || format == FORMAT_DXT1_ONEBITALPHA) ? 8 : 16;
         return bw * bh * blockSize;
-    } else if (format == FORMAT_RGBA8888 || format == FORMAT_ABGR8888 || format == FORMAT_BGRX8888
-               || format == FORMAT_BGRA4444) {
+    } else if (format == FORMAT_RGBA8888 || format == FORMAT_ABGR8888 || format == FORMAT_BGRX8888) {
         return w * h * 4;
-    } else if (format == FORMAT_BGRA5551 || format == FORMAT_BGR565 || format == FORMAT_RGB565) {
+    } else if (format == FORMAT_BGRA4444 || format == FORMAT_BGRA5551 || format == FORMAT_BGR565 || format == FORMAT_RGB565) {
         return w * h * 2;
     } else if (format == FORMAT_RGB888 || format == FORMAT_BGR888) {
         return w * h * 3;

@@ -97,24 +97,26 @@ public class VtfParser {
 
         buf.position(headerSize);
 
-        // VTF 7.0+ stores a "resources" array between the header and the low-res
+        // VTF 7.3+ stores a "resources" array between the header and the low-res
         // thumbnail. Each resource is an 8-byte descriptor (4-byte tag + 4-byte
         // data offset), and the data blocks they point to sit right after the
         // descriptor array. If we don't skip these, the low-res / mipmap skip
         // below starts at the wrong offset and the full-res pixels get read from
         // a shifted position -> diagonal gray stripes / garbage in the export.
-        if (majorVersion >= 7) {
-            int numResources = 0;
-            if (headerSize >= 12) {
-                // VTF 7.0+ stores the resource count as a 4-byte uint at
-                // headerSize - 8 (the last field of the header). Reading it as
-                // a short misreads the count and shifts all subsequent pixel
-                // data, producing garbage textures.
-                numResources = buf.getInt(headerSize - 8);
-            }
+        //
+        // VTF 7.0-7.2 (headerSize == 80) have NO resource directory — the
+        // numResources field at offset 68 is always 0. Only VTF 7.3+ have a
+        // resource directory, and numResources is at FIXED offset 68 (not
+        // headerSize-8 which was wrong and caused false warnings for 7.2 and
+        // silent corruption for 7.5 files).
+        if (majorVersion >= 7 && headerSize > 80) {
+            // numResources is always at fixed offset 68 per the VTF spec.
+            int numResources = buf.getInt(68);
             if (numResources <= 0 || numResources > 0x10000) {
-                LOGGER.warn("[VtfParser] Invalid VTF7 resource count {} (headerSize={}); ignoring resources",
-                    numResources, headerSize);
+                if (numResources != 0) {
+                    LOGGER.debug("[VtfParser] Non-zero but invalid VTF7 resource count {} (headerSize={}); ignoring",
+                        numResources, headerSize);
+                }
                 numResources = 0;
             }
             if (numResources > 0) {
@@ -137,30 +139,41 @@ public class VtfParser {
             }
         }
 
-        // Skip low-resolution image data (thumbnail) if present
-        if (lowResImageWidth > 0 && lowResImageHeight > 0 && lowResImageFormat >= 0) {
-            int lowResDataSize = computeImageDataSize(lowResImageWidth, lowResImageHeight, lowResImageFormat);
-            if (lowResDataSize > 0 && buf.position() + lowResDataSize <= buf.limit()) {
-                buf.position(buf.position() + lowResDataSize);
-            }
-        }
-
         boolean isCubemap = (flags & 0x20000000) != 0;
         int faceCount = isCubemap ? 6 : 1;
 
         // VTF stores data mip-major: mipmaps from smallest (mipmapCount-1) to
         // largest (mipmap 0); within each mipmap level, all frames are stored
         // contiguously (first to last), and within each frame, all faces.
-        // Skip all smaller mipmaps to reach the full-resolution image data.
-        int skipSize = 0;
+        // Precompute the total size of all smaller mip levels first so the
+        // thumbnail skip below can be clamped to the space actually available
+        // in the file. Some exporters (GMOD model packs) write a wrong low-res
+        // thumbnail size in the header — e.g. 16x16 BGRA4444 (512 bytes) when
+        // the real thumbnail is 8x8 (128 bytes) — which shifts every mip level
+        // and garbles the full-res pixels (DXT alpha reads garbage -> the model
+        // renders translucent). Mirrors the native vtf_decoder.cpp.
+        long mipChainBytes = 0;
         for (int i = mipmapCount - 1; i > 0; i--) {
             int mipWidth = Math.max(1, width >> i);
             int mipHeight = Math.max(1, height >> i);
             int mipSize = computeImageDataSize(mipWidth, mipHeight, imageFormat);
             if (mipSize <= 0) break;
-            skipSize += mipSize * frames * faceCount;
+            mipChainBytes += (long) mipSize * frames * faceCount;
         }
-        if (skipSize > 0 && buf.position() + skipSize <= buf.limit()) {
+
+        // Skip low-resolution image data (thumbnail) if present
+        if (lowResImageWidth > 0 && lowResImageHeight > 0 && lowResImageFormat >= 0) {
+            long thumbnailBytes = computeImageDataSize(lowResImageWidth, lowResImageHeight, lowResImageFormat);
+            long available = buf.limit() - buf.position() - mipChainBytes;
+            if (thumbnailBytes > available) thumbnailBytes = available;
+            if (thumbnailBytes > 0) {
+                buf.position(buf.position() + (int) thumbnailBytes);
+            }
+        }
+
+        // Skip all smaller mipmaps to reach the full-resolution image data.
+        int skipSize = (int) Math.min(mipChainBytes, Math.max(0, buf.limit() - buf.position()));
+        if (skipSize > 0) {
             buf.position(buf.position() + skipSize);
         }
 

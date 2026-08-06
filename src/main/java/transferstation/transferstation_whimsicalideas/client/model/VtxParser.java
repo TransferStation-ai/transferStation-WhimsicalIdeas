@@ -166,8 +166,11 @@ public class VtxParser {
 
                 int numLODsToProcess = Math.min(Math.max(numLOD, 1), 4);
                 for (int l = 0; l < numLODsToProcess; l++) {
-                    int lAddr = lodAddr + l * 12;
-                    if (lAddr + 12 > data.length) {
+                    // Source Engine VTX LOD header is 8 bytes: {numMeshes, meshOffset}.
+                    // Using 12 bytes (wrong) shifts all reads for LOD >= 1 by 4 bytes,
+                    // producing garbage numMeshes/meshOffset and empty LOD geometry.
+                    int lAddr = lodAddr + l * 8;
+                    if (lAddr + 8 > data.length) {
                         LOGGER.warn("[VtxParser] LOD[{}] address 0x{} exceeds file size", l, Integer.toHexString(lAddr));
                         break;
                     }

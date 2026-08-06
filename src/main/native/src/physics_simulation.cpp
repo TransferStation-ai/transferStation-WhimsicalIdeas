@@ -11,6 +11,15 @@ static const float COLLISION_EPSILON = 0.001f;
 static const float PENETRATION_SLOP = 0.01f;
 static const float GROUND_PLANE_Y = 0.0f;
 
+// ── Environment mesh (static triangle soup) ─────────────────────────
+struct MeshTriangle {
+    PhysicsSimulation::Vec3 a, b, c;
+    PhysicsSimulation::Vec3 normal;
+};
+
+static std::vector<MeshTriangle> s_envTriangles;
+static bool s_envMeshValid = false;
+
 bool PhysicsSimulation::s_available = false;
 bool PhysicsSimulation::s_initialized = false;
 uint64_t PhysicsSimulation::s_nextId = 1;
@@ -69,6 +78,142 @@ static float vec3Distance(const PhysicsSimulation::Vec3& a, const PhysicsSimulat
 
 static float clamp(float v, float mn, float mx) {
     return std::max(mn, std::min(mx, v));
+}
+
+// Closest point on triangle (Ericson, "Real-Time Collision Detection").
+static PhysicsSimulation::Vec3 closestPointOnTriangle(
+    const PhysicsSimulation::Vec3& p,
+    const PhysicsSimulation::Vec3& a,
+    const PhysicsSimulation::Vec3& b,
+    const PhysicsSimulation::Vec3& c)
+{
+    PhysicsSimulation::Vec3 ab = vec3Sub(b, a);
+    PhysicsSimulation::Vec3 ac = vec3Sub(c, a);
+    PhysicsSimulation::Vec3 ap = vec3Sub(p, a);
+    float d1 = vec3Dot(ab, ap);
+    float d2 = vec3Dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f) return a;
+
+    PhysicsSimulation::Vec3 bp = vec3Sub(p, b);
+    float d3 = vec3Dot(ab, bp);
+    float d4 = vec3Dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) return b;
+
+    float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+        float v = d1 / (d1 - d3);
+        return vec3Add(a, vec3Scale(ab, v));
+    }
+
+    PhysicsSimulation::Vec3 cp = vec3Sub(p, c);
+    float d5 = vec3Dot(ab, cp);
+    float d6 = vec3Dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) return c;
+
+    float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+        float w = d2 / (d2 - d6);
+        return vec3Add(a, vec3Scale(ac, w));
+    }
+
+    float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+        float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return vec3Add(b, vec3Scale(vec3Sub(c, b), w));
+    }
+
+    float denom = 1.0f / (va + vb + vc);
+    float v = vb * denom;
+    float w = vc * denom;
+    return vec3Add(a, vec3Add(vec3Scale(ab, v), vec3Scale(ac, w)));
+}
+
+// AABB pre-filter: cheap reject for a sphere vs triangle box.
+static bool sphereIntersectsTriangleAABB(
+    const PhysicsSimulation::Vec3& center, float radius,
+    const PhysicsSimulation::Vec3& a,
+    const PhysicsSimulation::Vec3& b,
+    const PhysicsSimulation::Vec3& c)
+{
+    float minX = std::min({a.x, b.x, c.x}) - radius;
+    float maxX = std::max({a.x, b.x, c.x}) + radius;
+    float minY = std::min({a.y, b.y, c.y}) - radius;
+    float maxY = std::max({a.y, b.y, c.y}) + radius;
+    float minZ = std::min({a.z, b.z, c.z}) - radius;
+    float maxZ = std::max({a.z, b.z, c.z}) + radius;
+    return center.x >= minX && center.x <= maxX &&
+           center.y >= minY && center.y <= maxY &&
+           center.z >= minZ && center.z <= maxZ;
+}
+
+static void resolveSphereMesh(
+    PhysicsSimulation::RigidBody& body, float radius)
+{
+    for (const auto& tri : s_envTriangles) {
+        if (!sphereIntersectsTriangleAABB(body.position, radius, tri.a, tri.b, tri.c)) {
+            continue;
+        }
+
+        PhysicsSimulation::Vec3 closest = closestPointOnTriangle(body.position, tri.a, tri.b, tri.c);
+        PhysicsSimulation::Vec3 toClosest = vec3Sub(body.position, closest);
+        float distSq = vec3LengthSq(toClosest);
+        float radiusSq = radius * radius;
+        if (distSq >= radiusSq) continue;
+
+        float dist = std::sqrt(distSq);
+        PhysicsSimulation::Vec3 normal;
+        if (dist > COLLISION_EPSILON) {
+            normal = vec3Scale(toClosest, 1.0f / dist);
+        } else {
+            normal = tri.normal;
+        }
+
+        float penetration = radius - dist;
+        if (penetration < 0) penetration = 0;
+
+        if (!body.isStatic) {
+            body.position = vec3Add(body.position, vec3Scale(normal, penetration));
+
+            float relVel = vec3Dot(body.velocity, normal);
+            if (relVel < 0) {
+                body.velocity = vec3Sub(body.velocity, vec3Scale(normal, relVel * (1.0f + body.restitution)));
+            }
+        }
+    }
+}
+
+bool PhysicsSimulation::isEnvironmentMeshValid() {
+    return s_envMeshValid && !s_envTriangles.empty();
+}
+
+void PhysicsSimulation::setEnvironmentMesh(const Vec3* vertices, int vertexCount,
+                                            const int* indices, int indexCount) {
+    if (vertices == nullptr || indices == nullptr || vertexCount <= 0 || indexCount < 3) {
+        clearEnvironmentMesh();
+        return;
+    }
+    s_envTriangles.clear();
+    s_envTriangles.reserve(indexCount / 3);
+    for (int i = 0; i + 2 < indexCount; i += 3) {
+        int ia = indices[i];
+        int ib = indices[i + 1];
+        int ic = indices[i + 2];
+        if (ia < 0 || ib < 0 || ic < 0 || ia >= vertexCount || ib >= vertexCount || ic >= vertexCount) {
+            continue;
+        }
+        MeshTriangle tri;
+        tri.a = vertices[ia];
+        tri.b = vertices[ib];
+        tri.c = vertices[ic];
+        tri.normal = vec3Normalize(vec3Cross(vec3Sub(tri.b, tri.a), vec3Sub(tri.c, tri.a)));
+        s_envTriangles.push_back(tri);
+    }
+    s_envMeshValid = !s_envTriangles.empty();
+}
+
+void PhysicsSimulation::clearEnvironmentMesh() {
+    s_envTriangles.clear();
+    s_envMeshValid = false;
 }
 
 bool PhysicsSimulation::isAvailable() {
@@ -381,6 +526,19 @@ void PhysicsSimulation::stepSimulation(float deltaTime) {
             }
         }
 
+        // Sphere vs environment mesh collisions
+        if (s_envMeshValid) {
+            for (auto& [id, body] : s_rigidBodies) {
+                if (body.isStatic || body.isKinematic || !body.isActive) continue;
+                auto shapeIt = s_bodyShapeMap.find(id);
+                if (shapeIt == s_bodyShapeMap.end()) continue;
+                auto shapeIt2 = s_collisionShapes.find(shapeIt->second);
+                if (shapeIt2 == s_collisionShapes.end()) continue;
+                if (shapeIt2->second.type != CollisionShape::SPHERE) continue;
+                resolveSphereMesh(body, shapeIt2->second.radius);
+            }
+        }
+
         // Sphere-sphere collisions
         auto itA = s_rigidBodies.begin();
         while (itA != s_rigidBodies.end()) {
@@ -574,6 +732,34 @@ bool PhysicsSimulation::raycast(const Vec3& from, const Vec3& to, Vec3& hitPoint
             closestDist = proj;
             hitPoint = closest;
             hitNormal = vec3Normalize(closestDiff);
+            hit = true;
+        }
+    }
+
+    // Ray vs environment mesh (Möller–Trumbore)
+    if (s_envMeshValid) {
+        for (const auto& tri : s_envTriangles) {
+            PhysicsSimulation::Vec3 edge1 = vec3Sub(tri.b, tri.a);
+            PhysicsSimulation::Vec3 edge2 = vec3Sub(tri.c, tri.a);
+            PhysicsSimulation::Vec3 h = vec3Cross(direction, edge2);
+            float det = vec3Dot(edge1, h);
+            if (std::abs(det) < COLLISION_EPSILON) continue;
+
+            float invDet = 1.0f / det;
+            PhysicsSimulation::Vec3 s = vec3Sub(from, tri.a);
+            float u = vec3Dot(s, h) * invDet;
+            if (u < 0.0f || u > 1.0f) continue;
+
+            PhysicsSimulation::Vec3 q = vec3Cross(s, edge1);
+            float v = vec3Dot(direction, q) * invDet;
+            if (v < 0.0f || u + v > 1.0f) continue;
+
+            float t = vec3Dot(edge2, q) * invDet;
+            if (t < 0.0f || t > closestDist) continue;
+
+            closestDist = t;
+            hitPoint = vec3Add(from, vec3Scale(direction, t));
+            hitNormal = tri.normal;
             hit = true;
         }
     }

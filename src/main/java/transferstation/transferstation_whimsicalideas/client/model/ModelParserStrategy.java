@@ -15,6 +15,10 @@ public interface ModelParserStrategy {
 
     VtxParser.ParsedVtx parseVtx(byte[] data) throws IOException;
 
+    PhyParser.ParsedPhy parsePhy(byte[] data) throws IOException;
+
+    SmdParser.ParsedSmd parseSmd(byte[] data) throws IOException;
+
     SourceModelData loadModel(Path packageDir) throws IOException;
 
     void clearCache();

@@ -24,6 +24,80 @@ static int64_t s_skinNextHandle = 1;
 // Protects all caches from concurrent access by multiple Java threads.
 static std::mutex s_cacheMutex;
 
+// Upload CPU-side mesh/texture data to the GPU. MUST run on the render thread,
+// because the OpenGL context is only current there. Called lazily from the
+// render entry points so model loading can happen on worker threads.
+static void uploadModelToGpu(ModelLoader::LoadedModel* model) {
+    if (model->gpuReady) return;
+
+    // Create a white fallback texture for meshes without a real texture
+    std::vector<uint8_t> whitePixel = {255, 255, 255, 255};
+    model->fallbackTexture = GlRenderer::uploadTexture(whitePixel, 1, 1);
+
+    // Upload textures from stored data
+    for (auto& td : model->textureData) {
+        if (!td.rgbaData.empty() && td.width > 0 && td.height > 0) {
+            uint32_t glTex = GlRenderer::uploadTexture(td.rgbaData, td.width, td.height);
+            // Find matching TextureInfo entry
+            for (auto& texInfo : model->textures) {
+                if (texInfo.glTextureId == 0) {
+                    texInfo.glTextureId = glTex;
+                    texInfo.width = td.width;
+                    texInfo.height = td.height;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Free CPU-side texture RGBA data now that it's uploaded to GPU
+    for (auto& td : model->textureData) {
+        td.rgbaData.clear();
+        td.rgbaData.shrink_to_fit();
+    }
+    model->textureData.clear();
+    model->textureData.shrink_to_fit();
+
+    // Assign texture IDs to meshes, using fallback white texture if none found
+    auto assignTextures = [&](std::vector<MeshData>& meshes) {
+        for (size_t i = 0; i < meshes.size(); i++) {
+            auto it = model->meshTextureMap.find(static_cast<int>(i));
+            if (it != model->meshTextureMap.end() &&
+                it->second >= 0 &&
+                it->second < static_cast<int>(model->textures.size()) &&
+                model->textures[it->second].glTextureId != 0) {
+                meshes[i].textureId = model->textures[it->second].glTextureId;
+            } else {
+                meshes[i].textureId = model->fallbackTexture;
+            }
+        }
+    };
+    assignTextures(model->meshes);
+    assignTextures(model->lodMeshes1);
+    assignTextures(model->lodMeshes2);
+    assignTextures(model->lodMeshes3);
+
+    // Build OpenGL VBO/VAO for each mesh. Keep the CPU-side vertex/index
+    // copies after upload: nativeCreateSkinnedMesh (a separate JNI call)
+    // needs them to build GPU-skinned variants. Clearing here would make
+    // skinning unreachable.
+    auto uploadMeshes = [](std::vector<MeshData>& meshes) {
+        for (auto& mesh : meshes) {
+            if (mesh.vertices.empty() || mesh.indices.empty()) continue;
+            if (mesh.renderMode == RenderMode::SKIP) continue;
+            uint32_t vao = GlRenderer::buildMesh(mesh.vertices, mesh.indices);
+            mesh.glVao = vao;
+            mesh.indexCount = static_cast<int>(mesh.indices.size());
+        }
+    };
+    uploadMeshes(model->meshes);
+    uploadMeshes(model->lodMeshes1);
+    uploadMeshes(model->lodMeshes2);
+    uploadMeshes(model->lodMeshes3);
+
+    model->gpuReady = true;
+}
+
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
@@ -71,74 +145,11 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBrid
             handle = s_nextHandle++;
         }
 
-        // Create a white fallback texture for meshes without a real texture
-        uint32_t fallbackTexture = 0;
-        {
-            std::vector<uint8_t> whitePixel = {255, 255, 255, 255};
-            fallbackTexture = GlRenderer::uploadTexture(whitePixel, 1, 1);
-        }
-        model->fallbackTexture = fallbackTexture;
-
-        // Upload textures from stored data
-        for (auto& td : model->textureData) {
-            if (!td.rgbaData.empty() && td.width > 0 && td.height > 0) {
-                uint32_t glTex = GlRenderer::uploadTexture(td.rgbaData, td.width, td.height);
-                // Find matching TextureInfo entry
-                for (auto& texInfo : model->textures) {
-                    if (texInfo.glTextureId == 0) {
-                        texInfo.glTextureId = glTex;
-                        texInfo.width = td.width;
-                        texInfo.height = td.height;
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Free CPU-side texture RGBA data now that it's uploaded to GPU
-        for (auto& td : model->textureData) {
-            td.rgbaData.clear();
-            td.rgbaData.shrink_to_fit();
-        }
-        model->textureData.clear();
-        model->textureData.shrink_to_fit();
-
-        // Assign texture IDs to meshes, using fallback white texture if none found
-        auto assignTextures = [&](std::vector<MeshData>& meshes) {
-            for (size_t i = 0; i < meshes.size(); i++) {
-                auto it = model->meshTextureMap.find(static_cast<int>(i));
-                if (it != model->meshTextureMap.end() &&
-                    it->second >= 0 &&
-                    it->second < static_cast<int>(model->textures.size()) &&
-                    model->textures[it->second].glTextureId != 0) {
-                    meshes[i].textureId = model->textures[it->second].glTextureId;
-                } else {
-                    meshes[i].textureId = fallbackTexture;
-                }
-            }
-        };
-        assignTextures(model->meshes);
-        assignTextures(model->lodMeshes1);
-        assignTextures(model->lodMeshes2);
-        assignTextures(model->lodMeshes3);
-
-        // Build OpenGL VBO/VAO for each mesh. Keep the CPU-side vertex/index
-        // copies after upload: nativeCreateSkinnedMesh (a separate JNI call)
-        // needs them to build GPU-skinned variants. Clearing here would make
-        // skinning unreachable.
-        auto uploadMeshes = [](std::vector<MeshData>& meshes) {
-            for (auto& mesh : meshes) {
-                if (mesh.vertices.empty() || mesh.indices.empty()) continue;
-                if (mesh.renderMode == RenderMode::SKIP) continue;
-                uint32_t vao = GlRenderer::buildMesh(mesh.vertices, mesh.indices);
-                mesh.glVao = vao;
-                mesh.indexCount = static_cast<int>(mesh.indices.size());
-            }
-        };
-        uploadMeshes(model->meshes);
-        uploadMeshes(model->lodMeshes1);
-        uploadMeshes(model->lodMeshes2);
-        uploadMeshes(model->lodMeshes3);
+        // NOTE: GPU upload (textures/VAOs) is deliberately deferred to the render
+        // thread via uploadModelToGpu() in nativeRenderModel/nativeRenderModelLOD.
+        // Creating GL objects here on the ModelLoader thread would fail because the
+        // OpenGL context is only current on the render thread, leaving every mesh
+        // with glVao == 0 and rendering nothing.
 
         {
             std::lock_guard<std::mutex> lock(s_cacheMutex);
@@ -215,6 +226,18 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBrid
     GlRenderer::setCameraPosition(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
 }
 
+JNIEXPORT void JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBridge_nativeSetViewProjection(
+    JNIEnv* env, jclass, jfloatArray viewProjection16)
+{
+    if (viewProjection16 == nullptr) return;
+    if (env->GetArrayLength(viewProjection16) < 16) return;
+    jfloat* vp = env->GetFloatArrayElements(viewProjection16, nullptr);
+    if (vp == nullptr) return;
+    GlRenderer::setViewProjection(vp);
+    env->ReleaseFloatArrayElements(viewProjection16, vp, JNI_ABORT);
+}
+
 static void renderMeshList(
     const std::vector<MeshData>& meshes,
     const float* matrix,
@@ -243,6 +266,8 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBrid
     if (matrix == nullptr) return;
 
     try {
+        // GL upload must happen on the render thread (this is called from there).
+        uploadModelToGpu(model.get());
         renderMeshList(model->meshes, matrix, packedLight);
     } catch (...) {
         env->ReleaseFloatArrayElements(modelMatrix16, matrix, JNI_ABORT);
@@ -267,6 +292,8 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBrid
     if (matrix == nullptr) return;
 
     try {
+        // GL upload must happen on the render thread (this is called from there).
+        uploadModelToGpu(model.get());
         const auto& meshes = model->getMeshesForLod(lodLevel);
         renderMeshList(meshes, matrix, packedLight);
     } catch (...) {
@@ -555,6 +582,48 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_PhysicsBridge_
     }
 
     return result ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_PhysicsBridge_nativeSetEnvironmentMesh(
+    JNIEnv* env, jclass, jfloatArray vertices, jintArray indices)
+{
+    if (vertices == nullptr || indices == nullptr) {
+        PhysicsSimulation::clearEnvironmentMesh();
+        return;
+    }
+
+    jsize vertCount = env->GetArrayLength(vertices) / 3;
+    jsize idxCount = env->GetArrayLength(indices);
+    if (vertCount <= 0 || idxCount < 3) {
+        PhysicsSimulation::clearEnvironmentMesh();
+        return;
+    }
+
+    jfloat* verts = env->GetFloatArrayElements(vertices, nullptr);
+    jint* idxs = env->GetIntArrayElements(indices, nullptr);
+    if (verts == nullptr || idxs == nullptr) {
+        if (verts) env->ReleaseFloatArrayElements(vertices, verts, JNI_ABORT);
+        if (idxs) env->ReleaseIntArrayElements(indices, idxs, JNI_ABORT);
+        return;
+    }
+
+    std::vector<PhysicsSimulation::Vec3> v;
+    v.reserve(static_cast<size_t>(vertCount));
+    for (jsize i = 0; i < vertCount; i++) {
+        v.emplace_back(verts[i * 3 + 0], verts[i * 3 + 1], verts[i * 3 + 2]);
+    }
+
+    std::vector<int> idx(static_cast<size_t>(idxCount));
+    for (jsize i = 0; i < idxCount; i++) {
+        idx[static_cast<size_t>(i)] = static_cast<int>(idxs[i]);
+    }
+
+    env->ReleaseFloatArrayElements(vertices, verts, JNI_ABORT);
+    env->ReleaseIntArrayElements(indices, idxs, JNI_ABORT);
+
+    PhysicsSimulation::setEnvironmentMesh(v.data(), static_cast<int>(v.size()),
+                                          idx.data(), static_cast<int>(idx.size()));
 }
 
 // ===================== Mesh Data Extraction JNI =====================

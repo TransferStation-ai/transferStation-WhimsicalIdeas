@@ -32,6 +32,9 @@ public:
 
     static void setCameraPosition(float x, float y, float z);
     static void setPhongBoost(float boost);
+    // View*Projection matrix in column-major order; combined with the per-mesh
+    // model matrix inside renderMesh to build u_modelViewProjection.
+    static void setViewProjection(const float* viewProjection);
 
     static void shutdown();
 
@@ -46,6 +49,7 @@ private:
     static bool s_initialized;
     static float s_cameraPos[3];
     static float s_phongBoost;
+    static float s_viewProjection[16];
 
     static uint32_t compileShader(uint32_t type, const char* source);
     static uint32_t linkProgram(uint32_t vs, uint32_t fs);

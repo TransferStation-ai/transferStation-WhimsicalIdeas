@@ -24,6 +24,7 @@ typedef void (GL_API* GL_GETSHADERIV)(uint32_t, uint32_t, int*);
 typedef void (GL_API* GL_GETSHADERINFOLOG)(uint32_t, int, int*, char*);
 typedef uint32_t (GL_API* GL_CREATEPROGRAM)(void);
 typedef void (GL_API* GL_ATTACHSHADER)(uint32_t, uint32_t);
+typedef void (GL_API* GL_BINDATTRIBLOCATION)(uint32_t, uint32_t, const char*);
 typedef void (GL_API* GL_LINKPROGRAM)(uint32_t);
 typedef void (GL_API* GL_GETPROGRAMIV)(uint32_t, uint32_t, int*);
 typedef void (GL_API* GL_GETPROGRAMINFOLOG)(uint32_t, int, int*, char*);
@@ -49,6 +50,7 @@ typedef void (GL_API* GL_TEXIMAGE2D)(uint32_t, int, int, int, int, int, uint32_t
 typedef void (GL_API* GL_TEXPARAMETERI)(uint32_t, uint32_t, int);
 typedef void (GL_API* GL_GENERATEMIPMAP)(uint32_t);
 typedef void (GL_API* GL_GETINTEGERV)(uint32_t, int*);
+typedef uint32_t (GL_API* GL_GETERROR)(void);
 
 // Global function pointers (loaded once during initialize)
 static GL_GENVERTEXARRAYS     glGenVertexArrays = nullptr;
@@ -67,6 +69,7 @@ static GL_GETSHADERIV         glGetShaderiv = nullptr;
 static GL_GETSHADERINFOLOG    glGetShaderInfoLog = nullptr;
 static GL_CREATEPROGRAM       glCreateProgram = nullptr;
 static GL_ATTACHSHADER        glAttachShader = nullptr;
+static GL_BINDATTRIBLOCATION  glBindAttribLocation = nullptr;
 static GL_LINKPROGRAM         glLinkProgram = nullptr;
 static GL_GETPROGRAMIV        glGetProgramiv = nullptr;
 static GL_GETPROGRAMINFOLOG   glGetProgramInfoLog = nullptr;
@@ -92,6 +95,7 @@ static GL_TEXIMAGE2D          glTexImage2D = nullptr;
 static GL_TEXPARAMETERI       glTexParameteri = nullptr;
 static GL_GENERATEMIPMAP      glGenerateMipmap = nullptr;
 static GL_GETINTEGERV         glGetIntegerv = nullptr;
+static GL_GETERROR            glGetError = nullptr;
 typedef int (GL_API* GL_ISENABLED)(uint32_t);
 static GL_ISENABLED           glIsEnabled = nullptr;
 
@@ -140,7 +144,7 @@ constexpr int GL_ACTIVE_TEXTURE = 0x84E0;
 constexpr int GL_TEXTURE_BINDING_2D = 0x8069;
 
 // Missing constants used in renderMesh state save/restore
-constexpr uint32_t GL_DEPTH_FUNC = 0x0B66;
+constexpr uint32_t GL_DEPTH_FUNC = 0x0B74; // was 0x0B66 (invalid) -> glDepthFunc(prev) produced GL_INVALID_ENUM every frame
 constexpr uint32_t GL_BLEND_SRC = 0x0BE1;
 constexpr uint32_t GL_BLEND_DST = 0x0BE0;
 
@@ -237,7 +241,28 @@ uint32_t GlRenderer::s_programEye = 0;
 bool GlRenderer::s_initialized = false;
 float GlRenderer::s_cameraPos[3] = {0.0f, 0.0f, 0.0f};
 float GlRenderer::s_phongBoost = 0.3f;
+// Identity view-projection so renderMesh stays well-defined before the Java
+// side supplies a real matrix each frame.
+float GlRenderer::s_viewProjection[16] = {
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+};
 static std::unordered_map<uint32_t, std::pair<uint32_t, uint32_t>> s_meshBuffers;
+
+// Column-major 4x4 multiplication: out = a * b
+static void matMul4(const float* a, const float* b, float* out) {
+    for (int col = 0; col < 4; col++) {
+        for (int row = 0; row < 4; row++) {
+            float sum = 0.0f;
+            for (int k = 0; k < 4; k++) {
+                sum += a[k * 4 + row] * b[col * 4 + k];
+            }
+            out[col * 4 + row] = sum;
+        }
+    }
+}
 
 bool GlRenderer::initialize() {
     if (s_initialized) return true;
@@ -263,6 +288,7 @@ bool GlRenderer::initialize() {
     LOAD_GL_FUNC(glGetShaderInfoLog, glGetShaderInfoLog);
     LOAD_GL_FUNC(glCreateProgram, glCreateProgram);
     LOAD_GL_FUNC(glAttachShader, glAttachShader);
+    LOAD_GL_FUNC(glBindAttribLocation, glBindAttribLocation);
     LOAD_GL_FUNC(glLinkProgram, glLinkProgram);
     LOAD_GL_FUNC(glGetProgramiv, glGetProgramiv);
     LOAD_GL_FUNC(glGetProgramInfoLog, glGetProgramInfoLog);
@@ -287,6 +313,7 @@ bool GlRenderer::initialize() {
     LOAD_GL_FUNC(glTexParameteri, glTexParameteri);
     LOAD_GL_FUNC(glGenerateMipmap, glGenerateMipmap);
     LOAD_GL_FUNC(glGetIntegerv, glGetIntegerv);
+    LOAD_GL_FUNC(glGetError, glGetError);
     LOAD_GL_FUNC(glIsEnabled, glIsEnabled);
 
     // Compile and link shader programs
@@ -347,8 +374,11 @@ uint32_t GlRenderer::linkProgram(uint32_t vs, uint32_t fs) {
     glAttachShader(program, fs);
 
     // Bind attribute locations
-    // These must match the shader source "in" declarations
+    // These must match the VAO vertex attribute setup in buildMesh
     // in_position = 0, in_normal = 1, in_texcoord = 2
+    glBindAttribLocation(program, 0, "in_position");
+    glBindAttribLocation(program, 1, "in_normal");
+    glBindAttribLocation(program, 2, "in_texcoord");
 
     glLinkProgram(program);
 
@@ -482,6 +512,9 @@ void GlRenderer::renderMesh(uint32_t vao, int indexCount, uint32_t textureId,
     if (!vao || indexCount <= 0 || !program) return;
     if (!glUseProgram || !glBindVertexArray || !glDrawElements) return;
 
+    // Diagnostic: clear sticky errors before our calls, then report where one appears.
+    if (glGetError) glGetError();
+
     // Save OpenGL state
     int prevProgram = 0;
     glGetIntegerv(GL_CURRENT_PROGRAM, &prevProgram);
@@ -496,8 +529,11 @@ void GlRenderer::renderMesh(uint32_t vao, int indexCount, uint32_t textureId,
     glUseProgram(program);
 
     // Set uniforms
+    float mvp[16];
+    matMul4(s_viewProjection, modelMatrix, mvp);
+
     int mvpLoc = glGetUniformLocation(program, "u_modelViewProjection");
-    if (mvpLoc >= 0) glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, modelMatrix);
+    if (mvpLoc >= 0) glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, mvp);
 
     int modelLoc = glGetUniformLocation(program, "u_modelMatrix");
     if (modelLoc >= 0) glUniformMatrix4fv(modelLoc, 1, GL_FALSE, modelMatrix);
@@ -557,17 +593,37 @@ void GlRenderer::renderMesh(uint32_t vao, int indexCount, uint32_t textureId,
     glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
 
+    // Diagnostic
+    if (glGetError) {
+        uint32_t err = glGetError();
+        if (err) std::cerr << "[GL] renderMesh err=0x" << std::hex << err
+                           << std::dec << " after DRAW (vao=" << vao
+                           << " mode=" << static_cast<int>(mode) << ")" << std::endl;
+    }
+
     // Restore state (including GL state we changed, to avoid leaking into MC renderer)
     glUseProgram(static_cast<uint32_t>(prevProgram));
+    if (glGetError && glGetError() && prevProgram > 1) std::cerr << "[GL] RESTORE err after UseProgram prev=" << prevProgram << std::endl;
     glActiveTexture(static_cast<uint32_t>(prevActiveTex));
+    if (glGetError && glGetError()) std::cerr << "[GL] RESTORE err after ActiveTexture prev=" << prevActiveTex << std::endl;
     glBindTexture(GL_TEXTURE_2D, static_cast<uint32_t>(prevTex));
+    if (glGetError && glGetError()) std::cerr << "[GL] RESTORE err after BindTexture prev=" << prevTex << std::endl;
 
     // Restore depth test
     if (depthWasEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     glDepthFunc(static_cast<GLenum>(prevDepthFunc));
+    if (glGetError && glGetError()) std::cerr << "[GL] RESTORE err after DepthFunc prev=" << prevDepthFunc << std::endl;
     // Restore blend
     if (blendWasEnabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
     glBlendFunc(static_cast<GLenum>(prevBlendSrc), static_cast<GLenum>(prevBlendDst));
+    if (glGetError && glGetError()) std::cerr << "[GL] RESTORE err after BlendFunc src=" << prevBlendSrc << " dst=" << prevBlendDst << std::endl;
+
+    // Diagnostic
+    if (glGetError) {
+        uint32_t err = glGetError();
+        if (err) std::cerr << "[GL] renderMesh err=0x" << std::hex << err
+                           << std::dec << " after RESTORE (vao=" << vao << ")" << std::endl;
+    }
 }
 
 void GlRenderer::setCameraPosition(float x, float y, float z) {
@@ -576,6 +632,13 @@ void GlRenderer::setCameraPosition(float x, float y, float z) {
 
 void GlRenderer::setPhongBoost(float boost) {
     s_phongBoost = boost;
+}
+
+void GlRenderer::setViewProjection(const float* viewProjection) {
+    if (!viewProjection) return;
+    for (int i = 0; i < 16; i++) {
+        s_viewProjection[i] = viewProjection[i];
+    }
 }
 
 void GlRenderer::shutdown() {

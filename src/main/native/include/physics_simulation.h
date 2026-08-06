@@ -83,6 +83,13 @@ public:
     static bool sphereCast(const Vec3& from, const Vec3& to, float radius,
                            Vec3& hitPoint, Vec3& hitNormal);
 
+    // Environment mesh: static triangle soup that sphere bodies collide against.
+    // vertices are interleaved xyz triplets; indices reference them (triangle fan).
+    static void setEnvironmentMesh(const Vec3* vertices, int vertexCount,
+                                   const int* indices, int indexCount);
+    static void clearEnvironmentMesh();
+    static bool isEnvironmentMeshValid();
+
     // Bullet3-style advanced features
     static uint64_t createRigidBodyWithShape(const Vec3& position, const Quat& rotation, float mass,
                                               CollisionShape::Type shapeType, const Vec3& shapeParam1, float shapeParam2);

@@ -390,6 +390,7 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
         }
     }
 
+    @Override
     public PhyParser.ParsedPhy parsePhy(byte[] data) {
         if (!isAvailable()) return PhyParser.parse(data);
         try {
@@ -404,7 +405,12 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
         return PhyParser.parse(data);
     }
 
-    private PhyParser.ParsedPhy deserializeParsedPhy(byte[] data) {
+    @Override
+    public SmdParser.ParsedSmd parseSmd(byte[] data) throws IOException {
+        return SmdParser.parse(data);
+    }
+
+    static PhyParser.ParsedPhy deserializeParsedPhy(byte[] data) {
         if (data.length < 8) return null;
         ByteBuffer buf = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
         int magic = buf.getInt();

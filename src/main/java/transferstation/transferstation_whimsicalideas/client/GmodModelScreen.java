@@ -1,5 +1,7 @@
 package transferstation.transferstation_whimsicalideas.client;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -17,10 +19,10 @@ import org.jetbrains.annotations.NotNull;
 import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
 import transferstation.transferstation_whimsicalideas.client.model.ModelPackage;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class GmodModelScreen extends Screen {
@@ -31,6 +33,8 @@ public class GmodModelScreen extends Screen {
     private static final int MODEL_BTN_W = 52;
     private static final int MODEL_BTN_H = 90;
 
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
     private int x;
     private int y;
     private int page;
@@ -39,17 +43,62 @@ public class GmodModelScreen extends Screen {
     private String currentSearch = "";
     private boolean playerEnabled;
     private boolean mobEnabled;
-
+    private boolean showFavoritesOnly = false;
 
     private List<ModelPackage> allPackages;
     private List<ModelPackage> filteredPackages;
+    private Set<String> favoriteNames = new LinkedHashSet<>();
 
     protected GmodModelScreen() {
         super(Component.translatable("gui.transferstation_whimsicalideas.model_selection"));
         this.playerEnabled = GmodModelConfig.isPlayerModelEnabled();
         this.mobEnabled = GmodModelConfig.isMobModelEnabled();
         this.page = 0;
+        loadFavorites();
         refreshPackages();
+    }
+
+    private void loadFavorites() {
+        Path favFile = getFavoritesFile();
+        if (favFile != null && Files.exists(favFile)) {
+            try {
+                String json = Files.readString(favFile);
+                String[] arr = GSON.fromJson(json, String[].class);
+                if (arr != null) {
+                    favoriteNames = new LinkedHashSet<>(Arrays.asList(arr));
+                }
+            } catch (Exception e) {
+                favoriteNames = new LinkedHashSet<>();
+            }
+        }
+    }
+
+    private void saveFavorites() {
+        Path favFile = getFavoritesFile();
+        if (favFile == null) return;
+        try {
+            Files.createDirectories(favFile.getParent());
+            Files.writeString(favFile, GSON.toJson(favoriteNames.toArray(new String[0])));
+        } catch (IOException ignored) {}
+    }
+
+    private Path getFavoritesFile() {
+        Path configDir = net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get()
+                .resolve("transferstation_whimsicalideas");
+        return configDir.resolve("favorite_models.json");
+    }
+
+    private void toggleFavorite(ModelPackage pkg) {
+        if (favoriteNames.contains(pkg.getName())) {
+            favoriteNames.remove(pkg.getName());
+        } else {
+            favoriteNames.add(pkg.getName());
+        }
+        saveFavorites();
+    }
+
+    private boolean isFavorite(ModelPackage pkg) {
+        return favoriteNames.contains(pkg.getName());
     }
 
     private void refreshPackages() {
@@ -59,14 +108,18 @@ public class GmodModelScreen extends Screen {
 
     private void applyFilter() {
         String search = currentSearch.toLowerCase(Locale.ROOT);
-        if (search.isEmpty()) {
+        if (search.isEmpty() && !showFavoritesOnly) {
             filteredPackages = new ArrayList<>(allPackages);
         } else {
             filteredPackages = allPackages.stream()
-                    .filter(p -> p.getName().toLowerCase(Locale.ROOT).contains(search)
-                            || (p.getDisplayName() != null && p.getDisplayName().toLowerCase(Locale.ROOT).contains(search))
-                            || (p.getAuthor() != null && p.getAuthor().toLowerCase(Locale.ROOT).contains(search))
-                            || p.getTags().stream().anyMatch(t -> t.toLowerCase(Locale.ROOT).contains(search)))
+                    .filter(p -> {
+                        if (showFavoritesOnly && !isFavorite(p)) return false;
+                        if (search.isEmpty()) return true;
+                        return p.getName().toLowerCase(Locale.ROOT).contains(search)
+                                || (p.getDisplayName() != null && p.getDisplayName().toLowerCase(Locale.ROOT).contains(search))
+                                || (p.getAuthor() != null && p.getAuthor().toLowerCase(Locale.ROOT).contains(search))
+                                || p.getTags().stream().anyMatch(t -> t.toLowerCase(Locale.ROOT).contains(search));
+                    })
                     .collect(Collectors.toList());
         }
         maxPage = Math.max(0, (filteredPackages.size() - 1) / MODELS_PER_PAGE);
@@ -89,6 +142,17 @@ public class GmodModelScreen extends Screen {
         searchField.setFocused(focused);
         searchField.moveCursorToEnd();
         addWidget(searchField);
+
+        // Favorites toggle button
+        addRenderableWidget(Button.builder(
+                Component.literal(showFavoritesOnly ? "★ All" : "☆ Fav"),
+                btn -> {
+                    showFavoritesOnly = !showFavoritesOnly;
+                    btn.setMessage(Component.literal(showFavoritesOnly ? "★ All" : "☆ Fav"));
+                    page = 0;
+                    init();
+                }
+        ).pos(x + 288, y + 6).size(36, 16).build());
 
         addRenderableWidget(Button.builder(
                 Component.translatable(playerEnabled ? "gui.transferstation_whimsicalideas.player_on" : "gui.transferstation_whimsicalideas.player_off"),
@@ -220,6 +284,11 @@ public class GmodModelScreen extends Screen {
             graphics.drawString(font, Component.translatable("gui.transferstation_whimsicalideas.search_hint"), x + 148, y + 10, 0x777777);
         }
 
+        // Favorites count indicator
+        if (showFavoritesOnly) {
+            graphics.drawString(font, filteredPackages.size() + " favorites", x + 148, y + 24, 0xFFD700);
+        }
+
         String pageInfo = String.format("%d/%d", page + 1, maxPage + 1);
         graphics.drawString(font, pageInfo, x + 138 + (282 - font.width(pageInfo)) / 2, y + 223 - font.lineHeight / 2, 0xF3EFE0);
 
@@ -332,8 +401,13 @@ public class GmodModelScreen extends Screen {
 
             Font mcFont = Minecraft.getInstance().font;
 
+            // Favorite star indicator
+            boolean isFav = parent.isFavorite(pkg);
+            if (isFav) {
+                graphics.drawString(mcFont, "★", getX() + 2, getY() + 2, 0xFFD700);
+            }
+
             if (iconLoc != null) {
-                // Draw the icon in the upper area, leaving room for the name below.
                 int iconSize = Math.min(width - 8, 56);
                 int iconX = getX() + (width - iconSize) / 2;
                 int iconY = getY() + 4;
@@ -365,10 +439,22 @@ public class GmodModelScreen extends Screen {
                 graphics.fillGradient(getX() + width - 1, getY() + 1, getX() + width, getY() + height - 1, 0xff_F3EFE0, 0xff_F3EFE0);
                 graphics.fillGradient(getX(), getY() + height - 1, getX() + width, getY() + height, 0xff_F3EFE0, 0xff_F3EFE0);
 
-                if (pkg.getAuthor() != null) {
-                    parent.setTooltipForNextRenderPass(Component.literal(pkg.getAuthor()));
-                }
+                // Tooltip: author + favorite hint
+                String tooltip = pkg.getAuthor() != null ? pkg.getAuthor() : "";
+                tooltip += " [Right-click: favorite]";
+                parent.setTooltipForNextRenderPass(Component.literal(tooltip));
             }
+        }
+
+        @Override
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            if (isHovered && button == 1) { // Right-click = toggle favorite
+                parent.toggleFavorite(pkg);
+                Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+                parent.init(); // Refresh to update star display
+                return true;
+            }
+            return super.mouseClicked(mouseX, mouseY, button);
         }
 
         private boolean isSelected() {

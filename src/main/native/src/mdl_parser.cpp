@@ -140,10 +140,28 @@ MdlParser::ParsedMdl MdlParser::parse(const std::vector<uint8_t>& data) {
         int texDirOff = h.cdtextureindex;
         for (int i = 0; i < h.numcdtextures; i++) {
             if (texDirOff + 4 > static_cast<int>(size)) break;
-            int strOff = readInt(raw, texDirOff);
+            int strOff = readInt(raw, texDirOff + 0);
             texDirOff += 4;
             if (strOff > 0 && strOff < static_cast<int>(size) - 1) {
-                result.cdTextures.push_back(readStringAt(raw, strOff, size));
+                // cdtexture nameOff convention varies by compiler:
+                // - studiomdl / standard SDK: absolute offset
+                // - Crowbar / some decompilers: relative offset from cdtexture array base
+                // - Some community tools: relative offset from entry itself
+                // Heuristic: small nameOff (< 256 or < cdIndex) is likely relative;
+                // large nameOff is likely absolute.
+                bool likelyRelative = (strOff < 256) || (strOff < h.cdtextureindex);
+                std::string path;
+                if (likelyRelative) {
+                    path = readStringAt(raw, h.cdtextureindex + strOff, size);
+                    if (path.empty()) path = readStringAt(raw, strOff, size);
+                } else {
+                    path = readStringAt(raw, strOff, size);
+                    if (path.empty() && strOff < static_cast<int>(size) - 1)
+                        path = readStringAt(raw, h.cdtextureindex + strOff, size);
+                }
+                if (!path.empty()) {
+                    result.cdTextures.push_back(path);
+                }
             } else {
                 result.cdTextures.emplace_back();
             }
@@ -155,20 +173,25 @@ MdlParser::ParsedMdl MdlParser::parse(const std::vector<uint8_t>& data) {
         int texOff = h.textureindex;
         for (int i = 0; i < h.numtextures; i++) {
             if (texOff + TEXTURE_ENTRY_SIZE > static_cast<int>(size)) break;
+            int texEntryBase = texOff;
             StudioTexture tex;
-            tex.nameOffset = readInt(raw, texOff); // but we skip
-            tex.flags = readInt(raw, texOff + 4);
-            tex.width = readInt(raw, texOff + 8);
-            tex.height = readInt(raw, texOff + 12);
-            tex.viewportX = readInt(raw, texOff + 16);
-            tex.viewportY = readInt(raw, texOff + 20);
+            tex.nameOffset = readInt(raw, texEntryBase + 0); // but we skip
+            tex.flags = readInt(raw, texEntryBase + 4);
+            tex.width = readInt(raw, texEntryBase + 8);
+            tex.height = readInt(raw, texEntryBase + 12);
+            tex.viewportX = readInt(raw, texEntryBase + 16);
+            tex.viewportY = readInt(raw, texEntryBase + 20);
             texOff += TEXTURE_ENTRY_SIZE;
 
-            // Read name from nameOffset
+            // Read name from nameOffset (relative to the texture entry, like Java parser)
             std::string texName;
-            if (tex.nameOffset > 0 && tex.nameOffset < static_cast<int>(size)) {
-                texName = readStringAt(raw, tex.nameOffset, size);
-            } else {
+            if (tex.nameOffset > 0) {
+                int absNameOff = texEntryBase + tex.nameOffset;
+                if (absNameOff > 0 && absNameOff < static_cast<int>(size)) {
+                    texName = readStringAt(raw, absNameOff, size);
+                }
+            }
+            if (texName.empty()) {
                 texName = "texture_" + std::to_string(i);
             }
             result.textureNames.push_back(texName);
@@ -193,20 +216,22 @@ MdlParser::ParsedMdl MdlParser::parse(const std::vector<uint8_t>& data) {
         int bpOff = h.bodypartindex;
         for (int i = 0; i < h.numbodyparts; i++) {
             if (bpOff + BODYPART_SIZE > static_cast<int>(size)) break;
+            int bpBase = bpOff;
             StudioBodyPart bp;
-            int nameOff = readInt(raw, bpOff);
-            bp.nummodels = readInt(raw, bpOff + 4);
-            bp.baseIndex = readInt(raw, bpOff + 8);
-            bp.modelindex = readInt(raw, bpOff + 12);
+            int nameOff = readInt(raw, bpBase + 0);
+            bp.nummodels = readInt(raw, bpBase + 4);
+            bp.baseIndex = readInt(raw, bpBase + 8);
+            bp.modelindex = readInt(raw, bpBase + 12);
             bpOff += BODYPART_SIZE;
 
+            // sznameindex is relative to the bodypart entry itself
             result.bodyPartNames.push_back(
-                (nameOff > 0 && nameOff < static_cast<int>(size)) ? readStringAt(raw, nameOff, size) : "bp_" + std::to_string(i));
+                (nameOff > 0) ? readStringAt(raw, bpBase + nameOff, size) : "bp_" + std::to_string(i));
             result.bodyParts.push_back(bp);
 
-            // Parse models within this body part
+            // Parse models within this body part (modelindex is relative to the bodypart entry)
             if (bp.modelindex > 0 && bp.nummodels > 0) {
-                int modelOff = bp.modelindex;
+                int modelOff = bpBase + bp.modelindex;
                 for (int m = 0; m < bp.nummodels; m++) {
                     if (modelOff + MODEL_SIZE > static_cast<int>(size)) break;
                     StudioModel mdl;
@@ -223,14 +248,15 @@ MdlParser::ParsedMdl MdlParser::parse(const std::vector<uint8_t>& data) {
                     mdl.attachmentindex = readInt(raw, modelOff + 96);
                     mdl.numeyeballs = readInt(raw, modelOff + 100);
                     mdl.eyeballindex = readInt(raw, modelOff + 104);
+                    int modelBase = modelOff;
                     modelOff += MODEL_SIZE;
 
                     result.models.push_back(mdl);
                     result.modelBodyPartIndices.push_back(i);
 
-                    // Parse meshes within this model
+                    // Parse meshes within this model (meshindex is relative to the model entry)
                     if (mdl.meshindex > 0 && mdl.nummeshes > 0) {
-                        int meshOff = mdl.meshindex;
+                        int meshOff = modelBase + mdl.meshindex;
                         for (int mi = 0; mi < mdl.nummeshes; mi++) {
                             if (meshOff + MESH_SIZE > static_cast<int>(size)) break;
                             StudioMesh mesh;
@@ -309,10 +335,12 @@ MdlParser::ParsedMdl MdlParser::parse(const std::vector<uint8_t>& data) {
             bone.physicsbone = readInt(raw, boneOff + 172);
             bone.surfacepropidx = readInt(raw, boneOff + 176);
             bone.contents = readInt(raw, boneOff + 180);
+            int boneBase = boneOff;
             boneOff += BONE_SIZE;
 
+            // sznameindex is relative to the bone entry itself
             result.boneNames.push_back(
-                (nameOff > 0 && nameOff < static_cast<int>(size)) ? readStringAt(raw, nameOff, size) : "bone_" + std::to_string(i));
+                (nameOff > 0) ? readStringAt(raw, boneBase + nameOff, size) : "bone_" + std::to_string(i));
             result.bones.push_back(bone);
         }
     }
@@ -323,9 +351,15 @@ MdlParser::ParsedMdl MdlParser::parse(const std::vector<uint8_t>& data) {
         for (int i = 0; i < h.numincludemodels; i++) {
             if (incOff + 4 > static_cast<int>(size)) break;
             int nameOff = readInt(raw, incOff);
+            int incBase = incOff;
             incOff += 4;
             if (nameOff > 0 && nameOff < static_cast<int>(size) - 1) {
-                result.includeModels.push_back(readStringAt(raw, nameOff, size));
+                // Try absolute offset first, then fall back to relative to the entry base
+                std::string path = readStringAt(raw, nameOff, size);
+                if (path.empty() && nameOff < static_cast<int>(size) - 1)
+                    path = readStringAt(raw, incBase + nameOff, size);
+                if (!path.empty())
+                    result.includeModels.push_back(path);
             }
         }
     }

@@ -7,6 +7,9 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.CharsetDecoder;
 
 /**
  * Standalone raw-binary diagnostic for Source Engine MDL/VVD/VTX files.
@@ -18,6 +21,11 @@ public class RawMdlDiagnostic {
     static final Charset ASCII = StandardCharsets.US_ASCII;
     static final Charset CP932 = Charset.forName("Shift_JIS");
     static final Charset CP1252 = Charset.forName("Windows-1252");
+
+    static final CharsetDecoder UTF8_STRICT = StandardCharsets.UTF_8
+        .newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT);
 
     public static void main(String[] args) throws Exception {
         String mdlPath = null, vvdPath = null, vtxPath = null;
@@ -485,6 +493,12 @@ public class RawMdlDiagnostic {
             if ((bytes[i] & 0xFF) > 0x7F) { hasHighBytes = true; break; }
         }
         if (!hasHighBytes) return new String(bytes, 0, len, ASCII);
+        // Source Engine MDL strings are UTF-8; prefer UTF-8 when bytes are strictly valid.
+        try {
+            return UTF8_STRICT.decode(ByteBuffer.wrap(bytes, 0, len)).toString();
+        } catch (CharacterCodingException e) {
+            // Not UTF-8; fall back to legacy double-byte encodings.
+        }
         try {
             String cp932r = new String(bytes, 0, len, CP932);
             String cp1252r = new String(bytes, 0, len, CP1252);

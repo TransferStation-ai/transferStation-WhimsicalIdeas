@@ -8,7 +8,7 @@ import transferstation.transferstation_whimsicalideas.Transferstation_whimsicali
 public class NpcChatNetwork {
     private static final String PROTOCOL_VERSION = "1.0";
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder.named(
-            new ResourceLocation(Transferstation_whimsicalideas.MODID, "npc_chat"))
+            ResourceLocation.parse(Transferstation_whimsicalideas.MODID + ":npc_chat"))
         .networkProtocolVersion(() -> PROTOCOL_VERSION)
         .clientAcceptedVersions(s -> true)
         .serverAcceptedVersions(s -> true)

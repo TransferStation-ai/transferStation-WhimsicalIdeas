@@ -1,7 +1,18 @@
 package transferstation.transferstation_whimsicalideas.client.model;
 
 import com.mojang.logging.LogUtils;
+import org.joml.Vector3f;
 import org.slf4j.Logger;
+import transferstation.transferstation_whimsicalideas.client.physics.CollisionResponseHandler;
+import transferstation.transferstation_whimsicalideas.client.physics.PhysicsDebugRenderer;
+import transferstation.transferstation_whimsicalideas.client.physics.PhysicsMaterial;
+import transferstation.transferstation_whimsicalideas.client.physics.SpatialHashGrid;
+import transferstation.transferstation_whimsicalideas.client.physics.TriggerVolume;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class PhysicsBridge {
 
@@ -13,6 +24,12 @@ public class PhysicsBridge {
     public static final int SHAPE_SPHERE = 1;
     public static final int SHAPE_CAPSULE = 2;
     public static final int SHAPE_MESH = 3;
+
+    private static final SpatialHashGrid spatialGrid = new SpatialHashGrid(4.0f);
+    private static final Map<Long, String> bodyTags = new HashMap<>();
+    private static final Map<Long, float[]> bodyShapeParams = new HashMap<>();
+    private static final Map<Long, Integer> bodyShapeTypes = new HashMap<>();
+    private static final List<TriggerVolume> triggerVolumes = new ArrayList<>();
 
     public static boolean isAvailable() {
         return available;
@@ -33,6 +50,124 @@ public class PhysicsBridge {
             LOGGER.debug("[Physics] Native physics not available: {}", e.getMessage());
         }
 
+    }
+
+    /**
+     * Retry native physics init once the renderer has been initialized on the
+     * render thread (GL context present). No-op if already available.
+     */
+    public static void tryInitializeLater() {
+        if (available) return;
+        initialized = false;
+        tryInitialize();
+    }
+
+    public static SpatialHashGrid getSpatialGrid() {
+        return spatialGrid;
+    }
+
+    public static void registerTriggerVolume(TriggerVolume volume) {
+        triggerVolumes.add(volume);
+    }
+
+    public static void unregisterTriggerVolume(TriggerVolume volume) {
+        triggerVolumes.remove(volume);
+    }
+
+    public static List<TriggerVolume> getTriggerVolumes() {
+        return List.copyOf(triggerVolumes);
+    }
+
+    public static void setBodyTag(long bodyId, String tag) {
+        bodyTags.put(bodyId, tag);
+    }
+
+    public static String getBodyTag(long bodyId) {
+        return bodyTags.getOrDefault(bodyId, "");
+    }
+
+    public static void removeBodyTag(long bodyId) {
+        bodyTags.remove(bodyId);
+    }
+
+    /**
+     * Update the spatial grid entry for a body based on its shape.
+     */
+    public static void updateSpatialEntry(long bodyId, int shapeType, float[] shapeParams) {
+        if (!available) return;
+        float[] pos = getPosition(bodyId);
+        if (pos == null) return;
+
+        float px = pos[0], py = pos[1], pz = pos[2];
+        float hx = 0.5f, hy = 0.5f, hz = 0.5f;
+
+        switch (shapeType) {
+            case SHAPE_BOX:
+                if (shapeParams.length >= 3) {
+                    hx = shapeParams[0] * 0.5f;
+                    hy = shapeParams[1] * 0.5f;
+                    hz = shapeParams[2] * 0.5f;
+                }
+                break;
+            case SHAPE_SPHERE:
+                if (shapeParams.length >= 1) {
+                    hx = hy = hz = shapeParams[0];
+                }
+                break;
+            case SHAPE_CAPSULE:
+                if (shapeParams.length >= 2) {
+                    hx = hz = shapeParams[0];
+                    hy = shapeParams[1] * 0.5f + shapeParams[0];
+                }
+                break;
+        }
+
+        spatialGrid.insert(bodyId, px - hx, py - hy, pz - hz, px + hx, py + hy, pz + hz);
+        bodyShapeTypes.put(bodyId, shapeType);
+        bodyShapeParams.put(bodyId, shapeParams);
+    }
+
+    /**
+     * Update all spatial grid entries for tracked bodies.
+     */
+    public static void updateAllSpatialEntries() {
+        if (!available) return;
+        for (Long bodyId : bodyTags.keySet()) {
+            Integer shapeType = bodyShapeTypes.get(bodyId);
+            float[] shapeParam = bodyShapeParams.get(bodyId);
+            if (shapeType != null && shapeParam != null) {
+                updateSpatialEntry(bodyId, shapeType, shapeParam);
+            }
+        }
+    }
+
+    /**
+     * Update trigger volumes, checking which bodies are inside.
+     */
+    public static void updateTriggerVolumes() {
+        if (!available) return;
+        for (TriggerVolume vol : triggerVolumes) {
+            for (Long bodyId : bodyTags.keySet()) {
+                float[] pos = getPosition(bodyId);
+                if (pos != null) {
+                    vol.updateBody(bodyId, new Vector3f(pos[0], pos[1], pos[2]));
+                }
+            }
+        }
+    }
+
+    /**
+     * Query potential collision pairs using the spatial grid.
+     */
+    public static List<long[]> findPotentialCollisions() {
+        return spatialGrid.findPotentialPairs();
+    }
+
+    /**
+     * Apply material properties to a rigid body.
+     */
+    public static void applyMaterial(long bodyId, PhysicsMaterial material) {
+        CollisionResponseHandler.assignMaterial(bodyId, material);
     }
 
     public static long createRigidBody(float x, float y, float z, float mass) {
@@ -93,9 +228,104 @@ public class PhysicsBridge {
         if (!available) return;
         try {
             nativeDestroyRigidBody(id);
+            spatialGrid.remove(id);
+            bodyTags.remove(id);
+            bodyShapeTypes.remove(id);
+            bodyShapeParams.remove(id);
+            CollisionResponseHandler.removeBody(id);
         } catch (UnsatisfiedLinkError e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public static float[] getVelocity(long id) {
+        if (!available) return new float[]{0, 0, 0};
+        try {
+            return nativeGetVelocity(id);
+        } catch (UnsatisfiedLinkError e) {
+            return new float[]{0, 0, 0};
+        }
+    }
+
+    public static float getMass(long id) {
+        if (!available) return 0f;
+        try {
+            return nativeGetMass(id);
+        } catch (UnsatisfiedLinkError e) {
+            return 0f;
+        }
+    }
+
+    public static void setMass(long id, float mass) {
+        if (!available) return;
+        try {
+            nativeSetMass(id, mass);
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void setDamping(long id, float linearDamping, float angularDamping) {
+        if (!available) return;
+        try {
+            nativeSetDamping(id, linearDamping, angularDamping);
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void setActivationState(long id, boolean active) {
+        if (!available) return;
+        try {
+            nativeSetActivationState(id, active);
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Perform multiple raycasts and return all hits.
+     */
+    public static List<float[]> raycastAll(float fromX, float fromY, float fromZ,
+                                            float toX, float toY, float toZ) {
+        List<float[]> hits = new ArrayList<>();
+        float[] hitPoint = new float[3];
+        float[] hitNormal = new float[3];
+
+        float dx = toX - fromX;
+        float dy = toY - fromY;
+        float dz = toZ - fromZ;
+        float dist = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist < 0.001f) return hits;
+
+        float[] origin = {fromX, fromY, fromZ};
+        float maxDist = dist;
+
+        while (maxDist > 0.001f) {
+            float nx = fromX + dx * (1f - maxDist / dist);
+            float ny = fromY + dy * (1f - maxDist / dist);
+            float nz = fromZ + dz * (1f - maxDist / dist);
+
+            boolean hit = raycast(nx, ny, nz, toX, toY, toZ, hitPoint, hitNormal);
+            if (hit) {
+                hits.add(new float[]{hitPoint[0], hitPoint[1], hitPoint[2],
+                        hitNormal[0], hitNormal[1], hitNormal[2]});
+
+                float hx = hitPoint[0] - nx;
+                float hy = hitPoint[1] - ny;
+                float hz = hitPoint[2] - nz;
+                float hitDist = (float) Math.sqrt(hx * hx + hy * hy + hz * hz);
+                float remaining = dist - hitDist - 0.01f;
+                if (remaining <= 0) break;
+                maxDist = remaining;
+                fromX = hitPoint[0] + hitNormal[0] * 0.01f;
+                fromY = hitPoint[1] + hitNormal[1] * 0.01f;
+                fromZ = hitPoint[2] + hitNormal[2] * 0.01f;
+            } else {
+                break;
+            }
+        }
+        return hits;
     }
 
     public static void setVelocity(long id, float vx, float vy, float vz) {
@@ -208,6 +438,26 @@ public class PhysicsBridge {
         }
     }
 
+    /** Replace the static environment mesh (triangle soup) that sphere bodies collide against. */
+    public static void setEnvironmentMesh(float[] vertices, int[] indices) {
+        if (!available) return;
+        try {
+            nativeSetEnvironmentMesh(vertices, indices);
+        } catch (UnsatisfiedLinkError e) {
+            LOGGER.debug("[Physics] Native environment mesh unavailable: {}", e.getMessage());
+        }
+    }
+
+    /** Clear the environment mesh so sphere bodies only fall to the flat ground plane. */
+    public static void clearEnvironmentMesh() {
+        if (!available) return;
+        try {
+            nativeSetEnvironmentMesh(null, null);
+        } catch (UnsatisfiedLinkError e) {
+            LOGGER.debug("[Physics] Native environment mesh unavailable: {}", e.getMessage());
+        }
+    }
+
     private static native boolean nativePhysicsInitialize();
     private static native long nativeCreateRigidBody(float x, float y, float z, float mass);
     private static native long nativeCreateRigidBodyWithShape(float x, float y, float z, float mass, int shapeType, float[] shapeParams);
@@ -229,5 +479,11 @@ public class PhysicsBridge {
     private static native void nativeSetJointLimit(long jointId, float linearLimit, float angularLimit);
     private static native void nativeDestroyJoint(long id);
     private static native boolean nativeRaycast(float fromX, float fromY, float fromZ, float toX, float toY, float toZ,
-                                                  float[] hitPointOut, float[] hitNormalOut);
+                                                   float[] hitPointOut, float[] hitNormalOut);
+    private static native void nativeSetEnvironmentMesh(float[] vertices, int[] indices);
+    private static native float[] nativeGetVelocity(long id);
+    private static native float nativeGetMass(long id);
+    private static native void nativeSetMass(long id, float mass);
+    private static native void nativeSetDamping(long id, float linearDamping, float angularDamping);
+    private static native void nativeSetActivationState(long id, boolean active);
 }

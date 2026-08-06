@@ -36,6 +36,16 @@ public class JavaModelParserStrategy implements ModelParserStrategy {
     }
 
     @Override
+    public PhyParser.ParsedPhy parsePhy(byte[] data) {
+        return PhyParser.parse(data);
+    }
+
+    @Override
+    public SmdParser.ParsedSmd parseSmd(byte[] data) throws IOException {
+        return SmdParser.parse(data);
+    }
+
+    @Override
     public SourceModelData loadModel(Path packageDir) throws IOException {
         return ModelLoadManager.loadModel(packageDir);
     }

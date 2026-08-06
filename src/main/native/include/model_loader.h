@@ -60,6 +60,12 @@ public:
         float minZ;
         uint32_t fallbackTexture;
         std::string cacheKey;
+
+        // GPU resources (textures/VAOs) have been created on the render thread.
+        // ModelLoader threads must NOT create GL objects because the GL context is
+        // only current on the render thread; uploads happen lazily in the first
+        // render call instead.
+        bool gpuReady;
         
         const std::vector<MeshData>& getMeshesForLod(int lod) const {
             if (lod <= 0 || lod > 3) return meshes;

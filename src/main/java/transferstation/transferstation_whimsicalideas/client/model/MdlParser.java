@@ -1290,6 +1290,12 @@ public class MdlParser {
 
     private static final java.nio.charset.Charset CP932 = java.nio.charset.Charset.forName("Shift_JIS");
     private static final java.nio.charset.Charset CP1252 = java.nio.charset.Charset.forName("Windows-1252");
+    private static final java.nio.charset.Charset GBK = java.nio.charset.Charset.forName("GBK");
+
+    private static final java.nio.charset.CharsetDecoder UTF8_STRICT = StandardCharsets.UTF_8
+        .newDecoder()
+        .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+        .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT);
 
     private static String decodeString(byte[] bytes, int len) {
         if (len <= 0) return "";
@@ -1305,54 +1311,55 @@ public class MdlParser {
             return new String(bytes, 0, len, StandardCharsets.US_ASCII);
         }
 
-        // Score-based encoding detection: try UTF-8, CP932 (Japanese), CP1252 (Western European).
-        // UTF-8 is tried first because it's the modern standard and increasingly common in mods.
-        // The scoring heuristic naturally prefers the encoding that produces the fewest
-        // replacement characters and the most valid alphanumeric characters.
-        int utf8Score = 0;
-        int cp932Score = 0;
-        int cp1252Score = 0;
-        String utf8Result = null;
-        String cp932Result = null;
-        String cp1252Result = null;
-
+        // Source Engine MDL string tables store text as UTF-8. If the byte sequence is
+        // strictly valid UTF-8, always decode as UTF-8 regardless of how the bytes would
+        // also decode under GBK/CP932/CP1252 (those multibyte charsets pack UTF-8 bytes
+        // into denser CJK chars and would "win" a naive letter-count score, corrupting
+        // names). Only fall back to legacy encodings when UTF-8 decoding fails outright.
+        String utf8Result;
         try {
-            utf8Result = new String(bytes, 0, len, StandardCharsets.UTF_8);
-            utf8Score = calculateStringScore(utf8Result);
-        } catch (Exception ignored) {}
+            utf8Result = UTF8_STRICT.decode(java.nio.ByteBuffer.wrap(bytes, 0, len)).toString();
+            return utf8Result;
+        } catch (java.nio.charset.CharacterCodingException e) {
+            // Not valid UTF-8; fall through to legacy single-/double-byte encodings.
+        }
 
-        try {
-            cp932Result = new String(bytes, 0, len, CP932);
-            cp932Score = calculateStringScore(cp932Result);
-        } catch (Exception ignored) {}
+        String gbkResult = safeDecode(bytes, len, GBK);
+        String cp932Result = safeDecode(bytes, len, CP932);
+        String cp1252Result = safeDecode(bytes, len, CP1252);
 
-        try {
-            cp1252Result = new String(bytes, 0, len, CP1252);
-            cp1252Score = calculateStringScore(cp1252Result);
-        } catch (Exception ignored) {}
-
-        int bestScore = Math.max(utf8Score, Math.max(cp932Score, cp1252Score));
-        if (bestScore > 0) {
-            if (utf8Result != null && utf8Score == bestScore) return utf8Result;
-            if (cp932Result != null && cp932Score == bestScore) return cp932Result;
+        int bestScore = Math.max(
+            gbkResult == null ? Integer.MIN_VALUE : calculateStringScore(gbkResult),
+            Math.max(
+                cp932Result == null ? Integer.MIN_VALUE : calculateStringScore(cp932Result),
+                cp1252Result == null ? Integer.MIN_VALUE : calculateStringScore(cp1252Result)));
+        if (bestScore > Integer.MIN_VALUE / 2) {
+            if (gbkResult != null && calculateStringScore(gbkResult) == bestScore) return gbkResult;
+            if (cp932Result != null && calculateStringScore(cp932Result) == bestScore) return cp932Result;
             return cp1252Result;
         }
 
-        String fallback = pickBestFallback(utf8Result, cp1252Result, cp932Result);
+        String fallback = pickBestFallback(gbkResult, cp932Result, cp1252Result);
         if (fallback != null) return fallback;
 
         return new String(bytes, 0, len, StandardCharsets.US_ASCII).replace('?', '_');
     }
 
+    private static String safeDecode(byte[] bytes, int len, java.nio.charset.Charset cs) {
+        try {
+            return new String(bytes, 0, len, cs);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private static String pickBestFallback(String... candidates) {
-        String best = null;
         for (String s : candidates) {
             if (s == null) continue;
             if (s.indexOf('\ufffd') >= 0) continue;
-            best = s;
-            break;
+            return s;
         }
-        return best;
+        return null;
     }
 
     private static int calculateStringScore(String s) {

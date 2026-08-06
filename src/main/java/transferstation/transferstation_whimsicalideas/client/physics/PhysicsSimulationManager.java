@@ -17,6 +17,11 @@ public class PhysicsSimulationManager {
 
     private static boolean initialized = false;
     private static boolean physicsEnabled = true;
+    private static boolean debugRenderingEnabled = false;
+
+    private static int tickCount = 0;
+    private static final int SPATIAL_UPDATE_INTERVAL = 5;
+    private static final int TRIGGER_UPDATE_INTERVAL = 2;
 
     public static void initialize() {
         if (initialized) return;
@@ -55,6 +60,16 @@ public class PhysicsSimulationManager {
         }
     }
 
+    public static boolean isDebugRenderingEnabled() {
+        return debugRenderingEnabled;
+    }
+
+    public static void setDebugRenderingEnabled(boolean enabled) {
+        debugRenderingEnabled = enabled;
+        PhysicsDebugRenderer.setEnabled(enabled);
+        LOGGER.info("[PhysicsSimulationManager] Physics debug rendering {}", enabled ? "enabled" : "disabled");
+    }
+
     public static void tick() {
         if (!initialized) return;
         if (!physicsEnabled) return;
@@ -63,9 +78,18 @@ public class PhysicsSimulationManager {
         if (mc.level == null) return;
 
         float deltaTime = 1.0f / 20.0f;
+        tickCount++;
 
         if (PhysicsBridge.isAvailable()) {
             PhysicsBridge.stepSimulation(deltaTime);
+
+            if (tickCount % SPATIAL_UPDATE_INTERVAL == 0) {
+                PhysicsBridge.updateAllSpatialEntries();
+            }
+
+            if (tickCount % TRIGGER_UPDATE_INTERVAL == 0) {
+                PhysicsBridge.updateTriggerVolumes();
+            }
         }
 
         for (SoftBodySimulation sim : activeSimulations.values()) {
@@ -80,7 +104,10 @@ public class PhysicsSimulationManager {
             sim.cleanup();
         }
         activeSimulations.clear();
+        PhysicsBridge.getSpatialGrid().clear();
+        CollisionResponseHandler.clear();
         initialized = false;
+        tickCount = 0;
         LOGGER.info("[PhysicsSimulationManager] Cleaned up all physics simulations");
     }
 
@@ -99,5 +126,30 @@ public class PhysicsSimulationManager {
 
     public static int getActiveSimulationCount() {
         return activeSimulations.size();
+    }
+
+    public static SpatialHashGrid getSpatialGrid() {
+        return PhysicsBridge.getSpatialGrid();
+    }
+
+    /**
+     * Register a trigger volume to be updated each tick.
+     */
+    public static void registerTriggerVolume(TriggerVolume volume) {
+        PhysicsBridge.registerTriggerVolume(volume);
+    }
+
+    /**
+     * Unregister a trigger volume.
+     */
+    public static void unregisterTriggerVolume(TriggerVolume volume) {
+        PhysicsBridge.unregisterTriggerVolume(volume);
+    }
+
+    /**
+     * Get all currently registered trigger volumes.
+     */
+    public static java.util.List<TriggerVolume> getTriggerVolumes() {
+        return PhysicsBridge.getTriggerVolumes();
     }
 }

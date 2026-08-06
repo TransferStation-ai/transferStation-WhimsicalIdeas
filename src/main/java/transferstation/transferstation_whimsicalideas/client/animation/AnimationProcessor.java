@@ -124,6 +124,8 @@ public class AnimationProcessor {
         float elapsedSec = (entity.tickCount + partialTicks) / 20.0f;
         int currentFrame = animation.frameCount > 0 ? (int) (elapsedSec * animation.fps) % animation.frameCount : 0;
 
+        AnimationEventSystem.tickEvents(entity, animation.name, currentFrame);
+
         for (AnimationData.AnimationTrack track : animation.tracks) {
             applyTrackAnimation(track, entity, poseStack, currentFrame, partialTicks);
         }
@@ -197,15 +199,27 @@ public class AnimationProcessor {
         if (modelData == null || modelData.bones.isEmpty()) return null;
 
         int boneCount = modelData.bones.size();
+
+        String animName = getActiveAnimationName(entity);
+        float elapsedSec = (entity.tickCount + partialTicks) / 20.0f;
+        AnimationData anim = getAnimation(animName);
+        float fps = (anim != null && anim.fps > 0) ? anim.fps : 30.0f;
+        int frameCount = (anim != null && anim.frameCount > 0) ? anim.frameCount : 1;
+        int frameInt = (int) (elapsedSec * fps) % frameCount;
+
+        float[][] cached = BoneTransformCache.get(entity, animName, frameInt);
+        if (cached != null && cached.length == boneCount) {
+            return cached;
+        }
+
         float[][] localTransforms = new float[boneCount][16];
 
         // 1. Initialize with bind pose (reference pose from MDL)
         // This is the model's rest pose - vertices are authored in this pose
         initializeBindPose(modelData, localTransforms);
 
-        // 2. Try to get VMD animation
-        String animName = getActiveAnimationName(entity);
-        AnimationData anim = getAnimation(animName);
+        // 2. Try to get VMD animation (animName already resolved above for cache lookup)
+        // anim already resolved above; fall back to MDL sequence data if empty
 
         // 3. If no VMD animation, try MDL's built-in sequence animation data
         if (anim == null || anim.tracks.isEmpty()) {
@@ -262,6 +276,7 @@ public class AnimationProcessor {
             }
         }
 
+        BoneTransformCache.put(entity, animName, frameInt, localTransforms);
         return localTransforms;
     }
 
@@ -430,14 +445,14 @@ public class AnimationProcessor {
     static final int DELTA_LEN = 10;
 
     /**
-     * 按浮点帧号采样轨道，相邻两 keyframe 间插值：
-     * 平移/缩放 lerp，旋转 nlerp。f 越界时 clamp 到首尾帧。
+     * 按浮点帧号采样轨道，使用 cubic Hermite spline 插值：
+     * 平移/缩放使用 Hermite 曲线，旋转使用 squad 插值。
+     * f 越界时 clamp 到首尾帧。
      * 返回 DELTA_LEN 数组；无关键帧返回 null。
      */
     static float[] sampleTrackAtTime(AnimationData.AnimationTrack track, float frameFloat) {
         if (track == null || track.keyFrames == null || track.keyFrames.isEmpty()) return null;
         List<AnimationData.KeyFrame> kfs = track.keyFrames;
-        // 关键帧按 frame 升序（VMD 解析保证，防御性拷贝排序避免改坏原始数据）
         if (kfs.size() > 1 && kfs.get(0).frame > kfs.get(1).frame) {
             kfs = new ArrayList<>(kfs);
             kfs.sort(Comparator.comparingInt(a -> a.frame));
@@ -453,12 +468,62 @@ public class AnimationProcessor {
             AnimationData.KeyFrame b = kfs.get(i + 1);
             if (frameFloat >= a.frame && frameFloat <= b.frame) {
                 float t = (b.frame > a.frame) ? (frameFloat - a.frame) / (b.frame - a.frame) : 0;
-                float[] da = toDelta(a);
-                float[] db = toDelta(b);
-                return blendDeltas(da, db, t);
+
+                // Get up to 4 keyframes for cubic interpolation: p0, p1, p2, p3
+                AnimationData.KeyFrame p0 = (i > 0) ? kfs.get(i - 1) : a;
+                AnimationData.KeyFrame p1 = a;
+                AnimationData.KeyFrame p2 = b;
+                AnimationData.KeyFrame p3 = (i + 2 < kfs.size()) ? kfs.get(i + 2) : b;
+
+                return cubicInterpolate(p0, p1, p2, p3, t);
             }
         }
         return toDelta(last);
+    }
+
+    /**
+     * Cubic interpolation between two keyframes using 4-point Hermite/squad.
+     * Translation/scale use Hermite spline; rotation uses squad for smooth quaternion curves.
+     */
+    private static float[] cubicInterpolate(AnimationData.KeyFrame p0, AnimationData.KeyFrame p1,
+                                            AnimationData.KeyFrame p2, AnimationData.KeyFrame p3, float t) {
+        float[] d0 = toDelta(p0);
+        float[] d1 = toDelta(p1);
+        float[] d2 = toDelta(p2);
+        float[] d3 = toDelta(p3);
+
+        float[] out = new float[DELTA_LEN];
+
+        // Translation: cubic Hermite spline
+        InterpolationUtils.hermiteVec3(out, new float[]{d0[0], d0[1], d0[2]},
+                new float[]{d1[0], d1[1], d1[2]},
+                new float[]{d2[0], d2[1], d2[2]},
+                new float[]{d3[0], d3[1], d3[2]}, t);
+
+        // Rotation: squad interpolation (C2 continuous quaternion curves)
+        float[] quatResult = InterpolationUtils.squad(
+                new float[]{d0[3], d0[4], d0[5], d0[6]},
+                new float[]{d1[3], d1[4], d1[5], d1[6]},
+                new float[]{d2[3], d2[4], d2[5], d2[6]},
+                new float[]{d3[3], d3[4], d3[5], d3[6]}, t);
+        out[3] = quatResult[0];
+        out[4] = quatResult[1];
+        out[5] = quatResult[2];
+        out[6] = quatResult[3];
+
+        // Scale: cubic Hermite spline (handles both 3 and 9+ component layouts)
+        int scaleLen = DELTA_LEN - 7;
+        float[] s0 = new float[scaleLen], s1 = new float[scaleLen];
+        float[] s2 = new float[scaleLen], s3 = new float[scaleLen];
+        System.arraycopy(d0, 7, s0, 0, scaleLen);
+        System.arraycopy(d1, 7, s1, 0, scaleLen);
+        System.arraycopy(d2, 7, s2, 0, scaleLen);
+        System.arraycopy(d3, 7, s3, 0, scaleLen);
+        float[] scaleOut = new float[scaleLen];
+        InterpolationUtils.hermiteScale(scaleOut, s0, s1, s2, s3, t);
+        System.arraycopy(scaleOut, 0, out, 7, scaleLen);
+
+        return out;
     }
 
     private static float[] toDelta(AnimationData.KeyFrame kf) {
@@ -689,6 +754,8 @@ public class AnimationProcessor {
         defaultAnimRegistry.clear();
         customAnimRegistry.clear();
         currentMorph = null;
+        AnimationEventSystem.clearAll();
+        BoneTransformCache.clear();
         LOGGER.info("[AnimationProcessor] Cleared all animations");
     }
 }
