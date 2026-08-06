@@ -13,7 +13,7 @@ import java.util.List;
  * 模型加载进度条 HUD 叠加层。
  * 屏幕底部居中，显示加载阶段、进度条、当前项等信息。
  * 支持不确定进度动画、批处理模式、失败计数、渐变消失等交互。
- *
+ * <p>
  * 增强功能：
  * - 子阶段显示（如 PARSING: MDL/VVD/VTX, TEXTURING: VTF/VMT 等）
  * - 更详细的进度信息：处理项数/总数、当前文件、预估剩余时间
@@ -24,7 +24,7 @@ import java.util.List;
  * - 阶段耗时分解
  * - 更宽更明显的进度条
  * - 不同阶段的颜色编码
- *
+ * <p>
  * 注册为 IGuiOverlay，仅当 ModelLoadProgress.isActive() 时显示，
  * 并在状态变为非活跃后以 1.5 秒渐变消失。
  */
@@ -120,7 +120,6 @@ public class ModelLoadProgressOverlay {
                                 int screenWidth, int screenHeight) {
         Minecraft mc = Minecraft.getInstance();
         Font font = mc.font;
-        if (font == null) return;
 
         boolean isActive = ModelLoadProgress.isActive();
 
@@ -281,7 +280,6 @@ public class ModelLoadProgressOverlay {
             Math.max(infoWidth, Math.max(memWidth, Math.max(parserWidth, cacheWidth))))))));
         int bgWidth = contentWidth + BG_PADDING * 2;
         int bgX = centerX - bgWidth / 2;
-        int bgY = baseY;
 
         // 计算背景高度（动态）
         int bgHeight = BG_PADDING;
@@ -289,7 +287,8 @@ public class ModelLoadProgressOverlay {
         if (!subPhaseLabel.isEmpty()) bgHeight += font.lineHeight + LINE_SPACING;
         bgHeight += BAR_HEIGHT + BAR_BOTTOM_MARGIN;
         if (!item.isEmpty()) bgHeight += font.lineHeight + LINE_SPACING;
-        if (!file.isEmpty() && !file.equals(item)) bgHeight += font.lineHeight + LINE_SPACING;
+        boolean b = !file.isEmpty() && !file.equals(item);
+        if (b) bgHeight += font.lineHeight + LINE_SPACING;
         if (processed > 0 || texTotal > 0) bgHeight += font.lineHeight + LINE_SPACING;
         if (memUsage > 0) bgHeight += font.lineHeight + LINE_SPACING;
         if (!parserType.isEmpty() || !cacheInfo.isEmpty()) bgHeight += font.lineHeight + LINE_SPACING;
@@ -305,14 +304,14 @@ public class ModelLoadProgressOverlay {
         // ---- 绘制背景（带边框） ----
         // 外层：边框（使用阶段颜色）
         int borderColor = applyAlpha(phaseColor, alpha * 0.6f);
-        guiGraphics.fill(bgX - BORDER_WIDTH, bgY - BORDER_WIDTH,
-            bgX + bgWidth + BORDER_WIDTH, bgY + bgHeight + BORDER_WIDTH,
+        guiGraphics.fill(bgX - BORDER_WIDTH, baseY - BORDER_WIDTH,
+            bgX + bgWidth + BORDER_WIDTH, baseY + bgHeight + BORDER_WIDTH,
             borderColor);
         // 内层：半透明深色背景
-        guiGraphics.fill(bgX, bgY, bgX + bgWidth, bgY + bgHeight,
+        guiGraphics.fill(bgX, baseY, bgX + bgWidth, baseY + bgHeight,
             applyAlpha(BG_COLOR, alpha));
 
-        int currentY = bgY + BG_PADDING;
+        int currentY = baseY + BG_PADDING;
 
         // -------- 标题行 --------
         if (!title.isEmpty()) {
@@ -361,9 +360,7 @@ public class ModelLoadProgressOverlay {
             int strips = INDETERMINATE_STRIPS;
             int stripWidth = Math.max(1, hlWidth / strips);
             for (int i = 0; i < strips; i++) {
-                float centerDist = (strips > 1)
-                    ? Math.abs(i - (strips - 1) / 2f) / ((strips - 1) / 2f)
-                    : 1.0f;
+                float centerDist = Math.abs(i - (strips - 1) / 2f) / ((strips - 1) / 2f);
                 float stripFactor = 1.0f - centerDist * centerDist; // 二次衰减
                 int stripAlpha = Math.round((0.25f + 0.75f * stripFactor) * 255);
                 stripAlpha = Math.min(255, Math.max(0, stripAlpha));
@@ -425,7 +422,7 @@ public class ModelLoadProgressOverlay {
         }
 
         // -------- 当前文件路径（如果与项不同） --------
-        if (!file.isEmpty() && !file.equals(item)) {
+        if (b) {
             String displayFile = file;
             int maxFileWidth = bgWidth - BG_PADDING * 2;
             if (font.width(displayFile) > maxFileWidth) {
@@ -446,7 +443,7 @@ public class ModelLoadProgressOverlay {
                 detailSb.append(processed).append("/").append(total);
             }
             if (texTotal > 0) {
-                if (detailSb.length() > 0) detailSb.append("  ");
+                if (!detailSb.isEmpty()) detailSb.append("  ");
                 detailSb.append("Tex: ").append(texCurrent).append("/").append(texTotal);
             }
             String detail = detailSb.toString();
@@ -477,7 +474,7 @@ public class ModelLoadProgressOverlay {
                 infoSb.append("Parser: ").append(parserType);
             }
             if (!cacheInfo.isEmpty()) {
-                if (infoSb.length() > 0) infoSb.append("  |  ");
+                if (!infoSb.isEmpty()) infoSb.append("  |  ");
                 infoSb.append(cacheInfo);
             }
             String infoText = infoSb.toString();
@@ -659,12 +656,12 @@ public class ModelLoadProgressOverlay {
         int mbY = y + 2;
         guiGraphics.fill(mbX, mbY, mbX + miniBarWidth, mbY + miniBarHeight,
             applyAlpha(BAR_BG_COLOR, alpha));
+        int failW = Math.max(1, Math.round(miniBarWidth * failRate));
         if (failed > 0) {
-            int failW = Math.max(1, Math.round(miniBarWidth * failRate));
             guiGraphics.fill(mbX, mbY, mbX + failW, mbY + miniBarHeight,
                 applyAlpha(BAR_FAIL_COLOR, alpha));
         }
-        int okW = miniBarWidth - (failed > 0 ? Math.max(1, Math.round(miniBarWidth * failRate)) : 0);
+        int okW = miniBarWidth - (failed > 0 ? failW : 0);
         if (okW > 0) {
             guiGraphics.fill(mbX + miniBarWidth - okW, mbY, mbX + miniBarWidth, mbY + miniBarHeight,
                 applyAlpha(BAR_OK_COLOR, alpha * 0.5f));
@@ -682,12 +679,9 @@ public class ModelLoadProgressOverlay {
 
         if (verts == 0 && tris == 0 && bones == 0) return;
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("V:").append(formatCount(verts));
-        sb.append("  T:").append(formatCount(tris));
-        sb.append("  B:").append(bones);
-
-        String text = sb.toString();
+        String text = "V:" + formatCount(verts) +
+                "  T:" + formatCount(tris) +
+                "  B:" + bones;
         int textWidth = font.width(text);
 
         // 根据复杂度选择颜色
