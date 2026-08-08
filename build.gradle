@@ -279,9 +279,23 @@ def cmakeBuildTask(String name, String descriptionText, String osName, Closure p
 
 cmakeBuildTask('buildNativeDll', 'Compile native-renderer.dll using CMake', 'windows') { cmakeBuildDir ->
     nativeResourcesDir.mkdirs()
+    // MinGW prefixes the DLL with "lib" (libnative-renderer.dll); MSVC does not.
+    def dll = file("${cmakeBuildDir}/native-renderer.dll")
+    if (!dll.exists()) dll = file("${cmakeBuildDir}/libnative-renderer.dll")
+    if (!dll.exists()) throw new GradleException("native-renderer.dll not found in ${cmakeBuildDir}")
     copy {
-        from file("${cmakeBuildDir}/native-renderer.dll")
+        from dll
         into nativeResourcesDir
+        rename { 'native-renderer.dll' }
+    }
+    // Also deploy to the dev search path (build/native/bin), which GmodNativeBridge
+    // checks first when running from the IDE or gradle.
+    def devBin = file("${nativeBuildDir}/bin")
+    devBin.mkdirs()
+    copy {
+        from dll
+        into devBin
+        rename { 'native-renderer.dll' }
     }
     println "Native DLL built: ${nativeResourcesDir}/native-renderer.dll"
 }
@@ -353,6 +367,17 @@ tasks.named('processResources', ProcessResources).configure {
 
     filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
         expand replaceProperties + [project: project]
+    }
+
+    // Copy the built native DLL into build/resources/main so dev runs (runClient)
+    // can find it as a classpath resource (GmodNativeBridge.tryLoadFromResources).
+    // The jar task also includes it directly (see below); duplicating the copy here
+    // is safe because the jar uses its own explicit `from`.
+    from(nativeResourcesDir) {
+        into 'natives/windows'
+    }
+    from(nativeLinuxResourcesDir) {
+        into 'natives/linux'
     }
 }
 

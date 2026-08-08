@@ -36,6 +36,7 @@ Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 
 是的，为了方便1.0之后我们全部使用 /TransferStation TransferStationWhimsicalIdeas开头的指令
 
+同时我们不再以.mdl文件当做独立的模型 而是依赖于addon.json文件
 
 --------------------------
 
