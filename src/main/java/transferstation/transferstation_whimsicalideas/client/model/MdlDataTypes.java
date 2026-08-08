@@ -465,6 +465,11 @@ public class MdlDataTypes {
         public List<Integer> referenceSequenceIndices = new ArrayList<>();
         public List<Integer> aPoseSequenceIndices = new ArrayList<>();
 
+        // Per-bone inverse bind matrices (column-major 4x4, 16 floats each), index
+        // aligned with `bones`. Populated by the native core bridge (authoritative
+        // C++ Source-engine-side computation) when available.
+        public List<float[]> invBindPose = new ArrayList<>();
+
         public List<MdlProceduralBones.AxisInterpBone> axisInterpBones = new ArrayList<>();
         public List<MdlProceduralBones.QuatInterpBone> quatInterpBones = new ArrayList<>();
         public List<MdlProceduralBones.JiggleBone> jiggleBones = new ArrayList<>();

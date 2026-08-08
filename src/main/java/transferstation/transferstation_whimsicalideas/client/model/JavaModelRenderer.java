@@ -12,6 +12,7 @@ import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
+import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -309,6 +310,26 @@ public class JavaModelRenderer {
 
     // ====== VERTEX SKINNING SUPPORT ======
 
+    /**
+     * Combine per-bone world matrices with their inverse-bind matrices:
+     * {@code eff[i] = boneMatrices[i] * invBind[i]} — the Source-engine skin matrix.
+     * Returns {@code boneMatrices} unchanged when no invBind data is available.
+     * invBind entries are the inverse of the renderer's own bind world, already in
+     * MC space (see {@code ModelLoadManager.computeInvBindMatrices}).
+     */
+    public static float[][] combineInvBind(float[][] boneMatrices, List<float[]> invBind) {
+        if (boneMatrices == null || invBind == null || invBind.size() != boneMatrices.length) {
+            return boneMatrices;
+        }
+        float[][] combined = new float[boneMatrices.length][16];
+        for (int i = 0; i < boneMatrices.length; i++) {
+            org.joml.Matrix4f mat = new org.joml.Matrix4f().set(boneMatrices[i]);
+            mat.mul(new org.joml.Matrix4f().set(invBind.get(i)));
+            mat.get(combined[i]);
+        }
+        return combined;
+    }
+
     public static void renderWithSkinning(Entity entity, PoseStack poseStack,
                                             MultiBufferSource bufferSource, int packedLight,
                                             float[][] boneMatrices) {
@@ -339,8 +360,9 @@ public class JavaModelRenderer {
         Matrix4f matrix = pose.pose();
         Matrix3f normalMatrix = pose.normal();
 
+        float[][] effectiveMatrices = combineInvBind(boneMatrices, data.invBindMatrices);
         for (SourceModelData.MeshData mesh : data.meshes) {
-            renderMeshSkinned(mesh, matrix, normalMatrix, bufferSource, packedLight, boneMatrices);
+            renderMeshSkinned(mesh, matrix, normalMatrix, bufferSource, packedLight, effectiveMatrices);
         }
 
         poseStack.popPose();

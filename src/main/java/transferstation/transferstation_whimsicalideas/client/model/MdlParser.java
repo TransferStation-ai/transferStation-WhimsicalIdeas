@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import static transferstation.transferstation_whimsicalideas.client.model.MdlDataTypes.*;
 
@@ -492,6 +493,7 @@ public class MdlParser {
 
             result.bones.add(b);
         }
+        computeWorldInverseBindPose(result.bones, result.invBindPose);
     }
 
     private static void parseEyeballs(ByteBuffer buf, ParsedModel result, int bufferLimit) {
@@ -1244,6 +1246,82 @@ public class MdlParser {
         float[] f = new float[12];
         for (int i = 0; i < 12; i++) f[i] = buf.getFloat();
         return f;
+    }
+
+    /**
+     * Mirrors the C++ native parser's invBindPose computation (mdl_parser.cpp):
+     * invBindPose[i] is the INVERSE of bone i's WORLD bind pose — the pose-to-bone
+     * matrices concatenated up the parent chain. Multiplying the animated world
+     * bone matrix by this inverse yields the Source-engine skin matrix, so
+     * vertices in the rest pose stay put (identity) and only animation deltas
+     * deform them.
+     */
+    private static void computeWorldInverseBindPose(List<Bone> bones, List<float[]> out) {
+        int n = bones.size();
+        if (n == 0) return;
+        float[][] bindWorld = new float[n][16];
+        for (int i = 0; i < n; i++) {
+            Bone b = bones.get(i);
+            int parent = b.parent;
+            if (parent >= 0 && parent < n && bindWorld[parent] != null) {
+                // world = bindWorld[parent] * local (matches Matrix4x4::multiply)
+                bindWorld[i] = mul4x4(bindWorld[parent], from3x4(b.poseToBone));
+            } else {
+                bindWorld[i] = from3x4(b.poseToBone);
+            }
+            out.add(inverse4x4(bindWorld[i]));
+        }
+    }
+
+    /**
+     * Matches {@code Matrix4x4::from3x4} in matrix_math.h: the Source row-major
+     * 3x4 poseToBone maps into the column-major 4x4 array {@code m[col * 4 + row]}
+     * exactly as the C++ code does.
+     */
+    private static float[] from3x4(float[] src) {
+        float[] m = new float[16];
+        m[0]  = src[0];
+        m[1]  = src[4];
+        m[2]  = src[8];
+        m[4]  = src[1];
+        m[5]  = src[5];
+        m[6]  = src[9];
+        m[8]  = src[2];
+        m[9]  = src[6];
+        m[10] = src[10];
+        m[12] = src[3];
+        m[13] = src[7];
+        m[14] = src[11];
+        m[15] = 1.0f;
+        return m;
+    }
+
+    /** Matches {@code Matrix4x4::multiply} (column-major, {@code m[col * 4 + row]}). */
+    private static float[] mul4x4(float[] a, float[] b) {
+        float[] r = new float[16];
+        for (int col = 0; col < 4; col++) {
+            for (int row = 0; row < 4; row++) {
+                float sum = 0.0f;
+                for (int k = 0; k < 4; k++) {
+                    sum += a[k * 4 + row] * b[col * 4 + k];
+                }
+                r[col * 4 + row] = sum;
+            }
+        }
+        return r;
+    }
+
+    /** Matches {@code Matrix4x4::inverse} (rigid transform, column-major). */
+    private static float[] inverse4x4(float[] m) {
+        float[] inv = new float[16];
+        inv[0]  = m[0];  inv[1]  = m[4];  inv[2]  = m[8];  inv[3]  = 0.0f;
+        inv[4]  = m[1];  inv[5]  = m[5];  inv[6]  = m[9];  inv[7]  = 0.0f;
+        inv[8]  = m[2];  inv[9]  = m[6];  inv[10] = m[10]; inv[11] = 0.0f;
+        inv[12] = -(m[0] * m[12] + m[1] * m[13] + m[2] * m[14]);
+        inv[13] = -(m[4] * m[12] + m[5] * m[13] + m[6] * m[14]);
+        inv[14] = -(m[8] * m[12] + m[9] * m[13] + m[10] * m[14]);
+        inv[15] = 1.0f;
+        return inv;
     }
 
     private static String readFixedString(ByteBuffer buf) {

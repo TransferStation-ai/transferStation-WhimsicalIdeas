@@ -626,6 +626,85 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_PhysicsBridge_
                                           idx.data(), static_cast<int>(idx.size()));
 }
 
+// ===================== Bone Data Extraction JNI =====================
+// Java CPU skinning must apply the same invBindPose multiply as the native
+// renderer (source-engine-native bone semantics). Expose the authoritative
+// C++-computed matrices here so Java replaces its missing-invBind path.
+
+JNIEXPORT jint JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBridge_nativeGetBoneCount(
+    JNIEnv* env, jclass, jlong handle)
+{
+    auto it = s_modelCache.find(handle);
+    if (it == s_modelCache.end()) return 0;
+    return static_cast<jint>(it->second->boneInvBindPose.size());
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBridge_nativeGetBoneInvBindPose(
+    JNIEnv* env, jclass, jlong handle)
+{
+    auto it = s_modelCache.find(handle);
+    if (it == s_modelCache.end()) return nullptr;
+
+    const auto& invBind = it->second->boneInvBindPose;
+    size_t boneCount = invBind.size();
+    if (boneCount == 0) return nullptr;
+
+    jfloatArray result = env->NewFloatArray(static_cast<jsize>(boneCount * 16));
+    if (!result) return nullptr;
+
+    std::vector<jfloat> flat(boneCount * 16);
+    for (size_t i = 0; i < boneCount; i++) {
+        for (size_t j = 0; j < 16; j++) {
+            flat[i * 16 + j] = invBind[i].m[j];
+        }
+    }
+    env->SetFloatArrayRegion(result, 0, static_cast<jsize>(flat.size()), flat.data());
+    return result;
+}
+
+JNIEXPORT jintArray JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBridge_nativeGetBoneParent(
+    JNIEnv* env, jclass, jlong handle)
+{
+    auto it = s_modelCache.find(handle);
+    if (it == s_modelCache.end()) return nullptr;
+
+    const auto& parents = it->second->boneParent;
+    if (parents.empty()) return nullptr;
+
+    jintArray result = env->NewIntArray(static_cast<jsize>(parents.size()));
+    if (!result) return nullptr;
+    env->SetIntArrayRegion(result, 0, static_cast<jsize>(parents.size()),
+        reinterpret_cast<const jint*>(parents.data()));
+    return result;
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBridge_nativeGetBoneNames(
+    JNIEnv* env, jclass, jlong handle)
+{
+    auto it = s_modelCache.find(handle);
+    if (it == s_modelCache.end()) return nullptr;
+
+    const auto& names = it->second->boneNames;
+    if (names.empty()) return nullptr;
+
+    jclass stringClass = env->FindClass("java/lang/String");
+    if (!stringClass) return nullptr;
+
+    jobjectArray result = env->NewObjectArray(static_cast<jsize>(names.size()), stringClass, nullptr);
+    if (!result) return nullptr;
+
+    for (size_t i = 0; i < names.size(); i++) {
+        jstring s = env->NewStringUTF(names[i].c_str());
+        env->SetObjectArrayElement(result, static_cast<jsize>(i), s);
+        env->DeleteLocalRef(s);
+    }
+    return result;
+}
+
 // ===================== Mesh Data Extraction JNI =====================
 
 JNIEXPORT jfloatArray JNICALL

@@ -113,6 +113,15 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeCore
             w.writeFloat(parsed.bones[i].quat[3]);
         }
 
+        w.writeInt(static_cast<int>(parsed.invBindPose.size()));
+        for (size_t i = 0; i < parsed.invBindPose.size(); i++) {
+            for (int r = 0; r < 3; r++) {
+                for (int c = 0; c < 4; c++) {
+                    w.writeFloat(parsed.invBindPose[i].m[c * 4 + r]);
+                }
+            }
+        }
+
         w.writeInt(static_cast<int>(parsed.textures.size()));
         for (size_t i = 0; i < parsed.textures.size(); i++) {
             std::string texName = (i < parsed.textureNames.size()) ? parsed.textureNames[i] : "";

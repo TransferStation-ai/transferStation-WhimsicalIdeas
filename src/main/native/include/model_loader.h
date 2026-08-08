@@ -61,6 +61,14 @@ public:
         uint32_t fallbackTexture;
         std::string cacheKey;
 
+        // Skeletal bind data, authoritative on the C++ (Source-engine-native) side.
+        // invBindPose[i] = inverse of bone i's bind (pose-to-bone) matrix, used by the
+        // CPU vertex skinning path. Exposed to Java via GmodNativeBridge so both the
+        // native renderer and the Java fallback use identical bone deltas.
+        std::vector<Matrix4x4> boneInvBindPose;
+        std::vector<int32_t> boneParent;
+        std::vector<std::string> boneNames;
+
         // GPU resources (textures/VAOs) have been created on the render thread.
         // ModelLoader threads must NOT create GL objects because the GL context is
         // only current on the render thread; uploads happen lazily in the first

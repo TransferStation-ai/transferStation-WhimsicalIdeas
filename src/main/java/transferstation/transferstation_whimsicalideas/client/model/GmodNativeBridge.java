@@ -264,4 +264,31 @@ public class GmodNativeBridge {
      * Check if a mesh has no-cull (double-sided) rendering flag.
      */
     static native boolean nativeIsMeshNoCull(long handle, int meshIndex);
+
+    // ==================== Bone Data Extraction ====================
+    // Expose the authoritative C++ (Source-engine-native) bone bind data so the
+    // Java CPU skinning path can apply the same invBindPose multiply the native
+    // renderer uses (boneTransforms * invBindPose). Before this channel existed
+    // the Java skinVertex() multiplied only bone world matrices and scattered the
+    // rest-pose vertices.
+
+    /**
+     * Get the number of bones in a native-loaded model.
+     */
+    static native int nativeGetBoneCount(long handle);
+
+    /**
+     * Get per-bone invBindPose matrices (column-major 4x4, 16 floats per bone).
+     */
+    static native float[] nativeGetBoneInvBindPose(long handle);
+
+    /**
+     * Get per-bone parent indices (-1 for roots).
+     */
+    static native int[] nativeGetBoneParent(long handle);
+
+    /**
+     * Get per-bone names.
+     */
+    static native String[] nativeGetBoneNames(long handle);
 }

@@ -6,6 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
+import transferstation.transferstation_whimsicalideas.client.animation.AnimationProcessor;
 
 import java.awt.image.BufferedImage;
 import java.io.DataInputStream;
@@ -31,7 +32,8 @@ public class ModelLoadManager {
     // Bump this whenever parsing logic changes to invalidate old caches
     // 25: 在磁盘缓存中持久化解码后的纹理像素，命中时无需重新解析 VTF
     // 26: 在磁盘缓存中持久化 shaderType，命中时无需重新解析 VMT
-    private static final int CACHE_FORMAT_VERSION = 26;
+    // 29: invBindMatrices 构建方式改为渲染同名世界矩阵求逆（修复静止错位）
+    private static final int CACHE_FORMAT_VERSION = 29;
 
     private static final Map<String, SourceModelData> modelCache = Collections.synchronizedMap(new LinkedHashMap<>() {
         @Override
@@ -732,6 +734,43 @@ public class ModelLoadManager {
     }
 
     /**
+     * Inverse of a column-major 4x4 (general affine, supports scale). The bind
+     * world matrices for invBind are already MC-space, so no conjugation is needed.
+     */
+    private static float[] invertMatrix(float[] m) {
+        org.joml.Matrix4f mat = new org.joml.Matrix4f().set(m);
+        mat.invert();
+        float[] out = new float[16];
+        mat.get(out);
+        for (float v : out) {
+            if (Float.isNaN(v) || Float.isInfinite(v)) {
+                LOGGER.warn("[ModelLoadManager] Degenerate bind matrix during invBind computation");
+                return new float[16];
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Populate {@code result.invBindMatrices} with the inverse of the renderer's own
+     * bind world (AnimationProcessor.computeBindWorldMatrices, MC space). Keeps the
+     * skin matrix ({@code worldBone * invBind}) identity in the rest pose even when
+     * the MDL's poseToBone and pos/quat src-bone spaces disagree.
+     */
+    static void computeInvBindMatrices(SourceModelData data, String modelName) {
+        data.invBindMatrices.clear();
+        float[][] bindWorld = AnimationProcessor.computeBindWorldMatrices(data);
+        if (bindWorld != null && bindWorld.length == data.bones.size()) {
+            for (float[] world : bindWorld) {
+                data.invBindMatrices.add(invertMatrix(world));
+            }
+        } else {
+            LOGGER.warn("[ModelLoadManager] Could not compute bind world for {}, bones={}",
+                modelName, data.bones.size());
+        }
+    }
+
+    /**
      * Build a SourceModelData from parsed MDL/VVD/VTX data and resolved textures.
      * Consolidates the common post-parsing logic shared by directory-based
      * and VPK-based model loading paths: body part construction, mesh building,
@@ -786,6 +825,14 @@ public class ModelLoadManager {
                 bone.parent));
         }
 
+        // invBind must be the inverse of the SAME world bind matrices the renderer
+        // uses (initializeBindPose + computeWorldBone, MC space). Building it from
+        // mdl.invBindPose (a poseToBone world) broke rest pose: worldBone * invBind
+        // != I, scattering vertices while leaving UVs intact. Requires srcBoneTransforms
+        // to already be on the result, so transfer them before computing invBind.
+        result.srcBoneTransforms.addAll(mdl.srcBoneTransforms);
+        computeInvBindMatrices(result, modelName);
+
         result.attachments.addAll(mdl.attachments);
         result.boneControllers.addAll(mdl.boneControllers);
         result.hitboxSets.addAll(mdl.hitboxSets);
@@ -802,7 +849,6 @@ public class ModelLoadManager {
         result.keyValues = mdl.keyValues;
         result.surfaceProp = mdl.surfaceProp;
         result.hdr2 = mdl.hdr2;
-        result.srcBoneTransforms.addAll(mdl.srcBoneTransforms);
         result.sequenceAnimData.addAll(mdl.sequenceAnimData);
         result.referenceSequenceIndices.addAll(mdl.referenceSequenceIndices);
         result.aPoseSequenceIndices.addAll(mdl.aPoseSequenceIndices);
@@ -946,6 +992,15 @@ public class ModelLoadManager {
                     float[] rot = dis.readBoolean() ? new float[]{dis.readFloat(), dis.readFloat(), dis.readFloat()} : null;
                     int parent = dis.readInt();
                     data.bones.add(new SourceModelData.BoneInfo(boneName, new float[]{px, py, pz}, quat, rot, parent));
+                }
+
+                int invBindCount = dis.readInt();
+                if (invBindCount > 0 && invBindCount <= data.bones.size()) {
+                    for (int ib = 0; ib < invBindCount; ib++) {
+                        float[] invBind = new float[16];
+                        for (int j = 0; j < 16; j++) invBind[j] = dis.readFloat();
+                        data.invBindMatrices.add(invBind);
+                    }
                 }
 
                 int meshCount = dis.readInt();
@@ -1281,6 +1336,11 @@ public class ModelLoadManager {
                     if (bone.rot() != null) { dos.writeBoolean(true); dos.writeFloat(bone.rot()[0]); dos.writeFloat(bone.rot()[1]); dos.writeFloat(bone.rot()[2]); }
                     else { dos.writeBoolean(false); }
                     dos.writeInt(bone.parent());
+                }
+
+                dos.writeInt(data.invBindMatrices.size());
+                for (float[] invBind : data.invBindMatrices) {
+                    for (float f : invBind) dos.writeFloat(f);
                 }
 
                 dos.writeInt(data.meshes.size());
@@ -2329,11 +2389,14 @@ public class ModelLoadManager {
                                 globalMeshIdx, alignedMdlMeshIdx, maxVtxVertId, meshNumVertices);
                         }
                         // Validate using the same candidate resolution as below.
-                        // Prefer raw absolute index; fall back to base+offset only if raw is out of range.
-                        int maxVvdIdx = maxVtxVertId;
-                        if (maxVvdIdx >= vvdVerts.size()) {
-                            int adjusted = vvdModelBase + vertexOffset + maxVtxVertId;
-                            if (adjusted < vvdVerts.size()) maxVvdIdx = adjusted;
+                        // Prefer the base+offset form (mesh-relative VTX ids); fall
+                        // back to the raw absolute index only if that is out of range.
+                        int maxVvdIdx = -1;
+                        int adjusted = vvdModelBase + vertexOffset + maxVtxVertId;
+                        if (adjusted >= 0 && adjusted < vvdVerts.size()) {
+                            maxVvdIdx = adjusted;
+                        } else if (maxVtxVertId < vvdVerts.size()) {
+                            maxVvdIdx = maxVtxVertId;
                         }
                         if (maxVvdIdx >= vvdVerts.size()) {
                             LOGGER.warn("[ModelLoadManager] Mesh[vtx={} mdl={}] Max VVD index {} exceeds VVD vertex count {} (vvdModelBase={} vertOffset={} maxVtxId={})",
@@ -2518,18 +2581,20 @@ public class ModelLoadManager {
 
     /**
      * Resolve a VTX origMeshVertID to a VVD vertex array index.
-     * Some decompiled models store absolute VVD indices in the VTX strip (raw),
-     * while others store model-relative indices that need vvdModelBase + vertexOffset.
-     * Try the absolute index first; only fall back to the offset form when the
-     * absolute one is out of range. Returns -1 if neither resolves in range.
+     * In standard Source VTX files the origMeshVertID is a per-mesh vertex offset:
+     * it starts at 0 for each mesh and must be combined with the model's VVD base
+     * plus the mesh's vertexoffset to reach the raw VVD vertex array. Only models
+     * exported by some tools store absolute VVD indices in the strip; treat that as
+     * a fallback (try base+offset first, then the absolute form). Returns -1 if no
+     * combination resolves into range.
      */
     private static int resolveVvdIndex(int origMeshVertId, int vvdModelBase, int vertexOffset,
                                         int vvdVertexCount, List<VvdParser.VvdFixup> fixups) {
         if (origMeshVertId < 0) return -1;
-        // Fixup-aware remap (standard Source VVD fixup): the VTX origMeshVertID is a
-        // sequential index across the concatenation of all fixup vertex blocks. Walk the
-        // fixups subtracting each block's vertex count until the id falls inside one, then
-        // map it into the raw VVD vertex array via that fixup's sourceVertexID.
+        // Fixup-aware remap (standard Source VVD fixup): the VTX origMeshVertID is
+        // a sequential index across the concatenation of all fixup vertex blocks. Walk
+        // the fixups subtracting each block's vertex count until the id falls inside
+        // one, then map it into the raw VVD vertex array via that fixup's sourceVertexID.
         if (fixups != null && !fixups.isEmpty()) {
             int id = origMeshVertId;
             for (VvdParser.VvdFixup f : fixups) {
@@ -2542,13 +2607,15 @@ public class ModelLoadManager {
             }
             return -1;
         }
-        // No fixups: try the absolute raw index first, then the base+offset form.
-        if (origMeshVertId < vvdVertexCount) {
-            return origMeshVertId;
-        }
+        // No fixups: origMeshVertID is a mesh-relative offset, so the primary mapping
+        // is vvdModelBase + vertexOffset + origMeshVertId. Only when that lands out of
+        // range treat the id as an absolute VVD index (some decompiled models do this).
         int adjusted = vvdModelBase + vertexOffset + origMeshVertId;
         if (adjusted >= 0 && adjusted < vvdVertexCount) {
             return adjusted;
+        }
+        if (origMeshVertId >= 0 && origMeshVertId < vvdVertexCount) {
+            return origMeshVertId;
         }
         return -1;
     }

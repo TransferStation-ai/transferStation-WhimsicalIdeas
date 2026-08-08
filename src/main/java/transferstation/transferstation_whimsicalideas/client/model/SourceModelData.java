@@ -254,6 +254,13 @@ public class SourceModelData {
     public String physicsSimId = null;
 
     public final List<BoneInfo> bones = new ArrayList<>();
+    // Per-bone inverse bind matrices (column-major 4x4, 16 floats each). Index
+    // aligned with `bones`. Populated from the authoritative C++ side via
+    // GmodNativeBridge.nativeGetBoneInvBindPose when available, otherwise computed
+    // from the MDL bone poseToBone during Java parsing. Used by the Java CPU
+    // skinning path as   skinMatrix = worldBone[i] * invBind[i]   so unanimated
+    // models stay at their rest pose (identity) instead of scattering vertices.
+    public final List<float[]> invBindMatrices = new ArrayList<>();
     public final List<BodyPartInfo> bodyParts = new ArrayList<>();
     public int numSkinRef = 0;
     public int numSkinFamilies = 0;
@@ -433,6 +440,7 @@ public class SourceModelData {
             this.skinTable.addAll(parent.skinTable);
             this.currentSkinFamily = parent.currentSkinFamily;
             this.bones.addAll(parent.bones);
+            this.invBindMatrices.addAll(parent.invBindMatrices);
             this.bodyParts.addAll(parent.bodyParts);
             this.srcBoneTransforms.addAll(parent.srcBoneTransforms);
             this.referenceSequenceIndices.addAll(parent.referenceSequenceIndices);

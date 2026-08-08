@@ -779,6 +779,13 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromDirectory(
     model->numSkinFamilies = parsedMdl.header.numskinfamilies;
     model->skinTable = parsedMdl.skinTable;
 
+    // Retain authoritative C++ bone data so the Java fallback renderer can fetch
+    // identical invBindPose matrices via GmodNativeBridge. Without it the Java
+    // skinning path lacks the invBind multiply and scatters rest-pose vertices.
+    model->boneInvBindPose = parsedMdl.invBindPose;
+    model->boneParent = parsedMdl.boneParent;
+    model->boneNames = parsedMdl.boneNames;
+
     // Parse VVD
     VvdParser::ParsedVvd parsedVvd;
     if (!vvdData.empty()) {
@@ -1176,11 +1183,22 @@ std::vector<MeshData> ModelLoader::buildMeshes(
 
     const auto& vvdVerts = vvd.vertices;
 
-    // Build bind-pose bone transforms for skinning (Phase 1: no animation, use bind pose)
+    // Build bind-pose bone transforms for skinning (Phase 1: no animation, use bind pose).
+    // These are WORLD bind matrices (pose-to-bone concatenated up the parent chain),
+    // paired with the matching world-space invBindPose from mdl_parser so that
+    // boneTransforms[i] * invBindPose[i] = identity at the rest pose.
     int numBones = static_cast<int>(mdl.invBindPose.size());
     std::vector<Matrix4x4> boneTransforms(numBones);
+    std::vector<Matrix4x4> bindWorld(numBones);
     for (int i = 0; i < numBones; i++) {
-        boneTransforms[i] = Matrix4x4::from3x4(mdl.bones[i].poseToBone);
+        Matrix4x4 local = Matrix4x4::from3x4(mdl.bones[i].poseToBone);
+        int parent = mdl.bones[i].parent;
+        if (parent >= 0 && parent < numBones) {
+            bindWorld[i] = Matrix4x4::multiply(bindWorld[parent], local);
+        } else {
+            bindWorld[i] = local;
+        }
+        boneTransforms[i] = bindWorld[i];
     }
 
     if (vvdVerts.empty()) {
@@ -1290,8 +1308,9 @@ std::vector<MeshData> ModelLoader::buildMeshes(
         // sequential index across the concatenation of all fixup vertex blocks, so walk the
         // fixups subtracting each block's count until the id lands inside one, then map it
         // into the raw VVD vertex array via that fixup's sourceVertexID. Without fixups,
-        // try the id as an absolute raw index first and only fall back to base+offset when
-        // the absolute one is out of range (some models store absolute indices directly).
+        // origMeshVertID is a per-mesh offset and the primary mapping is vvdBase +
+        // vertexOffset + id (standard Source semantics); the absolute form is only used
+        // as a fallback when base+offset lands out of range (some tools store it that way).
         auto resolveVvdIndex = [&](int origMeshVertId) -> int {
             if (origMeshVertId < 0) return -1;
             if (!vvd.fixups.empty()) {
@@ -1306,11 +1325,14 @@ std::vector<MeshData> ModelLoader::buildMeshes(
                 }
                 return -1;
             }
-            if (origMeshVertId < vvdVertexCount) {
+            int adjusted = vvdBase + vertexOffset + origMeshVertId;
+            if (adjusted >= 0 && adjusted < vvdVertexCount) {
+                return adjusted;
+            }
+            if (origMeshVertId >= 0 && origMeshVertId < vvdVertexCount) {
                 return origMeshVertId;
             }
-            int adjusted = vvdBase + vertexOffset + origMeshVertId;
-            return (adjusted >= 0 && adjusted < vvdVertexCount) ? adjusted : -1;
+            return -1;
         };
 
         const auto& stripGroups = stripGroupsList[meshIdx];

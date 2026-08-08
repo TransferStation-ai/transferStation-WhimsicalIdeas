@@ -364,14 +364,29 @@ MdlParser::ParsedMdl MdlParser::parse(const std::vector<uint8_t>& data) {
         }
     }
 
-    // Build invBindPose and boneParent from parsed bones
+    // Build invBindPose and boneParent from parsed bones.
+    // invBindPose[i] is the INVERSE of bone i's WORLD bind pose (the pose-to-bone
+    // matrices concatenated up the parent chain). Multiplying the animated world
+    // bone matrix by this inverse yields the Source-engine skin matrix
+    // (worldBone[ i ] * invBindWorld[ i ]), so vertices in the rest pose stay put
+    // (identity) and only animation deltas deform them. A local-only inverse
+    // (from3x4(poseToBone[i]).inverse()) would move chained bones even in the
+    // bind pose, matching neither GLM nor GMod.
     int numBones = static_cast<int>(result.bones.size());
     result.invBindPose.resize(numBones);
     result.boneParent.resize(numBones);
+    std::vector<Matrix4x4> bindWorld(numBones);
     for (int i = 0; i < numBones; i++) {
-        Matrix4x4 bindPose = Matrix4x4::from3x4(result.bones[i].poseToBone);
-        result.invBindPose[i] = bindPose.inverse();
-        result.boneParent[i] = result.bones[i].parent;
+        const StudioBone& bone = result.bones[i];
+        Matrix4x4 local = Matrix4x4::from3x4(bone.poseToBone);
+        int parent = bone.parent;
+        if (parent >= 0 && parent < numBones) {
+            bindWorld[i] = Matrix4x4::multiply(bindWorld[parent], local);
+        } else {
+            bindWorld[i] = local;
+        }
+        result.invBindPose[i] = bindWorld[i].inverse();
+        result.boneParent[i] = parent;
     }
 
     // Parse StudioHDR2 (extended data)

@@ -189,9 +189,10 @@ public class ModelViewport {
         Matrix4f matrix = pose.pose();
         Matrix3f normalMatrix = pose.normal();
 
+        float[][] effectiveMatrices = JavaModelRenderer.combineInvBind(boneMatrices, model.invBindMatrices);
         for (SourceModelData.MeshData mesh : model.meshes) {
-            if (boneMatrices != null && hasVertexWeights(mesh)) {
-                JavaModelRenderer.renderMeshSkinned(mesh, matrix, normalMatrix, bufferSource, light, boneMatrices);
+            if (effectiveMatrices != null && hasVertexWeights(mesh)) {
+                JavaModelRenderer.renderMeshSkinned(mesh, matrix, normalMatrix, bufferSource, light, effectiveMatrices);
             } else {
                 renderMesh(mesh, matrix, normalMatrix, bufferSource, light);
             }

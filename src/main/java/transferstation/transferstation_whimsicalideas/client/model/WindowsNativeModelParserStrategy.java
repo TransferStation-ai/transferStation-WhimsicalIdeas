@@ -278,6 +278,15 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
             }
 
             requireRemaining(buf, 4);
+            int invBindCount = buf.getInt();
+            for (int i = 0; i < invBindCount; i++) {
+                float[] mat = new float[16];
+                requireRemaining(buf, 4 * 16);
+                for (int j = 0; j < 16; j++) mat[j] = buf.getFloat();
+                result.invBindPose.add(mat);
+            }
+
+            requireRemaining(buf, 4);
             int texCount = buf.getInt();
             for (int i = 0; i < texCount; i++) {
                 MdlDataTypes.Texture tex = new MdlDataTypes.Texture();

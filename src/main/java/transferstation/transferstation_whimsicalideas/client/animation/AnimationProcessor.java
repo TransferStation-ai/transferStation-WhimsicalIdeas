@@ -406,6 +406,25 @@ public class AnimationProcessor {
     }
 
     /**
+     * Compute the MC-space world bind matrices EXACTLY as the renderer builds them:
+     * initializeBindPose (srcBoneTransforms, else bone pos/quat) + computeWorldBone
+     * parent-chain. The skin matrix is {@code worldBone * invBind}; for the rest pose
+     * to be identity, invBind must be the inverse of these matrices — never a world
+     * built from a different pose source (e.g. poseToBone).
+     */
+    public static float[][] computeBindWorldMatrices(SourceModelData modelData) {
+        if (modelData == null || modelData.bones.isEmpty()) return null;
+        int boneCount = modelData.bones.size();
+        float[][] localTransforms = new float[boneCount][16];
+        initializeBindPose(modelData, localTransforms);
+        Set<Integer> computed = new HashSet<>();
+        for (int i = 0; i < boneCount; i++) {
+            computeWorldBone(i, modelData, localTransforms, computed);
+        }
+        return localTransforms;
+    }
+
+    /**
      * Try to get animation from MDL's built-in sequence data.
      * This uses the localAnims and sequenceAnimData parsed from the MDL file.
      */
@@ -691,7 +710,7 @@ public class AnimationProcessor {
         int boneCount = modelData.bones.size();
         float[][] localTransforms = new float[boneCount][16];
 
-        // 1. Bind pose init (prefers reference pose from srcBoneTransforms, else bone pos/quat)
+        // 1. Bind pose init (prefers reference source from srcBoneTransforms, else bone pos/quat)
         initializeBindPose(modelData, localTransforms);
 
         // 2. No reference pose source (srcBoneTransforms empty) but A-pose frame data
