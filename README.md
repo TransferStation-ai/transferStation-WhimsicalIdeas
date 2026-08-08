@@ -25,6 +25,8 @@ Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 
 但我只能说你要不好好再看看项目名字呢？
 
+是的，我坦言，我更喜欢你们把此项目叫做TSA WAS
+
 --------------------------
 [本项目的的issues](https://github.com/TransferStation/TransferStation-WhimsicalIdeas/issues)
 
@@ -38,6 +40,8 @@ Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 
 同时我们不再以.mdl文件当做独立的模型 而是依赖于addon.json文件
 
+我们使用了一个比较神秘的双向技术c++给java传参/java给c++传参数以便防止在某些平台上出现大问题
+
 --------------------------
 
 是的对于平台支持
@@ -46,7 +50,7 @@ Opengl[维基](https://wikis.khronos.org/opengl/Main_Page)
 
  Linux/安卓:完全支持
 
- 苹果:不支持并且不处理来自苹果的任何问题  ----如果你想让我支持苹果，你换台设备去吧 SB！
+ 苹果:不支持并且不处理来自苹果的任何问题  ----如果你想让我支持苹果，你换台设备去吧！
 
  ------------------------
 
