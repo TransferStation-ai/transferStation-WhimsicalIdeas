@@ -1,4 +1,4 @@
-# TransferStation WhimsicalIdeas
+# TransferStation WhimsicalIdeas /中转站的奇思妙想！
 以下是项目中文介绍
 --------------------------
 使用的许可证: GPL 3.0
