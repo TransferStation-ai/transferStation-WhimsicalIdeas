@@ -12,6 +12,7 @@ import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import transferstation.transferstation_whimsicalideas.Transferstation_whimsicalideas;
+import transferstation.transferstation_whimsicalideas.client.particle.ParticleEmitter;
 import transferstation.transferstation_whimsicalideas.client.particle.ParticleManager;
 
 @Mod.EventBusSubscriber(modid = Transferstation_whimsicalideas.MODID, value = Dist.CLIENT)
@@ -31,9 +32,15 @@ public class ParticleCommands {
         dispatcher.register(Commands.literal("particle_list")
             .executes(ctx -> {
                 // List registered systems
-                var systems = ParticleManager.getInstance().getRegisteredSystemNames();
+                var manager = ParticleManager.getInstance();
+                var systems = manager.getRegisteredSystemNames();
                 ctx.getSource().sendSuccess(() ->
                     Component.literal("Registered particle systems: " + String.join(", ", systems)), false);
+                var reg = manager.getIdRegistry();
+                if (reg != null) {
+                    ctx.getSource().sendSuccess(() ->
+                        Component.literal("Id registry installed"), false);
+                }
                 return 1;
             })
         );
@@ -42,7 +49,15 @@ public class ParticleCommands {
     private static int spawnParticle(CommandContext<CommandSourceStack> ctx, Vec3 pos) {
         String name = StringArgumentType.getString(ctx, "name");
         var level = ctx.getSource().getLevel();
-        var emitter = ParticleManager.getInstance().spawnEffect(name, level, pos.x, pos.y, pos.z);
+        var manager = ParticleManager.getInstance();
+        ParticleEmitter emitter = null;
+        // 纯数字 → 优先按 Valve type id 查找，否则按系统名
+        if (name.matches("\\d+")) {
+            emitter = manager.spawnEffectById(Integer.parseInt(name), level, pos.x, pos.y, pos.z);
+        }
+        if (emitter == null) {
+            emitter = manager.spawnEffect(name, level, pos.x, pos.y, pos.z);
+        }
         if (emitter != null) {
             ctx.getSource().sendSuccess(() ->
                 Component.literal("Spawned particle effect: " + name), false);

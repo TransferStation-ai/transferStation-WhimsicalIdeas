@@ -1,14 +1,17 @@
 package transferstation.transferstation_whimsicalideas.client.particle.renderer;
 
+import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import transferstation.transferstation_whimsicalideas.client.particle.McParticleSemantics;
 import transferstation.transferstation_whimsicalideas.client.particle.Particle;
 import transferstation.transferstation_whimsicalideas.client.particle.ParticleEmitter;
 
@@ -34,7 +37,12 @@ public class SpriteParticleRenderer implements ParticleRenderer {
         RenderSystem.setShader(GameRenderer::getParticleShader);
         RenderSystem.setShaderTexture(0, texture);
         RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
+        boolean additive = McParticleSemantics.useAdditiveBlend(emitter.getDefinition().renderer);
+        if (additive) {
+            RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
+        } else {
+            RenderSystem.defaultBlendFunc();
+        }
         RenderSystem.depthMask(false);
 
         BufferBuilder builder = Tesselator.getInstance().getBuilder();
@@ -71,7 +79,22 @@ public class SpriteParticleRenderer implements ParticleRenderer {
                                        ry - right.y * halfSize - up.y * halfSize,
                                        rz - right.z * halfSize - up.z * halfSize);
 
-            int light = 0xF000F0; // fullbright for particles by default
+            // uv2 亮度：全亮材质用 0xF000F0，否则用粒子所在方块的环境亮度
+            int light;
+            if (McParticleSemantics.isFullBright(emitter.getDefinition().renderer)) {
+                light = 0xF000F0;
+            } else {
+                var level = Minecraft.getInstance().level;
+                if (level == null) {
+                    light = 0xF000F0;
+                } else {
+                    var pos = new net.minecraft.core.BlockPos(
+                        (int) Math.floor(p.position.x),
+                        (int) Math.floor(p.position.y),
+                        (int) Math.floor(p.position.z));
+                    light = net.minecraft.client.renderer.LevelRenderer.getLightColor(level, pos);
+                }
+            }
             float u0 = 0f, v0t = 0f, u1 = 1f, v1t = 1f;
 
             builder.vertex(matrix, v0.x, v0.y, v0.z).uv(u1, v1t).color(p.color.x, p.color.y, p.color.z, alpha).uv2(light).endVertex();
@@ -82,6 +105,7 @@ public class SpriteParticleRenderer implements ParticleRenderer {
 
         BufferUploader.drawWithShader(builder.end());
         RenderSystem.disableBlend();
+        RenderSystem.defaultBlendFunc();
         RenderSystem.depthMask(true);
     }
 }

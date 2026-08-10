@@ -9,6 +9,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.Transferstation_whimsicalideas;
+import transferstation.transferstation_whimsicalideas.client.particle.ParticleIdRegistry;
 import transferstation.transferstation_whimsicalideas.client.particle.ParticleManager;
 
 import java.util.Map;
@@ -47,8 +48,35 @@ public class ValveContentLoader {
             if (!resources.isEmpty()) {
                 LOGGER.info("[ValveContentLoader] Loaded {} built-in particle files", resources.size());
             }
+
+            // 构建 Valve type id -> system name 映射（失败仅日志，不阻断）
+            buildIdRegistry(resourceManager);
         } catch (Exception e) {
             LOGGER.debug("[ValveContentLoader] No built-in particle files (expected if not bundled)");
+        }
+    }
+
+    /** 用 ResourceManager 构建 ParticleIdRegistry 并安装到 ParticleManager（失败仅日志） */
+    private static void buildIdRegistry(net.minecraft.server.packs.resources.ResourceManager resourceManager) {
+        try {
+            var registry = new ParticleIdRegistry(key -> {
+                try {
+                    var loc = ResourceLocation.fromNamespaceAndPath(
+                        Transferstation_whimsicalideas.MODID, "valve_content/particles/" + key);
+                    var opt = resourceManager.getResource(loc);
+                    if (opt.isEmpty()) return null;
+                    try (var is = opt.get().open()) {
+                        return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    }
+                } catch (Exception e) {
+                    LOGGER.debug("[ValveContentLoader] Cannot read resource for '{}'", key);
+                    return null;
+                }
+            });
+            registry.build();
+            ParticleManager.getInstance().installIdRegistry(registry);
+        } catch (Exception e) {
+            LOGGER.error("[ValveContentLoader] Failed to build particle id registry", e);
         }
     }
 }

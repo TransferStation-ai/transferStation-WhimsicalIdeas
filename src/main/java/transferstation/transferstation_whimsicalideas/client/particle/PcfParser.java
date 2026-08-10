@@ -10,7 +10,8 @@ import java.util.List;
 
 public class PcfParser {
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final int PCF_SIGNATURE = 0x50434646; // "PCFF"
+    // NOTE: readInt32 is little-endian, so ASCII "PCFF" (50 43 46 46) reads back as 0x46464350
+    private static final int PCF_SIGNATURE = 0x46464350; // "PCFF"
     private static final int KV_TYPE_NULL = 0x00;
     private static final int KV_TYPE_STRING = 0x01;
     private static final int KV_TYPE_INT = 0x02;
@@ -120,6 +121,12 @@ public class PcfParser {
                 case "_operators" -> parseOperators(prop, def.operators);
                 case "_children" -> parseChildrenList(prop, def.children);
                 case "_forces" -> parseForces(prop, def.forces);
+                default -> {
+                    // `_ramp` 结尾的曲线参数（如 m_flRadius_ramp）→ 曲线采样器
+                    if (prop.name != null && prop.name.endsWith("_ramp")) {
+                        def.ramps.put(prop.name, parseRamp(prop));
+                    }
+                }
             }
         }
         return def;
@@ -221,8 +228,17 @@ public class PcfParser {
                         case "m_nForceType" -> force.type = p.stringValue();
                         case "m_flMagnitude" -> force.magnitude = p.floatValue();
                         case "m_vDirection" -> {
-                            // Expect 3-float array
+                            if (p.type == KvType.ARRAY && p.children != null) {
+                                int n = Math.min(3, p.children.size());
+                                for (int i = 0; i < n; i++) {
+                                    if (p.children.get(i).value instanceof Number num) {
+                                        force.direction[i] = num.floatValue();
+                                    }
+                                }
+                            }
                         }
+                        case "m_bControlPointBased" -> force.controlPointBased = p.intValue() != 0;
+                        case "m_nControlPoint" -> force.controlPoint = p.intValue();
                     }
                 }
                 list.add(force);
@@ -230,10 +246,56 @@ public class PcfParser {
         }
     }
 
+    /**
+     * 解析 `_ramp` 结尾字段的曲线 knots。
+     * 值为 ARRAY 时：遍历子节点，优先寻找成对 (time, value)；
+     *   子节点为 OBJECT 且含 "time"/"value" 键则读之，否则按扁平成对读取。
+     * 无法解析时退化为单点常量（[0, 当前值]）。
+     */
+    private static ParticleRamp parseRamp(KvNode node) {
+        float fallbackValue = 1f;
+        if (node.value instanceof Number n) {
+            fallbackValue = n.floatValue();
+        }
+        List<Float> knots = new ArrayList<>();
+        if (node.type == KvType.ARRAY && node.children != null) {
+            boolean allObjects = !node.children.isEmpty();
+            for (var c : node.children) {
+                if (c.type != KvType.OBJECT) { allObjects = false; break; }
+            }
+            if (allObjects) {
+                // 子节点为 OBJECT：读 "time"/"value" 键
+                for (var c : node.children) {
+                    Float t = null, v = null;
+                    for (var p : c.children) {
+                        if ("time".equals(p.name) && p.value instanceof Number num) t = num.floatValue();
+                        if ("value".equals(p.name) && p.value instanceof Number num) v = num.floatValue();
+                    }
+                    if (t != null && v != null) { knots.add(t); knots.add(v); }
+                }
+            } else {
+                // 扁平成对：{t0, v0, t1, v1, ...}
+                for (var c : node.children) {
+                    if (c.value instanceof Number num) knots.add(num.floatValue());
+                }
+            }
+        }
+        if (knots.size() < 2) {
+            // 无法解析 → 单点常量
+            knots.clear();
+            knots.add(0f);
+            knots.add(fallbackValue);
+        } else if (knots.size() % 2 != 0) {
+            knots.remove(knots.size() - 1); // 丢弃孤值
+        }
+        float[] arr = new float[knots.size()];
+        for (int i = 0; i < knots.size(); i++) arr[i] = knots.get(i);
+        return new ParticleRamp(arr);
+    }
+
     // --- Helper types ---
 
     enum KvType { NULL, STRING, INT, FLOAT, PTR, WSTRING, OBJECT, ARRAY }
-
     static class KvNode {
         String name;
         KvType type;

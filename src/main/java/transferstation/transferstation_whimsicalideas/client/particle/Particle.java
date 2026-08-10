@@ -15,6 +15,7 @@ public class Particle {
     public int sequence = 0;       // animation frame for sprite sheets
     public boolean alive = true;
     public Vector3f previousPosition = new Vector3f(); // for trail rendering
+    public boolean hitThisTick = false;                 // 本 tick 内命中过碰撞
 
     public void tick(float dt) {
         previousPosition.set(position);

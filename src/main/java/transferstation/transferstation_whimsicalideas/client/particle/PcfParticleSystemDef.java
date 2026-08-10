@@ -19,6 +19,8 @@ public class PcfParticleSystemDef {
         public final List<ChildDef> children = new ArrayList<>();
         public final List<ForceDef> forces = new ArrayList<>();
         public boolean continuous = false;  // continuous emission vs burst
+        /** `_ramp` 结尾的曲线参数：name → 采样器（分段线性插值） */
+        public final Map<String, ParticleRamp> ramps = new HashMap<>();
     }
 
     public static class RendererDef {
@@ -70,5 +72,7 @@ public class PcfParticleSystemDef {
         public String type;
         public float magnitude;
         public float[] direction = new float[3];
+        public boolean controlPointBased = false;
+        public int controlPoint = 0;
     }
 }

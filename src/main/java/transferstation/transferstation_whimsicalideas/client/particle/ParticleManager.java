@@ -5,7 +5,14 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
+import transferstation.transferstation_whimsicalideas.client.particle.renderer.BeamParticleRenderer;
+import transferstation.transferstation_whimsicalideas.client.particle.renderer.DecalParticleRenderer;
+import transferstation.transferstation_whimsicalideas.client.particle.renderer.LightParticleRenderer;
+import transferstation.transferstation_whimsicalideas.client.particle.renderer.ModelParticleRenderer;
 import transferstation.transferstation_whimsicalideas.client.particle.renderer.ParticleRenderer;
+import transferstation.transferstation_whimsicalideas.client.particle.renderer.RopeParticleRenderer;
+import transferstation.transferstation_whimsicalideas.client.particle.renderer.SpriteParticleRenderer;
+import transferstation.transferstation_whimsicalideas.client.particle.renderer.TrailParticleRenderer;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,6 +32,9 @@ public class ParticleManager {
 
     // Renderer registry: maps renderer type to implementation
     private final Map<PcfParticleSystemDef.RendererType, ParticleRenderer> renderers = new HashMap<>();
+
+    // Valve type id -> system name mapping (from particles_manifest.txt), may be null
+    private volatile ParticleIdRegistry idRegistry;
 
     private ParticleManager() {}
 
@@ -96,6 +106,31 @@ public class ParticleManager {
         return emitter;
     }
 
+    /** Install the Valve type id -> system name registry (built from particles_manifest.txt) */
+    public void installIdRegistry(ParticleIdRegistry registry) {
+        this.idRegistry = registry;
+    }
+
+    /** Current id registry, or null if none installed yet */
+    public ParticleIdRegistry getIdRegistry() {
+        return idRegistry;
+    }
+
+    /** Spawn a particle effect by Valve type id. Falls back to null if id unknown. */
+    public ParticleEmitter spawnEffectById(int id, Level level, double x, double y, double z) {
+        ParticleIdRegistry reg = this.idRegistry;
+        if (reg == null) {
+            LOGGER.warn("[ParticleManager] No id registry installed - cannot spawn by id {}", id);
+            return null;
+        }
+        String systemName = reg.systemNameForId(id);
+        if (systemName == null) {
+            LOGGER.warn("[ParticleManager] Unknown particle id: '{}'", id);
+            return null;
+        }
+        return spawnEffect(systemName, level, x, y, z);
+    }
+
     /** Tick all active emitters (called every client tick) */
     public void tick(float dt) {
         dt = Math.min(dt, 0.05f); // cap to prevent physics explosion
@@ -150,6 +185,66 @@ public class ParticleManager {
     /** Register a particle renderer for the given renderer type */
     public void registerRenderer(PcfParticleSystemDef.RendererType type, ParticleRenderer renderer) {
         renderers.put(type, renderer);
+    }
+
+    private boolean renderersInitialized = false;
+
+    /**
+     * 注册全部 8 个 renderer（幂等）。材质解析：优先 valve_content/materials/** 下同名 .png，
+     * 否则回退 minecraft:textures/particle/generic_0.png。
+     */
+    public void initRenderers() {
+        if (renderersInitialized) return;
+        renderersInitialized = true;
+
+        var sprite = new SpriteParticleRenderer(resolveMaterial("particle/particle.vmt"));
+        var trail = new TrailParticleRenderer(resolveMaterial("particle/particle.vmt"));
+        var decal = new DecalParticleRenderer(resolveMaterial("particle/particle.vmt"));
+        var light = new LightParticleRenderer(resolveMaterial("particle/particle.vmt"));
+
+        registerRenderer(PcfParticleSystemDef.RendererType.SPRITE, sprite);
+        registerRenderer(PcfParticleSystemDef.RendererType.TRAIL, trail);
+        registerRenderer(PcfParticleSystemDef.RendererType.DECAL, decal);
+        registerRenderer(PcfParticleSystemDef.RendererType.LIGHT, light);
+        registerRenderer(PcfParticleSystemDef.RendererType.MODEL, new ModelParticleRenderer());
+        registerRenderer(PcfParticleSystemDef.RendererType.BEAM, new BeamParticleRenderer());
+        registerRenderer(PcfParticleSystemDef.RendererType.ROPE, new RopeParticleRenderer());
+
+        LOGGER.info("[ParticleManager] Initialized {} particle renderers", renderers.size());
+    }
+
+    /** 在资源 valve_content/materials/** 下找同名 .png；找不到回退 generic_0 */
+    private net.minecraft.resources.ResourceLocation resolveMaterial(String vmtPath) {
+        try {
+            String base = vmtPath;
+            int slash = vmtPath.lastIndexOf('/');
+            if (slash >= 0) {
+                base = vmtPath.substring(slash + 1);
+            }
+            if (base.endsWith(".vmt")) {
+                base = base.substring(0, base.length() - 4);
+            }
+            var resourceManager = net.minecraft.client.Minecraft.getInstance().getResourceManager();
+            var candidates = resourceManager.listResources(
+                "valve_content/materials",
+                loc -> loc.getPath().endsWith(".png"));
+            // 简化：优先精确名匹配，其次任一 .png
+            for (var entry : candidates.entrySet()) {
+                String path = entry.getKey().getPath();
+                if (path.equals("valve_content/materials/" + base + ".png")) {
+                    return entry.getKey();
+                }
+            }
+            for (var entry : candidates.entrySet()) {
+                String path = entry.getKey().getPath();
+                if (path.endsWith(base + ".png")) {
+                    return entry.getKey();
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.debug("[ParticleManager] No custom material for '{}', falling back", vmtPath);
+        }
+        return net.minecraft.resources.ResourceLocation.withDefaultNamespace("textures/particle/generic_0.png");
     }
 
     /** Return the list of registered system names */

@@ -16,6 +16,7 @@ public class ParticleClientHandler {
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        ParticleManager.getInstance().initRenderers(); // 幂等
         if (Minecraft.getInstance().level == null) {
             ParticleManager.getInstance().onWorldUnload();
             return;
