@@ -300,6 +300,23 @@ public class SourceModelData {
     public final List<Integer> referenceSequenceIndices = new ArrayList<>();
     public final List<Integer> aPoseSequenceIndices = new ArrayList<>();
 
+    // Procedural bone metadata (parsed by MdlProceduralBones, populated from
+    // ParsedModel by buildSourceModelData). Indexed by bone order where applicable.
+    public final List<MdlProceduralBones.AxisInterpBone> axisInterpBones = new ArrayList<>();
+    public final List<MdlProceduralBones.QuatInterpBone> quatInterpBones = new ArrayList<>();
+    public final List<MdlProceduralBones.JiggleBone> jiggleBones = new ArrayList<>();
+    public final List<MdlProceduralBones.AimAtBone> aimAtBones = new ArrayList<>();
+
+    // Per-sequence metadata (parsed by MdlSequenceData). Lists are parallel to `sequences`.
+    public final List<java.util.List<MdlSequenceData.IKRule>> sequenceIKRules = new ArrayList<>();
+    public final List<java.util.List<MdlSequenceData.Autolayer>> sequenceAutolayers = new ArrayList<>();
+    public final List<java.util.List<MdlSequenceData.ActivityModifier>> sequenceActivityModifiers = new ArrayList<>();
+    public final List<java.util.List<MdlSequenceData.Movement>> sequenceMovements = new ArrayList<>();
+    public final List<MdlSequenceData.LocalHierarchy> localHierarchies = new ArrayList<>();
+
+    // Per-mesh flex animation data (parsed by MdlFlexAnimation), parallel to `meshes`.
+    public final List<java.util.List<MdlFlexAnimation.FlexAnimation>> meshFlexAnimations = new ArrayList<>();
+
     public boolean hasReferencePose() {
         return !referenceSequenceIndices.isEmpty() || !srcBoneTransforms.isEmpty();
     }
@@ -445,6 +462,16 @@ public class SourceModelData {
             this.srcBoneTransforms.addAll(parent.srcBoneTransforms);
             this.referenceSequenceIndices.addAll(parent.referenceSequenceIndices);
             this.aPoseSequenceIndices.addAll(parent.aPoseSequenceIndices);
+            this.axisInterpBones.addAll(parent.axisInterpBones);
+            this.quatInterpBones.addAll(parent.quatInterpBones);
+            this.jiggleBones.addAll(parent.jiggleBones);
+            this.aimAtBones.addAll(parent.aimAtBones);
+            this.sequenceIKRules.addAll(parent.sequenceIKRules);
+            this.sequenceAutolayers.addAll(parent.sequenceAutolayers);
+            this.sequenceActivityModifiers.addAll(parent.sequenceActivityModifiers);
+            this.sequenceMovements.addAll(parent.sequenceMovements);
+            this.localHierarchies.addAll(parent.localHierarchies);
+            this.meshFlexAnimations.addAll(parent.meshFlexAnimations);
         }
     }
 

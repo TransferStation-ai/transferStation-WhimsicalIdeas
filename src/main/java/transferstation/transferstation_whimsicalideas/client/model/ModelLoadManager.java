@@ -33,7 +33,8 @@ public class ModelLoadManager {
     // 25: 在磁盘缓存中持久化解码后的纹理像素，命中时无需重新解析 VTF
     // 26: 在磁盘缓存中持久化 shaderType，命中时无需重新解析 VMT
     // 29: invBindMatrices 构建方式改为渲染同名世界矩阵求逆（修复静止错位）
-    private static final int CACHE_FORMAT_VERSION = 29;
+    // 30: SourceModelData 增加程序骨骼/序列/flex 元数据（axisInterpBones 等），磁盘缓存同步持久化
+    private static final int CACHE_FORMAT_VERSION = 30;
 
     private static final Map<String, SourceModelData> modelCache = Collections.synchronizedMap(new LinkedHashMap<>() {
         @Override
@@ -852,6 +853,16 @@ public class ModelLoadManager {
         result.sequenceAnimData.addAll(mdl.sequenceAnimData);
         result.referenceSequenceIndices.addAll(mdl.referenceSequenceIndices);
         result.aPoseSequenceIndices.addAll(mdl.aPoseSequenceIndices);
+        result.axisInterpBones.addAll(mdl.axisInterpBones);
+        result.quatInterpBones.addAll(mdl.quatInterpBones);
+        result.jiggleBones.addAll(mdl.jiggleBones);
+        result.aimAtBones.addAll(mdl.aimAtBones);
+        result.sequenceIKRules.addAll(mdl.sequenceIKRules);
+        result.sequenceAutolayers.addAll(mdl.sequenceAutolayers);
+        result.sequenceActivityModifiers.addAll(mdl.sequenceActivityModifiers);
+        result.sequenceMovements.addAll(mdl.sequenceMovements);
+        result.localHierarchies.addAll(mdl.localHierarchies);
+        result.meshFlexAnimations.addAll(mdl.meshFlexAnimations);
 
         if (includeModelLoader != null && includeModels != null && !includeModels.isEmpty()) {
             LOGGER.info("[ModelLoadManager] Processing {} include models", includeModels.size());
@@ -1136,6 +1147,160 @@ public class ModelLoadManager {
                         sa.frames.add(frame);
                     }
                     data.sequenceAnimData.add(sa);
+                }
+
+                // Deserialize procedural bone metadata (parallel to bones).
+                int axisCount = dis.readInt();
+                for (int i = 0; i < axisCount; i++) {
+                    MdlProceduralBones.AxisInterpBone ab = new MdlProceduralBones.AxisInterpBone();
+                    ab.control = dis.readInt();
+                    ab.axis = dis.readInt();
+                    for (int j = 0; j < 6; j++) {
+                        for (int k = 0; k < 3; k++) ab.pos[j][k] = dis.readFloat();
+                        for (int k = 0; k < 4; k++) ab.quat[j][k] = dis.readFloat();
+                    }
+                    data.axisInterpBones.add(ab);
+                }
+                int quatCount = dis.readInt();
+                for (int i = 0; i < quatCount; i++) {
+                    MdlProceduralBones.QuatInterpBone qb = new MdlProceduralBones.QuatInterpBone();
+                    qb.control = dis.readInt();
+                    int trigCount = dis.readInt();
+                    for (int t = 0; t < trigCount; t++) {
+                        MdlProceduralBones.QuatInterpTrigger tr = new MdlProceduralBones.QuatInterpTrigger();
+                        tr.invTolerance = dis.readFloat();
+                        for (int k = 0; k < 4; k++) tr.trigger[k] = dis.readFloat();
+                        for (int k = 0; k < 3; k++) tr.pos[k] = dis.readFloat();
+                        for (int k = 0; k < 4; k++) tr.quat[k] = dis.readFloat();
+                        qb.triggers.add(tr);
+                    }
+                    data.quatInterpBones.add(qb);
+                }
+                int jiggleCount = dis.readInt();
+                for (int i = 0; i < jiggleCount; i++) {
+                    MdlProceduralBones.JiggleBone jb = new MdlProceduralBones.JiggleBone();
+                    jb.flags = dis.readInt();
+                    jb.length = dis.readFloat();
+                    jb.tipMass = dis.readFloat();
+                    jb.yawStiffness = dis.readFloat(); jb.yawDamping = dis.readFloat();
+                    jb.pitchStiffness = dis.readFloat(); jb.pitchDamping = dis.readFloat();
+                    jb.alongStiffness = dis.readFloat(); jb.alongDamping = dis.readFloat();
+                    jb.angleLimit = dis.readFloat();
+                    jb.minYaw = dis.readFloat(); jb.maxYaw = dis.readFloat();
+                    jb.yawFriction = dis.readFloat(); jb.yawBounce = dis.readFloat();
+                    jb.minPitch = dis.readFloat(); jb.maxPitch = dis.readFloat();
+                    jb.pitchFriction = dis.readFloat(); jb.pitchBounce = dis.readFloat();
+                    jb.baseMass = dis.readFloat(); jb.baseStiffness = dis.readFloat(); jb.baseDamping = dis.readFloat();
+                    jb.baseMinLeft = dis.readFloat(); jb.baseMaxLeft = dis.readFloat(); jb.baseLeftFriction = dis.readFloat();
+                    jb.baseMinUp = dis.readFloat(); jb.baseMaxUp = dis.readFloat(); jb.baseUpFriction = dis.readFloat();
+                    jb.baseMinForward = dis.readFloat(); jb.baseMaxForward = dis.readFloat(); jb.baseForwardFriction = dis.readFloat();
+                    jb.boingImpactSpeed = dis.readFloat(); jb.boingImpactAngle = dis.readFloat();
+                    jb.boingDampingRate = dis.readFloat(); jb.boingFrequency = dis.readFloat(); jb.boingAmplitude = dis.readFloat();
+                    data.jiggleBones.add(jb);
+                }
+                int aimCount = dis.readInt();
+                for (int i = 0; i < aimCount; i++) {
+                    MdlProceduralBones.AimAtBone ab = new MdlProceduralBones.AimAtBone();
+                    ab.parent = dis.readInt();
+                    ab.aim = dis.readInt();
+                    for (int k = 0; k < 3; k++) ab.aimvector[k] = dis.readFloat();
+                    for (int k = 0; k < 3; k++) ab.upvector[k] = dis.readFloat();
+                    for (int k = 0; k < 3; k++) ab.basepos[k] = dis.readFloat();
+                    data.aimAtBones.add(ab);
+                }
+
+                // Deserialize per-sequence metadata (parallel to sequences).
+                int ikListCount = dis.readInt();
+                for (int i = 0; i < ikListCount; i++) {
+                    List<MdlSequenceData.IKRule> rules = new ArrayList<>();
+                    int ruleCount = dis.readInt();
+                    for (int r = 0; r < ruleCount; r++) {
+                        MdlSequenceData.IKRule rule = new MdlSequenceData.IKRule();
+                        rule.chain = dis.readInt(); rule.bone = dis.readInt(); rule.slot = dis.readInt(); rule.type = dis.readInt();
+                        rule.height = dis.readFloat(); rule.radius = dis.readFloat(); rule.floor = dis.readFloat();
+                        for (int k = 0; k < 3; k++) rule.pos[k] = dis.readFloat();
+                        for (int k = 0; k < 4; k++) rule.quat[k] = dis.readFloat();
+                        rule.start = dis.readFloat(); rule.peak = dis.readFloat(); rule.tail = dis.readFloat(); rule.end = dis.readFloat();
+                        rule.contact = dis.readFloat(); rule.drop = dis.readFloat(); rule.top = dis.readFloat();
+                        rule.attachment = dis.readUTF();
+                        for (int k = 0; k < 6; k++) rule.errorScale[k] = dis.readFloat();
+                        for (int k = 0; k < 6; k++) rule.errorOffset[k] = dis.readShort();
+                        rules.add(rule);
+                    }
+                    data.sequenceIKRules.add(rules);
+                }
+                int layerListCount = dis.readInt();
+                for (int i = 0; i < layerListCount; i++) {
+                    List<MdlSequenceData.Autolayer> layers = new ArrayList<>();
+                    int layerCount = dis.readInt();
+                    for (int a = 0; a < layerCount; a++) {
+                        MdlSequenceData.Autolayer al = new MdlSequenceData.Autolayer();
+                        al.sequence = dis.readShort(); al.pose = dis.readShort();
+                        al.flags = dis.readInt();
+                        al.start = dis.readFloat(); al.peak = dis.readFloat(); al.tail = dis.readFloat(); al.end = dis.readFloat();
+                        layers.add(al);
+                    }
+                    data.sequenceAutolayers.add(layers);
+                }
+                int modListCount = dis.readInt();
+                for (int i = 0; i < modListCount; i++) {
+                    List<MdlSequenceData.ActivityModifier> mods = new ArrayList<>();
+                    int modCount = dis.readInt();
+                    for (int a = 0; a < modCount; a++) {
+                        MdlSequenceData.ActivityModifier am = new MdlSequenceData.ActivityModifier();
+                        am.name = dis.readUTF();
+                        mods.add(am);
+                    }
+                    data.sequenceActivityModifiers.add(mods);
+                }
+                int movListCount = dis.readInt();
+                for (int i = 0; i < movListCount; i++) {
+                    List<MdlSequenceData.Movement> movs = new ArrayList<>();
+                    int movCount = dis.readInt();
+                    for (int a = 0; a < movCount; a++) {
+                        MdlSequenceData.Movement mv = new MdlSequenceData.Movement();
+                        mv.endframe = dis.readInt(); mv.motionflags = dis.readInt();
+                        mv.v0 = dis.readFloat(); mv.v1 = dis.readFloat(); mv.angle = dis.readFloat();
+                        for (int k = 0; k < 3; k++) mv.vector[k] = dis.readFloat();
+                        for (int k = 0; k < 3; k++) mv.position[k] = dis.readFloat();
+                        movs.add(mv);
+                    }
+                    data.sequenceMovements.add(movs);
+                }
+                int hierCount = dis.readInt();
+                for (int i = 0; i < hierCount; i++) {
+                    MdlSequenceData.LocalHierarchy lh = new MdlSequenceData.LocalHierarchy();
+                    lh.bone = dis.readInt(); lh.newParent = dis.readInt();
+                    lh.start = dis.readFloat(); lh.peak = dis.readFloat(); lh.tail = dis.readFloat(); lh.end = dis.readFloat();
+                    lh.startFrame = dis.readInt();
+                    data.localHierarchies.add(lh);
+                }
+
+                // Deserialize per-mesh flex animation data (parallel to meshes).
+                int flexMeshCount = dis.readInt();
+                for (int i = 0; i < flexMeshCount; i++) {
+                    List<MdlFlexAnimation.FlexAnimation> flexList = new ArrayList<>();
+                    int flexCount = dis.readInt();
+                    for (int f = 0; f < flexCount; f++) {
+                        MdlFlexAnimation.FlexAnimation fa = new MdlFlexAnimation.FlexAnimation();
+                        fa.flexDesc = dis.readInt();
+                        for (int k = 0; k < 4; k++) fa.targets[k] = dis.readFloat();
+                        fa.vertAnimType = dis.readInt();
+                        fa.flexPair = dis.readInt();
+                        int vertexCount = dis.readInt();
+                        for (int v = 0; v < vertexCount; v++) {
+                            MdlFlexAnimation.FlexVertex fv = new MdlFlexAnimation.FlexVertex();
+                            fv.vertexIndex = dis.readInt();
+                            for (int k = 0; k < 3; k++) fv.delta[k] = dis.readFloat();
+                            for (int k = 0; k < 3; k++) fv.ndelta[k] = dis.readFloat();
+                            fv.wrinkle = dis.readFloat();
+                            fv.speed = dis.readByte();
+                            fv.side = dis.readByte();
+                            fa.vertices.add(fv);
+                        }
+                        flexList.add(fa);
+                    }
+                    data.meshFlexAnimations.add(flexList);
                 }
 
                 // 从缓存中恢复解码后的纹理像素，避免重新解析 VTF
@@ -1472,6 +1637,126 @@ public class ModelLoadManager {
                             for (int i = 0; i < 3; i++) dos.writeFloat(fb.pos[i]);
                             for (int i = 0; i < 4; i++) dos.writeFloat(fb.quat[i]);
                             for (int i = 0; i < 3; i++) dos.writeFloat(fb.scale[i]);
+                        }
+                    }
+                }
+
+                // Serialize procedural bone metadata (parallel to bones).
+                dos.writeInt(data.axisInterpBones.size());
+                for (MdlProceduralBones.AxisInterpBone ab : data.axisInterpBones) {
+                    dos.writeInt(ab.control);
+                    dos.writeInt(ab.axis);
+                    for (int j = 0; j < 6; j++) {
+                        for (int k = 0; k < 3; k++) dos.writeFloat(ab.pos[j][k]);
+                        for (int k = 0; k < 4; k++) dos.writeFloat(ab.quat[j][k]);
+                    }
+                }
+                dos.writeInt(data.quatInterpBones.size());
+                for (MdlProceduralBones.QuatInterpBone qb : data.quatInterpBones) {
+                    dos.writeInt(qb.control);
+                    dos.writeInt(qb.triggers.size());
+                    for (MdlProceduralBones.QuatInterpTrigger t : qb.triggers) {
+                        dos.writeFloat(t.invTolerance);
+                        for (int k = 0; k < 4; k++) dos.writeFloat(t.trigger[k]);
+                        for (int k = 0; k < 3; k++) dos.writeFloat(t.pos[k]);
+                        for (int k = 0; k < 4; k++) dos.writeFloat(t.quat[k]);
+                    }
+                }
+                dos.writeInt(data.jiggleBones.size());
+                for (MdlProceduralBones.JiggleBone jb : data.jiggleBones) {
+                    dos.writeInt(jb.flags);
+                    dos.writeFloat(jb.length);
+                    dos.writeFloat(jb.tipMass);
+                    dos.writeFloat(jb.yawStiffness); dos.writeFloat(jb.yawDamping);
+                    dos.writeFloat(jb.pitchStiffness); dos.writeFloat(jb.pitchDamping);
+                    dos.writeFloat(jb.alongStiffness); dos.writeFloat(jb.alongDamping);
+                    dos.writeFloat(jb.angleLimit);
+                    dos.writeFloat(jb.minYaw); dos.writeFloat(jb.maxYaw);
+                    dos.writeFloat(jb.yawFriction); dos.writeFloat(jb.yawBounce);
+                    dos.writeFloat(jb.minPitch); dos.writeFloat(jb.maxPitch);
+                    dos.writeFloat(jb.pitchFriction); dos.writeFloat(jb.pitchBounce);
+                    dos.writeFloat(jb.baseMass); dos.writeFloat(jb.baseStiffness); dos.writeFloat(jb.baseDamping);
+                    dos.writeFloat(jb.baseMinLeft); dos.writeFloat(jb.baseMaxLeft); dos.writeFloat(jb.baseLeftFriction);
+                    dos.writeFloat(jb.baseMinUp); dos.writeFloat(jb.baseMaxUp); dos.writeFloat(jb.baseUpFriction);
+                    dos.writeFloat(jb.baseMinForward); dos.writeFloat(jb.baseMaxForward); dos.writeFloat(jb.baseForwardFriction);
+                    dos.writeFloat(jb.boingImpactSpeed); dos.writeFloat(jb.boingImpactAngle);
+                    dos.writeFloat(jb.boingDampingRate); dos.writeFloat(jb.boingFrequency); dos.writeFloat(jb.boingAmplitude);
+                }
+                dos.writeInt(data.aimAtBones.size());
+                for (MdlProceduralBones.AimAtBone ab : data.aimAtBones) {
+                    dos.writeInt(ab.parent);
+                    dos.writeInt(ab.aim);
+                    for (int k = 0; k < 3; k++) dos.writeFloat(ab.aimvector[k]);
+                    for (int k = 0; k < 3; k++) dos.writeFloat(ab.upvector[k]);
+                    for (int k = 0; k < 3; k++) dos.writeFloat(ab.basepos[k]);
+                }
+
+                // Serialize per-sequence metadata (parallel to sequences).
+                dos.writeInt(data.sequenceIKRules.size());
+                for (List<MdlSequenceData.IKRule> rules : data.sequenceIKRules) {
+                    dos.writeInt(rules.size());
+                    for (MdlSequenceData.IKRule r : rules) {
+                        dos.writeInt(r.chain); dos.writeInt(r.bone); dos.writeInt(r.slot); dos.writeInt(r.type);
+                        dos.writeFloat(r.height); dos.writeFloat(r.radius); dos.writeFloat(r.floor);
+                        for (int k = 0; k < 3; k++) dos.writeFloat(r.pos[k]);
+                        for (int k = 0; k < 4; k++) dos.writeFloat(r.quat[k]);
+                        dos.writeFloat(r.start); dos.writeFloat(r.peak); dos.writeFloat(r.tail); dos.writeFloat(r.end);
+                        dos.writeFloat(r.contact); dos.writeFloat(r.drop); dos.writeFloat(r.top);
+                        dos.writeUTF(r.attachment != null ? r.attachment : "");
+                        for (int k = 0; k < 6; k++) dos.writeFloat(r.errorScale[k]);
+                        for (int k = 0; k < 6; k++) dos.writeShort(r.errorOffset[k]);
+                    }
+                }
+                dos.writeInt(data.sequenceAutolayers.size());
+                for (List<MdlSequenceData.Autolayer> layers : data.sequenceAutolayers) {
+                    dos.writeInt(layers.size());
+                    for (MdlSequenceData.Autolayer al : layers) {
+                        dos.writeShort(al.sequence); dos.writeShort(al.pose);
+                        dos.writeInt(al.flags);
+                        dos.writeFloat(al.start); dos.writeFloat(al.peak); dos.writeFloat(al.tail); dos.writeFloat(al.end);
+                    }
+                }
+                dos.writeInt(data.sequenceActivityModifiers.size());
+                for (List<MdlSequenceData.ActivityModifier> mods : data.sequenceActivityModifiers) {
+                    dos.writeInt(mods.size());
+                    for (MdlSequenceData.ActivityModifier am : mods) {
+                        dos.writeUTF(am.name != null ? am.name : "");
+                    }
+                }
+                dos.writeInt(data.sequenceMovements.size());
+                for (List<MdlSequenceData.Movement> movs : data.sequenceMovements) {
+                    dos.writeInt(movs.size());
+                    for (MdlSequenceData.Movement mv : movs) {
+                        dos.writeInt(mv.endframe); dos.writeInt(mv.motionflags);
+                        dos.writeFloat(mv.v0); dos.writeFloat(mv.v1); dos.writeFloat(mv.angle);
+                        for (int k = 0; k < 3; k++) dos.writeFloat(mv.vector[k]);
+                        for (int k = 0; k < 3; k++) dos.writeFloat(mv.position[k]);
+                    }
+                }
+                dos.writeInt(data.localHierarchies.size());
+                for (MdlSequenceData.LocalHierarchy lh : data.localHierarchies) {
+                    dos.writeInt(lh.bone); dos.writeInt(lh.newParent);
+                    dos.writeFloat(lh.start); dos.writeFloat(lh.peak); dos.writeFloat(lh.tail); dos.writeFloat(lh.end);
+                    dos.writeInt(lh.startFrame);
+                }
+
+                // Serialize per-mesh flex animation data (parallel to meshes).
+                dos.writeInt(data.meshFlexAnimations.size());
+                for (List<MdlFlexAnimation.FlexAnimation> flexList : data.meshFlexAnimations) {
+                    dos.writeInt(flexList.size());
+                    for (MdlFlexAnimation.FlexAnimation fa : flexList) {
+                        dos.writeInt(fa.flexDesc);
+                        for (int k = 0; k < 4; k++) dos.writeFloat(fa.targets[k]);
+                        dos.writeInt(fa.vertAnimType);
+                        dos.writeInt(fa.flexPair);
+                        dos.writeInt(fa.vertices.size());
+                        for (MdlFlexAnimation.FlexVertex fv : fa.vertices) {
+                            dos.writeInt(fv.vertexIndex);
+                            for (int k = 0; k < 3; k++) dos.writeFloat(fv.delta[k]);
+                            for (int k = 0; k < 3; k++) dos.writeFloat(fv.ndelta[k]);
+                            dos.writeFloat(fv.wrinkle);
+                            dos.writeByte(fv.speed);
+                            dos.writeByte(fv.side);
                         }
                     }
                 }
