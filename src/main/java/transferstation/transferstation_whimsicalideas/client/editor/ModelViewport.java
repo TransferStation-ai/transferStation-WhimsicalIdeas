@@ -237,6 +237,11 @@ public class ModelViewport {
             emit(consumer, matrix, normalMatrix, vertices, i0, light, cr, cg, cb, ca);
             emit(consumer, matrix, normalMatrix, vertices, i1, light, cr, cg, cb, ca);
             emit(consumer, matrix, normalMatrix, vertices, i2, light, cr, cg, cb, ca);
+            // MC entity RenderTypes assasemble QUADS (4 vertices per primitive, split into
+            // triangles 0-1-2 / 0-2-3). Source meshes are triangles (3 per primitive), so the
+            // 4th vertex must repeat the first to keep the quad degenerate, otherwise the vertex
+            // stream is mis-grouped and the surface shreds to dots/lines.
+            emit(consumer, matrix, normalMatrix, vertices, i0, light, cr, cg, cb, ca);
         }
     }
 

@@ -553,6 +553,8 @@ public class TextureColorResolver {
         int removed = 0;
         Iterator<Map.Entry<String, TextureEntry>> iter = entries.entrySet().iterator();
         Minecraft mc = Minecraft.getInstance();
+        // Minecraft 客户端尚未初始化（如无头测试/启动早期）时无法释放 GL 纹理，直接跳过裁剪。
+        if (mc == null) return;
         while (iter.hasNext()) {
             var e = iter.next();
             TextureEntry entry = e.getValue();

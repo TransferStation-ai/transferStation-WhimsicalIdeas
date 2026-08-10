@@ -462,6 +462,153 @@ public class VtxDiagnosticTest {
         return -1;
     }
 
+    /**
+     * 几何证据测试：构建每个 mesh 的世界坐标三角形，检测"超长边"三角形。
+     * "手连脚"形态表现为某条边长远超该 mesh 自身包围盒对角线。若 Java 数据层就存在，
+     * 则可排除 C++ 侧上传/索引拼接差异，根因回溯到 resolveVvdIndex/fixup/vertexOffset。
+     */
+    @Test
+    public void diagnoseLongEdgeTriangles() throws IOException {
+        Path mdlFile = TEST_MODEL_DIR.resolve("chiffongothictacmaid.mdl");
+        Path vvdFile = TEST_MODEL_DIR.resolve("chiffongothictacmaid.vvd");
+        Path vtxFile = TEST_MODEL_DIR.resolve("ChiffonGothicTacMaid.dx90.vtx");
+        assertTrue(Files.exists(mdlFile), "MDL file not found: " + mdlFile.toAbsolutePath());
+
+        MdlDataTypes.ParsedModel mdl = MdlParser.parse(Files.readAllBytes(mdlFile));
+        VvdParser.ParsedVvd vvd = VvdParser.parse(Files.readAllBytes(vvdFile));
+        VtxParser.ParsedVtx vtx = VtxParser.parse(Files.readAllBytes(vtxFile), vvd.vertices.size());
+
+        List<VvdParser.StudioVertexExt> verts = vvd.vertices;
+        boolean vvdTightlyPacked = vvd.fixups.isEmpty();
+        int vvdAccumBase = 0;
+        int vtxMeshCursor = 0;
+        int mdlMeshCursor = 0;
+        int mdlMeshCount = mdl.meshes.size();
+        int vtxMeshCount = vtx.meshTriangles.size();
+        int mdlModelCount = mdl.models.size();
+
+        long longEdgeTris = 0;
+        long totalTris = 0;
+        java.util.Map<Integer, Integer> longEdgesByMesh = new java.util.TreeMap<>();
+        int worstMesh = -1;
+        double worstRatio = 0;
+
+        for (int bpIdx = 0; bpIdx < mdl.bodyParts.size(); bpIdx++) {
+            for (int modelIdx = 0; modelIdx < mdlModelCount; modelIdx++) {
+                var model = mdl.models.get(modelIdx);
+                if (model.bodypartIndex != bpIdx) continue;
+
+                int vvdModelBase;
+                if (vvdTightlyPacked) {
+                    vvdModelBase = vvdAccumBase;
+                } else {
+                    int rawBase = model.vertexindex - vvd.header.vertexDataStart;
+                    vvdModelBase = (rawBase < 0 ? 0 : rawBase) / 48;
+                }
+                if (vvdModelBase < 0) vvdModelBase = 0;
+                if (vvdModelBase > verts.size()) vvdModelBase = verts.size();
+
+                for (int meshLocalIdx = 0; meshLocalIdx < model.nummeshes; meshLocalIdx++) {
+                    int globalMeshIdx = vtxMeshCursor++;
+                    int alignedMdlMeshIdx = mdlMeshCursor++;
+
+                    int vertexOffset = (alignedMdlMeshIdx < mdlMeshCount) ?
+                        mdl.meshes.get(alignedMdlMeshIdx).vertexoffset : 0;
+                    List<VtxParser.VtxTriangle> tris = (globalMeshIdx < vtxMeshCount) ?
+                        vtx.meshTriangles.get(globalMeshIdx) : List.of();
+
+                    if (tris.isEmpty()) continue;
+
+                    // 先映射到世界空间 VVD 顶点，构建该 mesh 的包络。
+                    float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+                    float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
+                    int triCount = 0;
+                    for (VtxParser.VtxTriangle tri : tris) {
+                        int v0 = resolveVvdIndex(tri.v0, vvdModelBase, vertexOffset,
+                            verts.size(), vvd.fixups, 0);
+                        int v1 = resolveVvdIndex(tri.v1, vvdModelBase, vertexOffset,
+                            verts.size(), vvd.fixups, 0);
+                        int v2 = resolveVvdIndex(tri.v2, vvdModelBase, vertexOffset,
+                            verts.size(), vvd.fixups, 0);
+                        if (v0 < 0 || v1 < 0 || v2 < 0 ||
+                            v0 >= verts.size() || v1 >= verts.size() || v2 >= verts.size()) continue;
+                        triCount++;
+                        VvdParser.StudioVertexExt a = verts.get(v0);
+                        VvdParser.StudioVertexExt b = verts.get(v1);
+                        VvdParser.StudioVertexExt c = verts.get(v2);
+                        minX = Math.min(minX, Math.min(a.x, Math.min(b.x, c.x)));
+                        minY = Math.min(minY, Math.min(a.y, Math.min(b.y, c.y)));
+                        minZ = Math.min(minZ, Math.min(a.z, Math.min(b.z, c.z)));
+                        maxX = Math.max(maxX, Math.max(a.x, Math.max(b.x, c.x)));
+                        maxY = Math.max(maxY, Math.max(a.y, Math.max(b.y, c.y)));
+                        maxZ = Math.max(maxZ, Math.max(a.z, Math.max(b.z, c.z)));
+                    }
+                    if (triCount == 0) continue;
+
+                    double bx = maxX - minX, by = maxY - minY, bz = maxZ - minZ;
+                    double bboxDiag = Math.sqrt(bx * bx + by * by + bz * bz);
+                    // 上限 = 0.6 倍自身包围盒对角线。真正的手连脚长边远大于此。
+                    double limit = Math.max(bboxDiag * 0.6, 5.0);
+
+                    int meshLong = 0;
+                    int meshTotal = 0;
+                    double meshWorstRatio = 0;
+                    for (VtxParser.VtxTriangle tri : tris) {
+                        int v0 = resolveVvdIndex(tri.v0, vvdModelBase, vertexOffset,
+                            verts.size(), vvd.fixups, 0);
+                        int v1 = resolveVvdIndex(tri.v1, vvdModelBase, vertexOffset,
+                            verts.size(), vvd.fixups, 0);
+                        int v2 = resolveVvdIndex(tri.v2, vvdModelBase, vertexOffset,
+                            verts.size(), vvd.fixups, 0);
+                        if (v0 < 0 || v1 < 0 || v2 < 0 ||
+                            v0 >= verts.size() || v1 >= verts.size() || v2 >= verts.size()) continue;
+                        meshTotal++;
+                        VvdParser.StudioVertexExt a = verts.get(v0);
+                        VvdParser.StudioVertexExt b = verts.get(v1);
+                        VvdParser.StudioVertexExt c = verts.get(v2);
+                        double e01 = dist(a, b);
+                        double e12 = dist(b, c);
+                        double e20 = dist(c, a);
+                        double maxE = Math.max(e01, Math.max(e12, e20));
+                        if (maxE > limit) {
+                            meshLong++;
+                            if (bboxDiag > 1e-6) {
+                                meshWorstRatio = Math.max(meshWorstRatio, maxE / bboxDiag);
+                            }
+                        }
+                    }
+                    totalTris += meshTotal;
+                    if (meshLong > 0) {
+                        longEdgeTris += meshLong;
+                        longEdgesByMesh.put(globalMeshIdx, meshLong);
+                        LOGGER.warn("  Mesh[{}] vertOffset={} bboxDiag={} limit={} longEdgeTris={}/{} worstRatio={}",
+                            globalMeshIdx, vertexOffset, String.format("%.2f", bboxDiag),
+                            String.format("%.2f", limit), meshLong, meshTotal,
+                            String.format("%.1f", meshWorstRatio));
+                        if (meshWorstRatio > worstRatio) {
+                            worstRatio = meshWorstRatio;
+                            worstMesh = globalMeshIdx;
+                        }
+                    }
+                }
+                if (vvdTightlyPacked) {
+                    vvdAccumBase += model.numvertices;
+                }
+            }
+        }
+
+        LOGGER.info("=== LongEdge summary: {}/{} triangles span >0.6x their own mesh bbox diag ===", longEdgeTris, totalTris);
+        LOGGER.info("Meshes with long-edge tris: {}", longEdgesByMesh);
+        if (worstMesh >= 0) {
+            LOGGER.warn("Worst mesh[{}]: maxEdge/bboxDiag = {:.1f}", worstMesh, worstRatio);
+        }
+    }
+
+    private static double dist(VvdParser.StudioVertexExt a, VvdParser.StudioVertexExt b) {
+        float dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
     @Test
     public void diagnoseChiffonPmNopussyModel() throws IOException {
         Path mdlFile = TEST_MODEL_DIR.resolve("chiffongothictacmaid_nopussy.mdl");

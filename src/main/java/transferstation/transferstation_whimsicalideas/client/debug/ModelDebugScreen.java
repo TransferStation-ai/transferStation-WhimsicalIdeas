@@ -818,8 +818,40 @@ public class ModelDebugScreen extends Screen {
         if (!isSectionCollapsed("7. BODY PARTS")) {
             if (model != null) {
                 lines.add(intRow("Count", model.bodyParts.size()));
-                for (SourceModelData.BodyPartInfo bp : model.bodyParts) {
-                    lines.add(row("  " + bp.name, bp.numModels + " models @base " + bp.baseIndex, "dddddd"));
+                for (int bpIdx = 0; bpIdx < model.bodyParts.size(); bpIdx++) {
+                    SourceModelData.BodyPartInfo bp = model.bodyParts.get(bpIdx);
+                    lines.add(row("  " + bp.name + " (" + bp.numModels + " models @base " + bp.baseIndex + ")", "", "dddddd"));
+                    if (!bp.modelNames.isEmpty()) {
+                        lines.add(row("    models " + String.join(", ", bp.modelNames), "", "55ccff"));
+                    }
+                    int meshCount = 0;
+                    int vertCount = 0;
+                    int triCount = 0;
+                    int whiteCount = 0;
+                    List<String[]> partMeshes = new ArrayList<>();
+                    for (int midx = 0; midx < model.meshes.size(); midx++) {
+                        SourceModelData.MeshData mesh = model.meshes.get(midx);
+                        if (mesh.bodyPartIndex == bpIdx) {
+                            meshCount++;
+                            vertCount += mesh.vertexCount();
+                            triCount += mesh.triangleCount();
+                            boolean white = isWhiteMesh(mesh);
+                            if (white) whiteCount++;
+                            String vtf = mesh.vtfKey != null ? mesh.vtfKey : "(null)";
+                            partMeshes.add(row("      m[" + midx + "] " + vtf + " " + mesh.triangleCount() + "t" + (white ? " [WHITE]" : ""), "", white ? "ff5555" : "dddddd"));
+                        }
+                    }
+                    if (meshCount == 0) {
+                        lines.add(row("    (no meshes)", "", "ff8844"));
+                    } else {
+                        lines.add(row("    " + meshCount + " meshes " + vertCount + " verts " + triCount + " tris", "", "ffdd44"));
+                        if (whiteCount == 0) {
+                            lines.add(row("    textured", "all meshes textured", "55ff55"));
+                        } else {
+                            lines.add(row("    " + whiteCount + " white mesh(es)", "", "ff5555"));
+                        }
+                        lines.addAll(partMeshes);
+                    }
                 }
             } else {
                 lines.add(row("(none)", "", "888888"));

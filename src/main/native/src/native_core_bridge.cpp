@@ -115,7 +115,11 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeCore
 
         w.writeInt(static_cast<int>(parsed.invBindPose.size()));
         for (size_t i = 0; i < parsed.invBindPose.size(); i++) {
-            for (int r = 0; r < 3; r++) {
+            // 必须写满 16 个 float（完整 4x4，列主序）。Java 端
+            // WindowsNativeModelParserStrategy.deserializeParsedModel 按 float[16]
+            // 逐元素读取；曾只写 3x4=12 个 float，导致每根骨骼错位 16 字节，
+            // 后续 texCount/cdTexCount/skinTable/includeModels 全部错读。
+            for (int r = 0; r < 4; r++) {
                 for (int c = 0; c < 4; c++) {
                     w.writeFloat(parsed.invBindPose[i].m[c * 4 + r]);
                 }

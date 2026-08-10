@@ -532,6 +532,20 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromDirectory(
         std::vector<std::string> mdls, vvds, vtxs;
     };
     std::map<std::string, DirFiles> filesByDir;
+    // Canonical base name for trio pairing: lowercase and, for VTX files,
+    // strip the trailing ".dx90" so "ChiffonGothicTacMaid.dx90.vtx" pairs with
+    // "chiffongothictacmaid.mdl"/".vvd" (GMod packs mix casing freely). Mirrors
+    // how model_diagnostics.cpp and the Source engine treat these as one base.
+    auto canonicalBase = [](const std::string& filePath) -> std::string {
+        std::string name = fs::path(filePath).stem().string();
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+        const std::string dx90 = ".dx90";
+        if (name.size() > dx90.size() &&
+            name.compare(name.size() - dx90.size(), dx90.size(), dx90) == 0) {
+            name = name.substr(0, name.size() - dx90.size());
+        }
+        return name;
+    };
     for (auto& entry : fs::recursive_directory_iterator(pkgDir)) {
         if (!entry.is_regular_file()) continue;
         std::string fileName = entry.path().filename().string();
@@ -564,14 +578,22 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromDirectory(
             if (s == std::string::npos) continue;
             size_t open = line.find('(', s);
             if (open == std::string::npos) continue;
-            size_t quote = line.find('"', open);
-            if (quote == std::string::npos) continue;
-            size_t endQuote = line.find('"', quote + 1);
-            if (endQuote == std::string::npos) continue;
-            std::string p = line.substr(quote + 1, endQuote - quote - 1);
-            if (p.find(".mdl") == std::string::npos) continue;
-            for (auto& ch : p) ch = (char)::tolower((unsigned char)ch);
-            playerModelRefs.push_back(p);
+            // AddValidModel(name, "models/PM/x.mdl"): the SECOND string is the
+            // model path. Extract the first quoted string that ends in *.mdl
+            // (the name argument, e.g. "ChiffonGothicTacMaid", never matches).
+            size_t quote = open;
+            while ((quote = line.find('"', quote)) != std::string::npos) {
+                size_t endQuote = line.find('"', quote + 1);
+                if (endQuote == std::string::npos) break;
+                std::string p = line.substr(quote + 1, endQuote - quote - 1);
+                quote = endQuote + 1;
+                if (p.find(".mdl") == std::string::npos) continue;
+                std::string lowerP;
+                lowerP.reserve(p.size());
+                for (char ch : p) lowerP += (char)::tolower((unsigned char)ch);
+                playerModelRefs.push_back(lowerP);
+                break;
+            }
         }
     }
 
@@ -607,12 +629,13 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromDirectory(
             if (sc > dirBestScore) {
                 dirBestScore = sc;
                 std::string base = fs::path(mdl).stem().string();
+                std::transform(base.begin(), base.end(), base.begin(), ::tolower);
                 // Require a matching .vvd and .dx90.vtx for this base.
                 bool hasVvd = false, hasVtx = false;
                 for (const auto& v : t.vvds)
-                    if (fs::path(v).stem().string() == base) hasVvd = true;
+                    if (canonicalBase(v) == base) hasVvd = true;
                 for (const auto& v : t.vtxs)
-                    if (fs::path(v).stem().string() == base) hasVtx = true;
+                    if (canonicalBase(v) == base) hasVtx = true;
                 if (hasVvd && hasVtx) { bestBase = base; }
             }
         }
@@ -620,9 +643,9 @@ std::unique_ptr<ModelLoader::LoadedModel> ModelLoader::loadFromDirectory(
 
         int depth = 0;
         for (const auto& comp : fs::relative(dir, pkgDir)) { (void)comp; depth++; }
-        auto findWithBase = [](const std::vector<std::string>& list, const std::string& base) -> std::string {
+        auto findWithBase = [&](const std::vector<std::string>& list, const std::string& base) -> std::string {
             for (const auto& p : list)
-                if (fs::path(p).stem().string() == base) return p;
+                if (canonicalBase(p) == base) return p;
             return "";
         };
         std::string chosenMdl = findWithBase(t.mdls, bestBase);
@@ -1276,7 +1299,24 @@ std::vector<MeshData> ModelLoader::buildMeshes(
 
     const auto& stripGroupsList = VtxParser::getStripGroupsForLod(vtx, lodLevel);
 
-    int vtxMeshCount = static_cast<int>(stripGroupsList.size());
+    // The VTX parser groups strip groups per-MODEL (one inner vector per model,
+    // with one StripGroupInfo per mesh in that model), but the MDL/VTX mesh list
+    // the walker below iterates is per-MESH (bodypart -> model -> LOD0 mesh, one
+    // entry per mesh). Indexing the per-model list with a per-mesh cursor desyncs
+    // as soon as any model has more than one mesh (e.g. Face.smd has 2 meshes):
+    // every subsequent mesh then pairs the wrong strip group with the wrong
+    // vertexOffset/vvdBase and resolves triangles from unrelated VVD regions ->
+    // "hand-to-foot" long-edge triangles. Flatten to one entry per mesh, exactly
+    // like native_core_bridge.cpp does for the serialized VTX contract.
+    std::vector<std::vector<VtxParser::StripGroupInfo>> flatMeshes;
+    flatMeshes.reserve(stripGroupsList.size());
+    for (const auto& modelGroups : stripGroupsList) {
+        for (const auto& meshSg : modelGroups) {
+            flatMeshes.push_back(std::vector<VtxParser::StripGroupInfo>{meshSg});
+        }
+    }
+
+    int vtxMeshCount = static_cast<int>(flatMeshes.size());
     if (vtxMeshCount == 0) {
         std::cerr << "[MeshBuilder] No VTX meshes for LOD " << lodLevel << std::endl;
         return result;
@@ -1335,7 +1375,7 @@ std::vector<MeshData> ModelLoader::buildMeshes(
             return -1;
         };
 
-        const auto& stripGroups = stripGroupsList[meshIdx];
+        const auto& stripGroups = flatMeshes[meshIdx];
         size_t estimatedVerts = 0;
         size_t estimatedIndices = 0;
         for (const auto& sg : stripGroups) {

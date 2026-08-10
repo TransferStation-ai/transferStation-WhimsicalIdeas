@@ -291,6 +291,11 @@ public class JavaModelRenderer {
             emitVertex(consumer, matrix, normalMatrix, ax, ay, az, anx, any, anz, au, av, light, cr, cg, cb, ca);
             emitVertex(consumer, matrix, normalMatrix, bx, by, bz, bnx, bny, bnz, bu, bv, light, cr, cg, cb, ca);
             emitVertex(consumer, matrix, normalMatrix, cx, cy, cz, cnx, cny, cnz, cu, cv, light, cr, cg, cb, ca);
+            // Every MC entity RenderType assembles vertices as QUADS (4 per primitive, split
+            // into two triangles 0-1-2 / 0-2-3). The Source mesh is triangles (3 per primitive),
+            // so we must emit a 4th vertex identical to the first to keep the quad degenerate.
+            // Without this, the triangle stream is mis-grouped and the surface shreds to dots/lines.
+            emitVertex(consumer, matrix, normalMatrix, ax, ay, az, anx, any, anz, au, av, light, cr, cg, cb, ca);
         }
     }
 
@@ -502,8 +507,24 @@ public class JavaModelRenderer {
         for (int i = 0; i < indices.length; i += 3) {
             if (i + 2 >= indices.length) break;
 
-            for (int vi = 0; vi < 3; vi++) {
-                int vertIdx = indices[i + vi];
+            // Validate all three indices up front like the non-skinned path does. A per-vertex
+            // continue below would drop individual vertices and mis-group the QUADS stream,
+            // recreating stray point-to-point connections.
+            int i0v = indices[i];
+            int i1v = indices[i + 1];
+            int i2v = indices[i + 2];
+            int i0o = i0v * 8;
+            int i1o = i1v * 8;
+            int i2o = i2v * 8;
+            if (i0o < 0 || i1o < 0 || i2o < 0) continue;
+            if (i0o + 7 >= vertices.length || i1o + 7 >= vertices.length || i2o + 7 >= vertices.length) continue;
+
+            for (int vi = 0; vi < 4; vi++) {
+                // MC entity RenderTypes are QUADS-assembled (4 vertices per primitive, split
+                // into triangles 0-1-2 / 0-2-3). The Source mesh is triangles (3 per primitive),
+                // so submit the first vertex again as the 4th to keep the quad degenerate. Without
+                // this the vertex stream is mis-grouped and the surface shreds to dots/lines.
+                int vertIdx = vi == 3 ? i0v : indices[i + vi];
                 int offset = vertIdx * 8;
 
                 if (offset < 0 || offset + 7 >= vertices.length) continue;
