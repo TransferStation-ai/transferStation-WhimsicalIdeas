@@ -554,6 +554,63 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_PhysicsBridge_
         pivotA, pivotB, swingSpan1, swingSpan2, twistSpan));
 }
 
+JNIEXPORT jlong JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_PhysicsBridge_nativeCreateConeTwistJointEx(
+    JNIEnv* env, jclass,
+    jlong bodyA, jlong bodyB,
+    jfloat pax, jfloat pay, jfloat paz,
+    jfloat pbx, jfloat pby, jfloat pbz,
+    jfloat axA, jfloat ayA, jfloat azA,
+    jfloat axB, jfloat ayB, jfloat azB,
+    jfloat swingSpan1, jfloat swingSpan2, jfloat twistSpan)
+{
+    PhysicsSimulation::Vec3 pivotA(pax, pay, paz);
+    PhysicsSimulation::Vec3 pivotB(pbx, pby, pbz);
+    PhysicsSimulation::Vec3 axisA(axA, ayA, azA);
+    PhysicsSimulation::Vec3 axisB(axB, ayB, azB);
+    return static_cast<jlong>(PhysicsSimulation::createConeTwistJointEx(
+        static_cast<uint64_t>(bodyA), static_cast<uint64_t>(bodyB),
+        pivotA, pivotB, axisA, axisB, swingSpan1, swingSpan2, twistSpan));
+}
+
+JNIEXPORT void JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_PhysicsBridge_nativeSetJointAngularLimits(
+    JNIEnv* env, jclass, jlong jointId,
+    jfloat swingSpan1, jfloat swingSpan2, jfloat twistSpan)
+{
+    PhysicsSimulation::setJointAngularLimits(static_cast<uint64_t>(jointId),
+                                             swingSpan1, swingSpan2, twistSpan);
+}
+
+JNIEXPORT void JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_PhysicsBridge_nativeSetAngularVelocity(
+    JNIEnv* env, jclass, jlong id, jfloat wx, jfloat wy, jfloat wz)
+{
+    PhysicsSimulation::Vec3 w(wx, wy, wz);
+    PhysicsSimulation::setRigidBodyAngularVelocity(static_cast<uint64_t>(id), w);
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_PhysicsBridge_nativeGetAngularVelocity(
+    JNIEnv* env, jclass, jlong id)
+{
+    PhysicsSimulation::Vec3 w = PhysicsSimulation::getAngularVelocity(static_cast<uint64_t>(id));
+    jfloatArray result = env->NewFloatArray(3);
+    if (result) {
+        jfloat out[3] = { w.x, w.y, w.z };
+        env->SetFloatArrayRegion(result, 0, 3, out);
+    }
+    return result;
+}
+
+JNIEXPORT void JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_PhysicsBridge_nativeApplyTorque(
+    JNIEnv* env, jclass, jlong id, jfloat tx, jfloat ty, jfloat tz)
+{
+    PhysicsSimulation::Vec3 torque(tx, ty, tz);
+    PhysicsSimulation::applyTorque(static_cast<uint64_t>(id), torque);
+}
+
 JNIEXPORT void JNICALL
 Java_transferstation_transferstation_1whimsicalideas_client_model_PhysicsBridge_nativeSetJointLimit(
     JNIEnv* env, jclass, jlong jointId, jfloat linearLimit, jfloat angularLimit)
@@ -918,6 +975,13 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeBrid
     if (modelMat) env->ReleaseFloatArrayElements(modelMatrix, modelMat, JNI_ABORT);
 
     if (tint) env->ReleaseFloatArrayElements(colorTint, tint, JNI_ABORT);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_transferstation_transferstation_1whimsicalideas_client_model_PhysicsBridge_nativeIsBodyGrounded(
+    JNIEnv*, jclass, jlong id)
+{
+    return PhysicsSimulation::isBodyGrounded(static_cast<uint64_t>(id)) ? JNI_TRUE : JNI_FALSE;
 }
 
 } // extern "C"

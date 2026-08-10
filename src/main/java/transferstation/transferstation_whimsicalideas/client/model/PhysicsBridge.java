@@ -346,6 +346,33 @@ public class PhysicsBridge {
         }
     }
 
+    public static void setAngularVelocity(long id, float wx, float wy, float wz) {
+        if (!available) return;
+        try {
+            nativeSetAngularVelocity(id, wx, wy, wz);
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static float[] getAngularVelocity(long id) {
+        if (!available) return new float[]{0, 0, 0};
+        try {
+            return nativeGetAngularVelocity(id);
+        } catch (UnsatisfiedLinkError e) {
+            return new float[]{0, 0, 0};
+        }
+    }
+
+    public static void applyTorque(long id, float tx, float ty, float tz) {
+        if (!available) return;
+        try {
+            nativeApplyTorque(id, tx, ty, tz);
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static void setKinematicPose(long id, float px, float py, float pz, float rx, float ry, float rz, float rw) {
         if (!available) return;
         try {
@@ -382,6 +409,15 @@ public class PhysicsBridge {
         }
     }
 
+    public static boolean isBodyGrounded(long id) {
+        if (!available) return false;
+        try {
+            return nativeIsBodyGrounded(id);
+        } catch (UnsatisfiedLinkError e) {
+            return false;
+        }
+    }
+
     public static void setGravity(float gx, float gy, float gz) {
         if (!available) return;
         try {
@@ -407,6 +443,35 @@ public class PhysicsBridge {
             return nativeCreateConeTwistJoint(bodyA, bodyB, pax, pay, paz, pbx, pby, pbz, swingSpan1, swingSpan2, twistSpan);
         } catch (UnsatisfiedLinkError e) {
             return -1;
+        }
+    }
+
+    /**
+     * Cone-twist joint with explicit per-body joint axes (in each body's local
+     * frame). The joint axis defines the cone apex direction for the swing limit;
+     * twist is measured around it.
+     */
+    public static long createConeTwistJointEx(long bodyA, long bodyB,
+                                               float pax, float pay, float paz,
+                                               float pbx, float pby, float pbz,
+                                               float axA, float ayA, float azA,
+                                               float axB, float ayB, float azB,
+                                               float swingSpan1, float swingSpan2, float twistSpan) {
+        if (!available) return -1;
+        try {
+            return nativeCreateConeTwistJointEx(bodyA, bodyB, pax, pay, paz, pbx, pby, pbz,
+                    axA, ayA, azA, axB, ayB, azB, swingSpan1, swingSpan2, twistSpan);
+        } catch (UnsatisfiedLinkError e) {
+            return -1;
+        }
+    }
+
+    public static void setJointAngularLimits(long jointId, float swingSpan1, float swingSpan2, float twistSpan) {
+        if (!available) return;
+        try {
+            nativeSetJointAngularLimits(jointId, swingSpan1, swingSpan2, twistSpan);
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -476,6 +541,13 @@ public class PhysicsBridge {
     private static native long nativeCreateJoint(long bodyA, long bodyB, float pax, float pay, float paz, float pbx, float pby, float pbz);
     private static native long nativeCreateConeTwistJoint(long bodyA, long bodyB, float pax, float pay, float paz, float pbx, float pby, float pbz,
                                                            float swingSpan1, float swingSpan2, float twistSpan);
+    private static native long nativeCreateConeTwistJointEx(long bodyA, long bodyB, float pax, float pay, float paz, float pbx, float pby, float pbz,
+                                                            float axA, float ayA, float azA, float axB, float ayB, float azB,
+                                                            float swingSpan1, float swingSpan2, float twistSpan);
+    private static native void nativeSetJointAngularLimits(long jointId, float swingSpan1, float swingSpan2, float twistSpan);
+    private static native void nativeSetAngularVelocity(long id, float wx, float wy, float wz);
+    private static native float[] nativeGetAngularVelocity(long id);
+    private static native void nativeApplyTorque(long id, float tx, float ty, float tz);
     private static native void nativeSetJointLimit(long jointId, float linearLimit, float angularLimit);
     private static native void nativeDestroyJoint(long id);
     private static native boolean nativeRaycast(float fromX, float fromY, float fromZ, float toX, float toY, float toZ,
@@ -486,4 +558,5 @@ public class PhysicsBridge {
     private static native void nativeSetMass(long id, float mass);
     private static native void nativeSetDamping(long id, float linearDamping, float angularDamping);
     private static native void nativeSetActivationState(long id, boolean active);
+    private static native boolean nativeIsBodyGrounded(long id);
 }

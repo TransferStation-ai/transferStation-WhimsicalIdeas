@@ -316,6 +316,39 @@ Java_transferstation_transferstation_1whimsicalideas_client_model_GmodNativeCore
             }
         }
 
+        // --- Segment A: per-solid physics properties (parent/mass/...).
+        // Read after the existing solid block data; old Java deserializers
+        // simply stop at the previous end-of-data, so this stays backwards
+        // compatible (trailing bytes are ignored by a reader that never reads
+        // past its known schema).
+        w.writeInt(static_cast<int>(parsed.solids.size()));
+        for (const auto& solid : parsed.solids) {
+            w.writeInt(solid.parent);
+            w.writeFloat(solid.mass);
+            w.writeString(solid.surfaceprop);
+            w.writeFloat(solid.damping);
+            w.writeFloat(solid.rotdamping);
+            w.writeFloat(solid.inertia);
+            w.writeFloat(solid.volume);
+        }
+
+        // --- Segment B: ragdoll constraints.
+        w.writeInt(static_cast<int>(parsed.ragdollConstraints.size()));
+        for (const auto& c : parsed.ragdollConstraints) {
+            w.writeInt(c.parentIndex);
+            w.writeInt(c.childIndex);
+            w.writeString(c.parentName);
+            w.writeString(c.childName);
+            w.writeFloat(c.xmin); w.writeFloat(c.xmax); w.writeFloat(c.xfriction);
+            w.writeFloat(c.ymin); w.writeFloat(c.ymax); w.writeFloat(c.yfriction);
+            w.writeFloat(c.zmin); w.writeFloat(c.zmax); w.writeFloat(c.zfriction);
+            w.writeFloat(c.pivotX); w.writeFloat(c.pivotY); w.writeFloat(c.pivotZ);
+        }
+
+        // --- Segment C: editparams.
+        w.writeString(parsed.rootName);
+        w.writeFloat(parsed.totalMass);
+
         return w.toJByteArray(env);
     } catch (const std::exception& e) {
         return nullptr;

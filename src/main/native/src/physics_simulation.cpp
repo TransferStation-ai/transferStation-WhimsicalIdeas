@@ -28,6 +28,7 @@ static std::unordered_map<uint64_t, PhysicsSimulation::RigidBody> s_rigidBodies;
 static std::unordered_map<uint64_t, PhysicsSimulation::CollisionShape> s_collisionShapes;
 static std::unordered_map<uint64_t, PhysicsSimulation::Joint> s_joints;
 static std::unordered_map<uint64_t, uint64_t> s_bodyShapeMap;
+static std::unordered_map<uint64_t, bool> s_bodyContactMap;
 static PhysicsSimulation::Vec3 s_gravity(0, -9.81f, 0);
 
 static float vec3Dot(const PhysicsSimulation::Vec3& a, const PhysicsSimulation::Vec3& b) {
@@ -54,6 +55,11 @@ static PhysicsSimulation::Vec3 vec3Scale(const PhysicsSimulation::Vec3& a, float
     return PhysicsSimulation::Vec3(a.x * s, a.y * s, a.z * s);
 }
 
+// Per-axis multiply (used for linear/angular factors).
+static PhysicsSimulation::Vec3 vec3Mul(const PhysicsSimulation::Vec3& a, const PhysicsSimulation::Vec3& b) {
+    return PhysicsSimulation::Vec3(a.x * b.x, a.y * b.y, a.z * b.z);
+}
+
 static float vec3Length(const PhysicsSimulation::Vec3& a) {
     return std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
 }
@@ -78,6 +84,111 @@ static float vec3Distance(const PhysicsSimulation::Vec3& a, const PhysicsSimulat
 
 static float clamp(float v, float mn, float mx) {
     return std::max(mn, std::min(mx, v));
+}
+
+// ── Quaternion helpers ──────────────────────────────────────────────
+using Quat = PhysicsSimulation::Quat;
+
+static Quat quatNormalize(const Quat& q) {
+    float n = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+    if (n < 1e-8f) return Quat(0, 0, 0, 1);
+    float inv = 1.0f / std::sqrt(n);
+    return Quat(q.x * inv, q.y * inv, q.z * inv, q.w * inv);
+}
+
+static Quat quatConjugate(const Quat& q) {
+    return Quat(-q.x, -q.y, -q.z, q.w);
+}
+
+static Quat quatMul(const Quat& a, const Quat& b) {
+    return Quat(
+        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z
+    );
+}
+
+static Quat quatFromAxisAngle(const Vec3& axis, float angle) {
+    float len = vec3Length(axis);
+    if (len < 1e-6f) return Quat(0, 0, 0, 1);
+    float h = angle * 0.5f;
+    float s = std::sin(h);
+    Vec3 n = vec3Scale(axis, s / len);
+    return Quat(n.x, n.y, n.z, std::cos(h));
+}
+
+// Rotate a world vector by quaternion (q * v * q^-1).
+static Vec3 quatRotate(const Quat& q, const Vec3& v) {
+    Quat p(v.x, v.y, v.z, 0);
+    Quat r = quatMul(quatMul(q, p), quatConjugate(q));
+    return Vec3(r.x, r.y, r.z);
+}
+
+// ── Rigid body inertia ──────────────────────────────────────────────
+// Inverse inertia tensor (diagonal in the body's local frame), computed
+// from the attached collision shape. Bodies without a shape get a small
+// isotropic value so angular dynamics stay well-defined.
+static void computeInverseInertia(PhysicsSimulation::RigidBody& body, const PhysicsSimulation::CollisionShape& shape) {
+    if (body.isStatic || body.isKinematic) {
+        body.invInertia = Vec3(0, 0, 0);
+        return;
+    }
+    float m = body.mass;
+    if (m <= 0.0f) {
+        body.invInertia = Vec3(0, 0, 0);
+        return;
+    }
+    switch (shape.type) {
+        case PhysicsSimulation::CollisionShape::SPHERE: {
+            float r = shape.radius;
+            float I = 0.4f * m * r * r; // solid sphere: 2/5 m r^2
+            float inv = (I > 1e-6f) ? 1.0f / I : 0.0f;
+            body.invInertia = Vec3(inv, inv, inv);
+            break;
+        }
+        case PhysicsSimulation::CollisionShape::BOX: {
+            float hx = shape.halfExtents.x;
+            float hy = shape.halfExtents.y;
+            float hz = shape.halfExtents.z;
+            float ix = (1.0f / 12.0f) * m * (hy * hy + hz * hz);
+            float iy = (1.0f / 12.0f) * m * (hx * hx + hz * hz);
+            float iz = (1.0f / 12.0f) * m * (hx * hx + hy * hy);
+            body.invInertia = Vec3(ix > 1e-6f ? 1.0f / ix : 0.0f,
+                                   iy > 1e-6f ? 1.0f / iy : 0.0f,
+                                   iz > 1e-6f ? 1.0f / iz : 0.0f);
+            break;
+        }
+        case PhysicsSimulation::CollisionShape::CAPSULE: {
+            // Approximate a capsule as a sphere of the larger of radius/half-height.
+            float r = std::max(shape.radius, shape.height * 0.5f);
+            float I = 0.4f * m * r * r;
+            float inv = (I > 1e-6f) ? 1.0f / I : 0.0f;
+            body.invInertia = Vec3(inv, inv, inv);
+            break;
+        }
+        default:
+            body.invInertia = Vec3(0, 0, 0);
+            break;
+    }
+}
+
+// Apply the inverse inertia tensor (diagonal in local frame) to a world vector.
+static Vec3 worldInvInertiaApply(const PhysicsSimulation::RigidBody& body, const Vec3& v) {
+    Vec3 lv = quatRotate(quatConjugate(body.rotation), v);
+    Vec3 lr(lv.x * body.invInertia.x, lv.y * body.invInertia.y, lv.z * body.invInertia.z);
+    return quatRotate(body.rotation, lr);
+}
+
+// Scalar stand-in for the body's inverse inertia (exact for isotropic bodies).
+static float bodyInvI(const PhysicsSimulation::RigidBody& body) {
+    if (body.isStatic || body.isKinematic || !body.isActive) return 0.0f;
+    return (body.invInertia.x + body.invInertia.y + body.invInertia.z) * (1.0f / 3.0f);
+}
+
+static float bodyInvMass(const PhysicsSimulation::RigidBody& body) {
+    if (body.isStatic || body.isKinematic || !body.isActive) return 0.0f;
+    return body.mass > 0.0f ? 1.0f / body.mass : 0.0f;
 }
 
 // Closest point on triangle (Ericson, "Real-Time Collision Detection").
@@ -147,15 +258,32 @@ static bool sphereIntersectsTriangleAABB(
 }
 
 static void resolveSphereMesh(
-    PhysicsSimulation::RigidBody& body, float radius)
+    PhysicsSimulation::RigidBody& body,
+    const PhysicsSimulation::CollisionShape& shape,
+    uint64_t bodyId)
 {
     for (const auto& tri : s_envTriangles) {
-        if (!sphereIntersectsTriangleAABB(body.position, radius, tri.a, tri.b, tri.c)) {
+        // For CAPSULE the effective sphere center is the closest point on the
+        // capsule segment (axis along local Y from -height/2 to +height/2) to
+        // the triangle; solve as a sphere of `radius` around that point.
+        PhysicsSimulation::Vec3 center = body.position;
+        if (shape.type == PhysicsSimulation::CollisionShape::CAPSULE) {
+            Vec3 top = vec3Add(body.position, quatRotate(body.rotation, Vec3(0, shape.height * 0.5f, 0)));
+            Vec3 bot = vec3Add(body.position, quatRotate(body.rotation, Vec3(0, -shape.height * 0.5f, 0)));
+            Vec3 ab = vec3Sub(top, bot);
+            Vec3 ap = vec3Sub(tri.a, bot);
+            float t = vec3Dot(ap, ab) / (vec3LengthSq(ab) + 1e-8f);
+            t = std::max(0.0f, std::min(1.0f, t));
+            center = vec3Add(bot, vec3Scale(ab, t));
+        }
+        float radius = shape.radius;
+
+        if (!sphereIntersectsTriangleAABB(center, radius, tri.a, tri.b, tri.c)) {
             continue;
         }
 
-        PhysicsSimulation::Vec3 closest = closestPointOnTriangle(body.position, tri.a, tri.b, tri.c);
-        PhysicsSimulation::Vec3 toClosest = vec3Sub(body.position, closest);
+        PhysicsSimulation::Vec3 closest = closestPointOnTriangle(center, tri.a, tri.b, tri.c);
+        PhysicsSimulation::Vec3 toClosest = vec3Sub(center, closest);
         float distSq = vec3LengthSq(toClosest);
         float radiusSq = radius * radius;
         if (distSq >= radiusSq) continue;
@@ -179,6 +307,7 @@ static void resolveSphereMesh(
                 body.velocity = vec3Sub(body.velocity, vec3Scale(normal, relVel * (1.0f + body.restitution)));
             }
         }
+        s_bodyContactMap[bodyId] = true;
     }
 }
 
@@ -259,6 +388,7 @@ uint64_t PhysicsSimulation::createRigidBody(const Vec3& position, const Quat& ro
     shape.type = CollisionShape::SPHERE;
     shape.radius = 0.3f;
     uint64_t shapeId = createCollisionShape(shape);
+    computeInverseInertia(body, shape);
     s_rigidBodies[id] = body;
     s_bodyShapeMap[id] = shapeId;
 
@@ -312,20 +442,44 @@ PhysicsSimulation::RigidBody PhysicsSimulation::getRigidBody(uint64_t id) {
 
 void PhysicsSimulation::applyForce(uint64_t id, const Vec3& force) {
     auto it = s_rigidBodies.find(id);
-    if (it != s_rigidBodies.end() && !it->second.isStatic) {
+    if (it != s_rigidBodies.end() && !it->second.isStatic && !it->second.isKinematic) {
         if (it->second.mass > 0) {
-            it->second.velocity = vec3Add(it->second.velocity, vec3Scale(force, 1.0f / it->second.mass));
+            Vec3 dv = vec3Mul(vec3Scale(force, 1.0f / it->second.mass), it->second.linearFactor);
+            it->second.velocity = vec3Add(it->second.velocity, dv);
         }
     }
 }
 
 void PhysicsSimulation::applyImpulse(uint64_t id, const Vec3& impulse) {
     auto it = s_rigidBodies.find(id);
-    if (it != s_rigidBodies.end() && !it->second.isStatic) {
+    if (it != s_rigidBodies.end() && !it->second.isStatic && !it->second.isKinematic) {
         if (it->second.mass > 0) {
-            it->second.velocity = vec3Add(it->second.velocity, vec3Scale(impulse, 1.0f / it->second.mass));
+            Vec3 dv = vec3Mul(vec3Scale(impulse, 1.0f / it->second.mass), it->second.linearFactor);
+            it->second.velocity = vec3Add(it->second.velocity, dv);
         }
     }
+}
+
+void PhysicsSimulation::applyTorque(uint64_t id, const Vec3& torque) {
+    auto it = s_rigidBodies.find(id);
+    if (it == s_rigidBodies.end() || it->second.isStatic || it->second.isKinematic) return;
+    Vec3 dw = vec3Mul(worldInvInertiaApply(it->second, torque), it->second.angularFactor);
+    it->second.angularVelocity = vec3Add(it->second.angularVelocity, dw);
+}
+
+void PhysicsSimulation::applyAngularImpulse(uint64_t id, const Vec3& impulse) {
+    auto it = s_rigidBodies.find(id);
+    if (it == s_rigidBodies.end() || it->second.isStatic || it->second.isKinematic) return;
+    Vec3 dw = vec3Mul(worldInvInertiaApply(it->second, impulse), it->second.angularFactor);
+    it->second.angularVelocity = vec3Add(it->second.angularVelocity, dw);
+}
+
+PhysicsSimulation::Vec3 PhysicsSimulation::getAngularVelocity(uint64_t id) {
+    auto it = s_rigidBodies.find(id);
+    if (it != s_rigidBodies.end()) {
+        return it->second.angularVelocity;
+    }
+    return Vec3(0, 0, 0);
 }
 
 uint64_t PhysicsSimulation::createCollisionShape(const CollisionShape& shape) {
@@ -340,6 +494,7 @@ void PhysicsSimulation::attachCollisionShape(uint64_t bodyId, uint64_t shapeId) 
         auto& shape = s_collisionShapes[shapeId];
         auto it = s_rigidBodies.find(bodyId);
         if (it != s_rigidBodies.end()) {
+            computeInverseInertia(it->second, shape);
             if (shape.type == CollisionShape::BOX) {
                 float r = std::max({shape.halfExtents.x, shape.halfExtents.y, shape.halfExtents.z});
                 it->second.friction = 0.6f;
@@ -355,13 +510,20 @@ uint64_t PhysicsSimulation::createJoint(uint64_t bodyA, uint64_t bodyB,
     uint64_t id = s_nextId++;
     Joint joint;
     joint.id = id;
+    joint.type = Joint::DISTANCE;
     joint.bodyA = bodyA;
     joint.bodyB = bodyB;
     joint.pivotA = pivotA;
     joint.pivotB = pivotB;
     joint.axisA = Vec3(0, 1, 0);
     joint.axisB = Vec3(0, 1, 0);
+    joint.swingSpan1 = 0.0f;
+    joint.swingSpan2 = 0.0f;
+    joint.twistSpan = 0.0f;
+    joint.linearLimit = 0.0f;
+    joint.angularLimit = 0.0f;
     joint.breakForce = 1000.0f;
+    joint.forceAccumulator = 0.0f;
     joint.isBroken = false;
     s_joints[id] = joint;
     return id;
@@ -427,15 +589,17 @@ static void resolveSphereSphere(
 }
 
 static void resolveSphereGround(
-    PhysicsSimulation::RigidBody& body, const PhysicsSimulation::CollisionShape& shape)
+    PhysicsSimulation::RigidBody& body, const PhysicsSimulation::CollisionShape& shape,
+    uint64_t bodyId)
 {
-    float bottomY = body.position.y - shape.radius;
+    float halfH = (shape.type == PhysicsSimulation::CollisionShape::CAPSULE) ? shape.height * 0.5f : 0.0f;
+    float bottomY = body.position.y - shape.radius - halfH;
     if (bottomY >= GROUND_PLANE_Y) return;
 
     float penetration = GROUND_PLANE_Y - bottomY;
 
     if (!body.isStatic) {
-        body.position.y = GROUND_PLANE_Y + shape.radius;
+        body.position.y = GROUND_PLANE_Y + shape.radius + halfH;
 
         if (body.velocity.y < 0) {
             body.velocity.y = -body.velocity.y * body.restitution;
@@ -446,6 +610,7 @@ static void resolveSphereGround(
             body.velocity.x *= (1.0f - body.friction * 0.1f);
             body.velocity.z *= (1.0f - body.friction * 0.1f);
         }
+        s_bodyContactMap[bodyId] = true;
     }
 }
 
@@ -488,6 +653,224 @@ static void applyJointConstraint(
     if (invMassB > 0) bodyB.velocity = vec3Sub(bodyB.velocity, vec3Scale(totalForce, invMassB));
 }
 
+// ── Cone-twist joint (real geometric constraint) ────────────────────
+// A cone-twist joint is a ball-in-socket (3-DOF positional) constraint
+// plus an angular limit that keeps body B's frame inside an elliptical
+// swing cone around body A's joint axis, and the twist around that axis
+// inside the configured twist span.
+//
+// Solve strategy (per sub-step, CONE_TWIST_ITERATIONS passes):
+//   1. Velocity level: sequential-impulse ball-in-socket projection along
+//      the current anchor error direction (1D Jacobian projection that
+//      accounts for linear + angular inertia). Also damp relative angular
+//      velocity about the swing/twist limit axes.
+//   2. Position level: PBD-style anchor correction (slop + per-iteration
+//      fraction), plus rotation projection that pulls the swing/twist back
+//      inside their limits, weighted by inverse inertia.
+// The accumulated impulse magnitude |lambda| is compared against
+// breakForce; an overloaded joint snaps.
+
+static const int CONE_TWIST_ITERATIONS = 8;
+static const float JOINT_POSITION_SLOP = 0.005f;
+static const float JOINT_CORRECTION_PERCENT = 0.4f;
+static const float JOINT_ANGULAR_SLOP = 0.02f; // ~1.15 deg
+
+static Vec3 jointWorldPivotA(const PhysicsSimulation::Joint& joint, const PhysicsSimulation::RigidBody& a) {
+    return vec3Add(a.position, quatRotate(a.rotation, joint.pivotA));
+}
+
+static Vec3 jointWorldPivotB(const PhysicsSimulation::Joint& joint, const PhysicsSimulation::RigidBody& b) {
+    return vec3Add(b.position, quatRotate(b.rotation, joint.pivotB));
+}
+
+// Velocity-level ball-in-socket projection along a unit direction.
+// Returns the impulse magnitude (accumulated into joint.forceAccumulator).
+static float solveBallSocketVelocity(PhysicsSimulation::Joint& joint,
+                                     PhysicsSimulation::RigidBody& a,
+                                     PhysicsSimulation::RigidBody& b,
+                                     const Vec3& dir)
+{
+    Vec3 pa = jointWorldPivotA(joint, a);
+    Vec3 pb = jointWorldPivotB(joint, b);
+    Vec3 rA = vec3Sub(pa, a.position);
+    Vec3 rB = vec3Sub(pb, b.position);
+
+    Vec3 vA = vec3Add(a.velocity, vec3Cross(a.angularVelocity, rA));
+    Vec3 vB = vec3Add(b.velocity, vec3Cross(b.angularVelocity, rB));
+    Vec3 vRel = vec3Sub(vA, vB);
+    // Ball-in-socket is an EQUALITY constraint: relative velocity at the
+    // anchor must be zero along dir in both directions. Unlike a contact
+    // constraint there is no "separating -> skip" case.
+    float vn = vec3Dot(vRel, dir);
+    if (std::abs(vn) < 1e-6f) return 0.0f;
+
+    float invMassA = bodyInvMass(a);
+    float invMassB = bodyInvMass(b);
+    Vec3 rAxn = vec3Cross(rA, dir);
+    Vec3 rBxn = vec3Cross(rB, dir);
+    float k = invMassA + invMassB
+            + vec3Dot(rAxn, worldInvInertiaApply(a, rAxn))
+            + vec3Dot(rBxn, worldInvInertiaApply(b, rBxn));
+    if (k < 1e-8f) return 0.0f;
+
+    float lambda = -vn / k;
+    joint.forceAccumulator += std::abs(lambda);
+
+    Vec3 impulse = vec3Scale(dir, lambda);
+    if (invMassA > 0.0f) {
+        a.velocity = vec3Add(a.velocity, vec3Scale(impulse, invMassA));
+        a.angularVelocity = vec3Add(a.angularVelocity, worldInvInertiaApply(a, vec3Cross(rA, impulse)));
+    }
+    if (invMassB > 0.0f) {
+        b.velocity = vec3Sub(b.velocity, vec3Scale(impulse, invMassB));
+        b.angularVelocity = vec3Sub(b.angularVelocity, worldInvInertiaApply(b, vec3Cross(rB, impulse)));
+    }
+    return lambda;
+}
+
+// PBD-style position correction for the ball-in-socket anchor.
+static void solveBallSocketPosition(PhysicsSimulation::Joint& joint,
+                                    PhysicsSimulation::RigidBody& a,
+                                    PhysicsSimulation::RigidBody& b)
+{
+    Vec3 pa = jointWorldPivotA(joint, a);
+    Vec3 pb = jointWorldPivotB(joint, b);
+    Vec3 error = vec3Sub(pb, pa);
+    float dist = vec3Length(error);
+    if (dist < JOINT_POSITION_SLOP) return;
+
+    Vec3 dir = vec3Scale(error, 1.0f / dist);
+    float invMassA = bodyInvMass(a);
+    float invMassB = bodyInvMass(b);
+    float total = invMassA + invMassB;
+    if (total < 1e-8f) return;
+
+    float corr = (dist - JOINT_POSITION_SLOP) * JOINT_CORRECTION_PERCENT;
+    Vec3 correction = vec3Scale(dir, corr);
+    if (invMassA > 0.0f) a.position = vec3Add(a.position, vec3Scale(correction, invMassA / total));
+    if (invMassB > 0.0f) b.position = vec3Sub(b.position, vec3Scale(correction, invMassB / total));
+}
+
+// Damp relative angular velocity about `axis` (zeroes the relative spin).
+static void dampAngularAboutAxis(PhysicsSimulation::RigidBody& a, PhysicsSimulation::RigidBody& b, const Vec3& axis) {
+    float invA = bodyInvI(a);
+    float invB = bodyInvI(b);
+    float total = invA + invB;
+    if (total < 1e-8f) return;
+    Vec3 wRel = vec3Sub(a.angularVelocity, b.angularVelocity);
+    float wvn = vec3Dot(wRel, axis);
+    if (std::abs(wvn) < 1e-5f) return;
+    Vec3 impulse = vec3Scale(axis, -wvn / total);
+    if (invA > 0.0f) a.angularVelocity = vec3Add(a.angularVelocity, worldInvInertiaApply(a, impulse));
+    if (invB > 0.0f) b.angularVelocity = vec3Sub(b.angularVelocity, worldInvInertiaApply(b, impulse));
+}
+
+// Rotate both bodies so the swing/twist exceedance is removed, weighted
+// by inverse inertia (PBD angular projection).
+static void correctAngularLimit(PhysicsSimulation::RigidBody& a, PhysicsSimulation::RigidBody& b,
+                                const Vec3& worldAxis, float excessAngle)
+{
+    float invA = bodyInvI(a);
+    float invB = bodyInvI(b);
+    float total = invA + invB;
+    if (total < 1e-8f) return;
+    Quat corrA = quatFromAxisAngle(worldAxis, excessAngle * (invA / total));
+    Quat corrB = quatFromAxisAngle(worldAxis, -excessAngle * (invB / total));
+    a.rotation = quatNormalize(quatMul(corrA, a.rotation));
+    b.rotation = quatNormalize(quatMul(corrB, b.rotation));
+}
+
+// Swing/twist limit enforcement. qRel = qA^-1 * qB (B's frame in A's frame)
+// is split into a twist quaternion around local Z and a swing quaternion
+// whose axis lies in the XY plane.
+static void solveSwingTwistLimits(PhysicsSimulation::Joint& joint,
+                                  PhysicsSimulation::RigidBody& a,
+                                  PhysicsSimulation::RigidBody& b)
+{
+    if (joint.swingSpan1 <= 0.0f && joint.swingSpan2 <= 0.0f && joint.twistSpan <= 0.0f) {
+        return; // no angular limits configured
+    }
+
+    Quat qRel = quatMul(quatConjugate(a.rotation), b.rotation);
+
+    // Twist about the joint axis (local Z of A).
+    Quat qTwist = quatNormalize(Quat(0, 0, qRel.z, qRel.w));
+    if (std::abs(qTwist.w) < 1e-6f && std::abs(qTwist.z) < 1e-6f) {
+        qTwist = Quat(0, 0, 0, 1);
+    }
+    Quat qSwing = quatMul(qRel, quatConjugate(qTwist));
+
+    // ── Swing limits ──
+    float swingAngle = 2.0f * std::acos(clamp(qSwing.w, -1.0f, 1.0f));
+    Vec3 swingAxisLocal(1, 0, 0); // fallback (rotate around A's X)
+    float sLen = std::sqrt(qSwing.x * qSwing.x + qSwing.y * qSwing.y);
+    if (sLen > 1e-6f) {
+        swingAxisLocal = Vec3(qSwing.x / sLen, qSwing.y / sLen, 0);
+    }
+
+    if (joint.swingSpan1 > 0.0f && joint.swingSpan2 > 0.0f && swingAngle > 1e-5f) {
+        // Elliptical cone: allowed tilt angle for direction phi is
+        // atan(sqrt((tan s1 cos phi)^2 + (tan s2 sin phi)^2)).
+        float phi = std::atan2(swingAxisLocal.y, swingAxisLocal.x);
+        float t1 = std::tan(joint.swingSpan1);
+        float t2 = std::tan(joint.swingSpan2);
+        float limit = std::atan2(
+            std::sqrt(t1 * t1 * std::cos(phi) * std::cos(phi) + t2 * t2 * std::sin(phi) * std::sin(phi)),
+            1.0f);
+        float excess = swingAngle - limit;
+        if (excess > JOINT_ANGULAR_SLOP) {
+            Vec3 swingAxisWorld = quatRotate(a.rotation, swingAxisLocal);
+            correctAngularLimit(a, b, swingAxisWorld, excess - JOINT_ANGULAR_SLOP);
+            dampAngularAboutAxis(a, b, swingAxisWorld);
+        }
+    } else if ((joint.swingSpan1 > 0.0f || joint.swingSpan2 > 0.0f) && swingAngle > 1e-5f) {
+        // Single-axis swing limit (hinge-like): clamp the whole swing angle.
+        float span = (joint.swingSpan1 > 0.0f) ? joint.swingSpan1 : joint.swingSpan2;
+        float excess = swingAngle - span;
+        if (excess > JOINT_ANGULAR_SLOP) {
+            Vec3 swingAxisWorld = quatRotate(a.rotation, swingAxisLocal);
+            correctAngularLimit(a, b, swingAxisWorld, excess - JOINT_ANGULAR_SLOP);
+            dampAngularAboutAxis(a, b, swingAxisWorld);
+        }
+    }
+
+    // ── Twist limit ──
+    if (joint.twistSpan > 0.0f) {
+        float twistAngle = 2.0f * std::atan2(qTwist.z, qTwist.w); // (-pi, pi]
+        float excessTwist = 0.0f;
+        if (twistAngle > joint.twistSpan) {
+            excessTwist = twistAngle - joint.twistSpan;
+        } else if (twistAngle < -joint.twistSpan) {
+            excessTwist = twistAngle + joint.twistSpan;
+        }
+        if (std::abs(excessTwist) > JOINT_ANGULAR_SLOP) {
+            Vec3 twistAxisWorld = quatRotate(a.rotation, Vec3(0, 0, 1));
+            float correction = (excessTwist > 0.0f) ? (excessTwist - JOINT_ANGULAR_SLOP)
+                                                    : (excessTwist + JOINT_ANGULAR_SLOP);
+            correctAngularLimit(a, b, twistAxisWorld, correction);
+            dampAngularAboutAxis(a, b, twistAxisWorld);
+        }
+    }
+}
+
+static void solveConeTwistJoint(PhysicsSimulation::Joint& joint,
+                                PhysicsSimulation::RigidBody& a,
+                                PhysicsSimulation::RigidBody& b)
+{
+    for (int iter = 0; iter < CONE_TWIST_ITERATIONS; iter++) {
+        Vec3 pa = jointWorldPivotA(joint, a);
+        Vec3 pb = jointWorldPivotB(joint, b);
+        Vec3 error = vec3Sub(pb, pa);
+        float dist = vec3Length(error);
+        if (dist > 1e-6f) {
+            Vec3 dir = vec3Scale(error, 1.0f / dist);
+            solveBallSocketVelocity(joint, a, b, dir);
+        }
+        solveSwingTwistLimits(joint, a, b);
+        solveBallSocketPosition(joint, a, b);
+    }
+}
+
 void PhysicsSimulation::stepSimulation(float deltaTime) {
     if (deltaTime <= 0 || deltaTime > 0.1f) return;
 
@@ -495,13 +878,26 @@ void PhysicsSimulation::stepSimulation(float deltaTime) {
     int subSteps = 4;
     float subDt = deltaTime / subSteps;
 
+    s_bodyContactMap.clear();
+
     for (int step = 0; step < subSteps; step++) {
-        // Apply gravity and integrate velocities
+        // Apply gravity, integrate linear + angular state
         for (auto& [id, body] : s_rigidBodies) {
             if (body.isStatic || body.isKinematic || !body.isActive) continue;
 
-            body.velocity = vec3Add(body.velocity, vec3Scale(s_gravity, subDt));
+            Vec3 dv = vec3Mul(vec3Scale(s_gravity, subDt), body.linearFactor);
+            body.velocity = vec3Add(body.velocity, dv);
             body.position = vec3Add(body.position, vec3Scale(body.velocity, subDt));
+
+            // Orientation integration: q' = 0.5 * omega_quat (x) q
+            Vec3 w = vec3Mul(body.angularVelocity, body.angularFactor);
+            Quat wq(w.x, w.y, w.z, 0);
+            Quat dq = quatMul(wq, body.rotation);
+            body.rotation = quatNormalize(Quat(
+                body.rotation.x + dq.x * 0.5f * subDt,
+                body.rotation.y + dq.y * 0.5f * subDt,
+                body.rotation.z + dq.z * 0.5f * subDt,
+                body.rotation.w + dq.w * 0.5f * subDt));
 
             float damping = 1.0f - (0.01f * subDt * 60.0f);
             if (damping < 0) damping = 0;
@@ -511,6 +907,7 @@ void PhysicsSimulation::stepSimulation(float deltaTime) {
             if (body.position.y < -100.0f) {
                 body.position.y = 100.0f;
                 body.velocity = Vec3(0, 0, 0);
+                body.angularVelocity = Vec3(0, 0, 0);
             }
         }
 
@@ -521,12 +918,13 @@ void PhysicsSimulation::stepSimulation(float deltaTime) {
             auto shapeIt2 = s_collisionShapes.find(shapeIt->second);
             if (shapeIt2 == s_collisionShapes.end()) continue;
 
-            if (shapeIt2->second.type == CollisionShape::SPHERE) {
-                resolveSphereGround(body, shapeIt2->second);
+            if (shapeIt2->second.type == CollisionShape::SPHERE ||
+                shapeIt2->second.type == CollisionShape::CAPSULE) {
+                resolveSphereGround(body, shapeIt2->second, id);
             }
         }
 
-        // Sphere vs environment mesh collisions
+        // Sphere/Capsule vs environment mesh collisions
         if (s_envMeshValid) {
             for (auto& [id, body] : s_rigidBodies) {
                 if (body.isStatic || body.isKinematic || !body.isActive) continue;
@@ -534,8 +932,9 @@ void PhysicsSimulation::stepSimulation(float deltaTime) {
                 if (shapeIt == s_bodyShapeMap.end()) continue;
                 auto shapeIt2 = s_collisionShapes.find(shapeIt->second);
                 if (shapeIt2 == s_collisionShapes.end()) continue;
-                if (shapeIt2->second.type != CollisionShape::SPHERE) continue;
-                resolveSphereMesh(body, shapeIt2->second.radius);
+                if (shapeIt2->second.type != CollisionShape::SPHERE &&
+                    shapeIt2->second.type != CollisionShape::CAPSULE) continue;
+                resolveSphereMesh(body, shapeIt2->second, id);
             }
         }
 
@@ -572,13 +971,26 @@ void PhysicsSimulation::stepSimulation(float deltaTime) {
             auto itB = s_rigidBodies.find(joint.bodyB);
             if (itA == s_rigidBodies.end() || itB == s_rigidBodies.end()) continue;
 
-            applyJointConstraint(joint, itA->second, itB->second);
+            if (joint.type == Joint::CONE_TWIST) {
+                joint.forceAccumulator = 0.0f;
+                solveConeTwistJoint(joint, itA->second, itB->second);
+                if (joint.forceAccumulator > joint.breakForce) {
+                    joint.isBroken = true;
+                }
+            } else {
+                applyJointConstraint(joint, itA->second, itB->second);
+            }
         }
     }
 }
 
 void PhysicsSimulation::setGravity(const Vec3& gravity) {
     s_gravity = gravity;
+}
+
+bool PhysicsSimulation::isBodyGrounded(uint64_t id) {
+    auto it = s_bodyContactMap.find(id);
+    return it != s_bodyContactMap.end() && it->second;
 }
 
 uint64_t PhysicsSimulation::createRigidBodyWithShape(const Vec3& position, const Quat& rotation, float mass,
@@ -617,6 +1029,7 @@ uint64_t PhysicsSimulation::createRigidBodyWithShape(const Vec3& position, const
     }
 
     uint64_t shapeId = createCollisionShape(shape);
+    computeInverseInertia(body, shape);
     s_rigidBodies[id] = body;
     s_bodyShapeMap[id] = shapeId;
 
@@ -638,13 +1051,23 @@ void PhysicsSimulation::setFriction(uint64_t id, float friction) {
 }
 
 void PhysicsSimulation::setLinearFactor(uint64_t id, const Vec3& factor) {
-    (void)id;
-    (void)factor;
+    auto it = s_rigidBodies.find(id);
+    if (it != s_rigidBodies.end()) {
+        it->second.linearFactor = Vec3(
+            clamp(factor.x, 0.0f, 1.0f),
+            clamp(factor.y, 0.0f, 1.0f),
+            clamp(factor.z, 0.0f, 1.0f));
+    }
 }
 
 void PhysicsSimulation::setAngularFactor(uint64_t id, const Vec3& factor) {
-    (void)id;
-    (void)factor;
+    auto it = s_rigidBodies.find(id);
+    if (it != s_rigidBodies.end()) {
+        it->second.angularFactor = Vec3(
+            clamp(factor.x, 0.0f, 1.0f),
+            clamp(factor.y, 0.0f, 1.0f),
+            clamp(factor.z, 0.0f, 1.0f));
+    }
 }
 
 void PhysicsSimulation::setKinematicPose(uint64_t id, const Vec3& position, const Quat& rotation) {
@@ -661,23 +1084,67 @@ void PhysicsSimulation::setKinematicPose(uint64_t id, const Vec3& position, cons
 uint64_t PhysicsSimulation::createConeTwistJoint(uint64_t bodyA, uint64_t bodyB,
                                                   const Vec3& pivotA, const Vec3& pivotB,
                                                   float swingSpan1, float swingSpan2, float twistSpan) {
+    return createConeTwistJointEx(bodyA, bodyB, pivotA, pivotB,
+                                  Vec3(0, 0, 1), Vec3(0, 0, 1),
+                                  swingSpan1, swingSpan2, twistSpan);
+}
+
+uint64_t PhysicsSimulation::createConeTwistJointEx(uint64_t bodyA, uint64_t bodyB,
+                                                   const Vec3& pivotA, const Vec3& pivotB,
+                                                   const Vec3& axisA, const Vec3& axisB,
+                                                   float swingSpan1, float swingSpan2, float twistSpan) {
     uint64_t id = s_nextId++;
     Joint joint;
     joint.id = id;
+    joint.type = Joint::CONE_TWIST;
     joint.bodyA = bodyA;
     joint.bodyB = bodyB;
     joint.pivotA = pivotA;
     joint.pivotB = pivotB;
-    joint.breakForce = std::min({swingSpan1, swingSpan2, twistSpan}) * 10.0f;
+    Vec3 aA = axisA, aB = axisB;
+    if (vec3LengthSq(aA) < 1e-6f) aA = Vec3(0, 0, 1);
+    if (vec3LengthSq(aB) < 1e-6f) aB = Vec3(0, 0, 1);
+    joint.axisA = vec3Normalize(aA);
+    joint.axisB = vec3Normalize(aB);
+    joint.swingSpan1 = std::max(0.0f, swingSpan1);
+    joint.swingSpan2 = std::max(0.0f, swingSpan2);
+    joint.twistSpan = std::max(0.0f, twistSpan);
+    joint.linearLimit = 0.0f;
+    joint.angularLimit = 0.0f;
+    // Default break force: a hard impact (death impulse) should be able to
+    // tear limbs off, but normal ragdoll stresses must not. With typical
+    // ragdoll masses (1-5 kg) the per-frame constraint impulse is on the
+    // order of tens; 300 gives a safety margin and preserves the old
+    // "snap under extreme force" semantics.
+    joint.breakForce = 300.0f;
+    joint.forceAccumulator = 0.0f;
     joint.isBroken = false;
     s_joints[id] = joint;
     return id;
 }
 
+void PhysicsSimulation::setJointAngularLimits(uint64_t jointId, float swingSpan1, float swingSpan2, float twistSpan) {
+    auto it = s_joints.find(jointId);
+    if (it != s_joints.end()) {
+        it->second.swingSpan1 = std::max(0.0f, swingSpan1);
+        it->second.swingSpan2 = std::max(0.0f, swingSpan2);
+        it->second.twistSpan = std::max(0.0f, twistSpan);
+    }
+}
+
 void PhysicsSimulation::setJointLimit(uint64_t jointId, float linearLimit, float angularLimit) {
     auto it = s_joints.find(jointId);
     if (it != s_joints.end()) {
-        it->second.breakForce = linearLimit * angularLimit * 5.0f;
+        it->second.linearLimit = linearLimit;
+        it->second.angularLimit = angularLimit;
+        if (linearLimit > 0.0f) {
+            it->second.breakForce = linearLimit;
+        }
+        if (angularLimit > 0.0f && it->second.type == Joint::CONE_TWIST) {
+            // Interpret angularLimit as a twist clamp (Bullet-style) when it
+            // is tighter than the configured twist span.
+            it->second.twistSpan = std::min(it->second.twistSpan, angularLimit);
+        }
     }
 }
 

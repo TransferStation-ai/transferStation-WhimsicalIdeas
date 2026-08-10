@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <cstdint>
+#include <map>
 
 static const int MAX_SOLIDS = 256;
 static const uint32_t MAX_FILE_SIZE = 32 * 1024 * 1024;
@@ -269,6 +270,202 @@ static void parseSolidNames(const uint8_t* data, int kvStart, int kvEnd,
     }
 }
 
+// Parse the full per-solid property set from the KeyValues text section:
+// parent, mass, surfaceprop, damping, rotdamping, inertia, volume.
+static void parseSolidProperties(const uint8_t* data, int kvStart, int kvEnd,
+                                 std::vector<PhyParser::PhySolid>& solids) {
+    std::string kvText(reinterpret_cast<const char*>(data) + kvStart, kvEnd - kvStart);
+    size_t idx = 0;
+    while (idx < kvText.size()) {
+        size_t blockStart = kvText.find("solid", idx);
+        if (blockStart == std::string::npos) break;
+        size_t braceOpen = kvText.find('{', blockStart);
+        if (braceOpen == std::string::npos) break;
+        size_t braceClose = kvText.find('}', braceOpen);
+        if (braceClose == std::string::npos) break;
+
+        std::string block = kvText.substr(braceOpen + 1, braceClose - braceOpen - 1);
+        int solidIndex = -1;
+        std::map<std::string, std::string> props;
+
+        size_t propIdx = 0;
+        while (true) {
+            size_t q1 = block.find('"', propIdx); if (q1 == std::string::npos) break;
+            size_t q2 = block.find('"', q1 + 1); if (q2 == std::string::npos) break;
+            size_t q3 = block.find('"', q2 + 1); if (q3 == std::string::npos) break;
+            size_t q4 = block.find('"', q3 + 1); if (q4 == std::string::npos) break;
+            std::string key = block.substr(q1 + 1, q2 - q1 - 1);
+            std::string value = block.substr(q3 + 1, q4 - q3 - 1);
+            props[key] = value;
+            if (key == "index") { try { solidIndex = std::stoi(value); } catch (...) {} }
+            propIdx = q4 + 1;
+        }
+
+        if (solidIndex >= 0 && solidIndex < static_cast<int>(solids.size())) {
+            auto& solid = solids[solidIndex];
+            auto getF = [&](const char* k, float def) -> float {
+                auto it = props.find(k);
+                if (it == props.end()) return def;
+                try { return std::stof(it->second); } catch (...) { return def; }
+            };
+            auto getS = [&](const char* k) -> std::string {
+                auto it = props.find(k);
+                return (it != props.end()) ? it->second : "";
+            };
+            solid.parent = (props.count("parent") && !props["parent"].empty()) ? std::stoi(props["parent"]) : -1;
+            solid.mass = getF("mass", 0.0f);
+            solid.surfaceprop = getS("surfaceprop");
+            solid.damping = getF("damping", 0.0f);
+            solid.rotdamping = getF("rotdamping", 0.0f);
+            solid.inertia = getF("inertia", 0.0f);
+            solid.volume = getF("volume", 0.0f);
+        }
+        idx = braceClose + 1;
+    }
+}
+
+// Best-effort parse of the "ragdoll" -> "joints" KeyValues block, which maps
+// each joint-owner (child) bone to its parent bone. Real Source ragdolls
+// store the numeric constraint data (pivot/axis/limits) in the binary
+// ragdoll_constraint_t section, which is not decoded here.
+static void parseRagdollJoints(const uint8_t* data, int kvStart, int kvEnd,
+                               std::vector<PhyParser::RagdollJointRef>& joints) {
+    std::string kvText(reinterpret_cast<const char*>(data) + kvStart, kvEnd - kvStart);
+    size_t ragdollPos = 0;
+    while (true) {
+        size_t rPos = kvText.find("ragdoll", ragdollPos);
+        if (rPos == std::string::npos) break;
+        size_t braceOpen = kvText.find('{', rPos);
+        if (braceOpen == std::string::npos) break;
+        size_t braceClose = kvText.find('}', braceOpen);
+        if (braceClose == std::string::npos) break;
+
+        size_t jPos = kvText.find("joints", braceOpen);
+        if (jPos != std::string::npos && jPos < braceClose) {
+            size_t jOpen = kvText.find('{', jPos);
+            size_t jClose = kvText.find('}', jOpen);
+            if (jOpen != std::string::npos && jClose != std::string::npos && jClose > jOpen && jClose < braceClose) {
+                std::string jointBlock = kvText.substr(jOpen + 1, jClose - jOpen - 1);
+                std::vector<std::string> tokens;
+                size_t i = 0;
+                while (i < jointBlock.size()) {
+                    if (jointBlock[i] == '"') {
+                        size_t end = jointBlock.find('"', i + 1);
+                        if (end == std::string::npos) break;
+                        tokens.push_back(jointBlock.substr(i + 1, end - i - 1));
+                        i = end + 1;
+                    } else {
+                        i++;
+                    }
+                }
+                for (size_t t = 0; t + 1 < tokens.size(); t += 2) {
+                    PhyParser::RagdollJointRef ref;
+                    ref.name = tokens[t];
+                    ref.parentName = tokens[t + 1];
+                    joints.push_back(ref);
+                }
+            }
+        }
+        ragdollPos = braceClose + 1;
+    }
+}
+
+// Parse "ragdollconstraint" blocks. Each block names parent/child by solid
+// INDEX (not bone name); names are resolved through the solid table. The
+// pivot is estimated as the child solid's convex-hull vertex centroid.
+static void parseRagdollConstraintBlocks(const uint8_t* data, int kvStart, int kvEnd,
+                                         std::vector<PhyParser::PhySolid>& solids,
+                                         std::vector<PhyParser::RagdollConstraint>& out) {
+    std::string kvText(reinterpret_cast<const char*>(data) + kvStart, kvEnd - kvStart);
+    size_t idx = 0;
+    while (idx < kvText.size()) {
+        size_t blockStart = kvText.find("ragdollconstraint", idx);
+        if (blockStart == std::string::npos) break;
+        size_t braceOpen = kvText.find('{', blockStart);
+        if (braceOpen == std::string::npos) break;
+        size_t braceClose = kvText.find('}', braceOpen);
+        if (braceClose == std::string::npos) break;
+
+        std::string block = kvText.substr(braceOpen + 1, braceClose - braceOpen - 1);
+        PhyParser::RagdollConstraint c;
+        std::map<std::string, std::string> props;
+
+        size_t propIdx = 0;
+        while (true) {
+            size_t q1 = block.find('"', propIdx); if (q1 == std::string::npos) break;
+            size_t q2 = block.find('"', q1 + 1); if (q2 == std::string::npos) break;
+            size_t q3 = block.find('"', q2 + 1); if (q3 == std::string::npos) break;
+            size_t q4 = block.find('"', q3 + 1); if (q4 == std::string::npos) break;
+            props[block.substr(q1 + 1, q2 - q1 - 1)] = block.substr(q3 + 1, q4 - q3 - 1);
+            propIdx = q4 + 1;
+        }
+
+        auto getF = [&](const char* k, float def) -> float {
+            auto it = props.find(k);
+            if (it == props.end()) return def;
+            try { return std::stof(it->second); } catch (...) { return def; }
+        };
+        auto getI = [&](const char* k, int def) -> int {
+            auto it = props.find(k);
+            if (it == props.end()) return def;
+            try { return std::stoi(it->second); } catch (...) { return def; }
+        };
+
+        c.parentIndex = getI("parent", -1);
+        c.childIndex = getI("child", -1);
+        c.xmin = getF("xmin", 0.0f); c.xmax = getF("xmax", 0.0f); c.xfriction = getF("xfriction", 0.0f);
+        c.ymin = getF("ymin", 0.0f); c.ymax = getF("ymax", 0.0f); c.yfriction = getF("yfriction", 0.0f);
+        c.zmin = getF("zmin", 0.0f); c.zmax = getF("zmax", 0.0f); c.zfriction = getF("zfriction", 0.0f);
+
+        // Resolve names + estimate pivot from child solid hull centroid.
+        if (c.parentIndex >= 0 && c.parentIndex < static_cast<int>(solids.size())) {
+            c.parentName = solids[c.parentIndex].name;
+        }
+        if (c.childIndex >= 0 && c.childIndex < static_cast<int>(solids.size())) {
+            const auto& child = solids[c.childIndex];
+            c.childName = child.name;
+            float sx = 0, sy = 0, sz = 0; int n = 0;
+            for (const auto& hull : child.convexHulls) {
+                for (const auto& v : hull.vertices) { sx += v.x; sy += v.y; sz += v.z; n++; }
+            }
+            if (n > 0) {
+                c.pivotX = sx / n; c.pivotY = sy / n; c.pivotZ = sz / n;
+            }
+        }
+
+        out.push_back(c);
+        idx = braceClose + 1;
+    }
+}
+
+// Parse the "editparams" block: rootname + totalmass.
+static void parseEditParams(const uint8_t* data, int kvStart, int kvEnd,
+                            std::string& rootName, float& totalMass) {
+    std::string kvText(reinterpret_cast<const char*>(data) + kvStart, kvEnd - kvStart);
+    size_t blockStart = kvText.find("editparams");
+    if (blockStart == std::string::npos) return;
+    size_t braceOpen = kvText.find('{', blockStart);
+    if (braceOpen == std::string::npos) return;
+    size_t braceClose = kvText.find('}', braceOpen);
+    if (braceClose == std::string::npos) return;
+
+    std::string block = kvText.substr(braceOpen + 1, braceClose - braceOpen - 1);
+    std::map<std::string, std::string> props;
+    size_t propIdx = 0;
+    while (true) {
+        size_t q1 = block.find('"', propIdx); if (q1 == std::string::npos) break;
+        size_t q2 = block.find('"', q1 + 1); if (q2 == std::string::npos) break;
+        size_t q3 = block.find('"', q2 + 1); if (q3 == std::string::npos) break;
+        size_t q4 = block.find('"', q3 + 1); if (q4 == std::string::npos) break;
+        props[block.substr(q1 + 1, q2 - q1 - 1)] = block.substr(q3 + 1, q4 - q3 - 1);
+        propIdx = q4 + 1;
+    }
+    auto it = props.find("rootname");
+    if (it != props.end()) rootName = it->second;
+    it = props.find("totalmass");
+    if (it != props.end()) { try { totalMass = std::stof(it->second); } catch (...) {} }
+}
+
 PhyParser::ParsedPhy PhyParser::parse(const std::vector<uint8_t>& data) {
     ParsedPhy result;
     result.valid = false;
@@ -355,6 +552,10 @@ PhyParser::ParsedPhy PhyParser::parse(const std::vector<uint8_t>& data) {
 
         if (kvStart > 0) {
             parseSolidNames(raw, kvStart, fileLen, result.solids);
+            parseSolidProperties(raw, kvStart, fileLen, result.solids);
+            parseRagdollJoints(raw, kvStart, fileLen, result.ragdollJoints);
+            parseRagdollConstraintBlocks(raw, kvStart, fileLen, result.solids, result.ragdollConstraints);
+            parseEditParams(raw, kvStart, fileLen, result.rootName, result.totalMass);
         }
 
         result.valid = true;

@@ -23,13 +23,34 @@ public class PhyParser {
         public int solidCount;
         public int checksum;
         public List<PhySolid> solids = new ArrayList<>();
+        public List<PhyConstraint> ragdollConstraints = new ArrayList<>();
+        public String rootName;
+        public float totalMass;
         public boolean valid;
     }
 
     public static class PhySolid {
         public int index;
         public String name;
+        public int parent = -1;
+        public float mass;
+        public String surfaceprop;
+        public float damping;
+        public float rotdamping;
+        public float inertia;
+        public float volume;
         public List<PhyConvexHull> convexHulls = new ArrayList<>();
+    }
+
+    public static class PhyConstraint {
+        public int parentIndex = -1;
+        public int childIndex = -1;
+        public String parentName;
+        public String childName;
+        public float xmin, xmax, xfriction;
+        public float ymin, ymax, yfriction;
+        public float zmin, zmax, zfriction;
+        public float pivotX, pivotY, pivotZ;
     }
 
     public static class PhyConvexHull {
@@ -134,6 +155,10 @@ public class PhyParser {
                 cursor = sectionOrigin + 4 + sectionSize;
             }
 
+            parseSolidProperties(data, kvStart, fileLen, result.solids);
+            parseRagdollConstraintBlocks(data, kvStart, fileLen, result.solids, result.ragdollConstraints);
+            parseEditParams(data, kvStart, fileLen, result);
+
             result.valid = true;
         } catch (Exception e) {
             LOGGER.debug("[PhyParser] Parse error (non-fatal): {}", e.getMessage());
@@ -193,6 +218,130 @@ public class PhyParser {
             idx = braceClose + 1;
         }
         return names;
+    }
+
+    private static void parseSolidProperties(byte[] data, int kvStart, int kvEnd, List<PhySolid> solids) {
+        String kvText = new String(data, kvStart, kvEnd - kvStart, StandardCharsets.UTF_8);
+        int idx = 0;
+        while (idx < kvText.length()) {
+            int blockStart = kvText.indexOf("solid", idx);
+            if (blockStart < 0) break;
+            int braceOpen = kvText.indexOf('{', blockStart);
+            if (braceOpen < 0) break;
+            int braceClose = kvText.indexOf('}', braceOpen);
+            if (braceClose < 0) break;
+            String block = kvText.substring(braceOpen + 1, braceClose);
+            Integer solidIndex = null;
+            Map<String, String> props = new HashMap<>();
+            int propIdx = 0;
+            while (true) {
+                int q1 = block.indexOf('"', propIdx); if (q1 < 0) break;
+                int q2 = block.indexOf('"', q1 + 1); if (q2 < 0) break;
+                int q3 = block.indexOf('"', q2 + 1); if (q3 < 0) break;
+                int q4 = block.indexOf('"', q3 + 1); if (q4 < 0) break;
+                props.put(block.substring(q1 + 1, q2), block.substring(q3 + 1, q4));
+                if (block.substring(q1 + 1, q2).equals("index")) {
+                    try { solidIndex = Integer.parseInt(block.substring(q3 + 1, q4)); }
+                    catch (NumberFormatException ignored) {}
+                }
+                propIdx = q4 + 1;
+            }
+            if (solidIndex != null && solidIndex >= 0 && solidIndex < solids.size()) {
+                PhySolid solid = solids.get(solidIndex);
+                solid.parent = parseIntOr(props.get("parent"), -1);
+                solid.mass = parseFloatOr(props.get("mass"), 0f);
+                solid.surfaceprop = props.getOrDefault("surfaceprop", "");
+                solid.damping = parseFloatOr(props.get("damping"), 0f);
+                solid.rotdamping = parseFloatOr(props.get("rotdamping"), 0f);
+                solid.inertia = parseFloatOr(props.get("inertia"), 0f);
+                solid.volume = parseFloatOr(props.get("volume"), 0f);
+            }
+            idx = braceClose + 1;
+        }
+    }
+
+    private static void parseRagdollConstraintBlocks(byte[] data, int kvStart, int kvEnd,
+                                                     List<PhySolid> solids, List<PhyConstraint> out) {
+        String kvText = new String(data, kvStart, kvEnd - kvStart, StandardCharsets.UTF_8);
+        int idx = 0;
+        while (idx < kvText.length()) {
+            int blockStart = kvText.indexOf("ragdollconstraint", idx);
+            if (blockStart < 0) break;
+            int braceOpen = kvText.indexOf('{', blockStart);
+            if (braceOpen < 0) break;
+            int braceClose = kvText.indexOf('}', braceOpen);
+            if (braceClose < 0) break;
+            String block = kvText.substring(braceOpen + 1, braceClose);
+            Map<String, String> props = new HashMap<>();
+            int propIdx = 0;
+            while (true) {
+                int q1 = block.indexOf('"', propIdx); if (q1 < 0) break;
+                int q2 = block.indexOf('"', q1 + 1); if (q2 < 0) break;
+                int q3 = block.indexOf('"', q2 + 1); if (q3 < 0) break;
+                int q4 = block.indexOf('"', q3 + 1); if (q4 < 0) break;
+                props.put(block.substring(q1 + 1, q2), block.substring(q3 + 1, q4));
+                propIdx = q4 + 1;
+            }
+            PhyConstraint c = new PhyConstraint();
+            c.parentIndex = parseIntOr(props.get("parent"), -1);
+            c.childIndex = parseIntOr(props.get("child"), -1);
+            c.xmin = parseFloatOr(props.get("xmin"), 0f); c.xmax = parseFloatOr(props.get("xmax"), 0f);
+            c.xfriction = parseFloatOr(props.get("xfriction"), 0f);
+            c.ymin = parseFloatOr(props.get("ymin"), 0f); c.ymax = parseFloatOr(props.get("ymax"), 0f);
+            c.yfriction = parseFloatOr(props.get("yfriction"), 0f);
+            c.zmin = parseFloatOr(props.get("zmin"), 0f); c.zmax = parseFloatOr(props.get("zmax"), 0f);
+            c.zfriction = parseFloatOr(props.get("zfriction"), 0f);
+
+            if (c.parentIndex >= 0 && c.parentIndex < solids.size()) {
+                c.parentName = solids.get(c.parentIndex).name;
+            }
+            if (c.childIndex >= 0 && c.childIndex < solids.size()) {
+                PhySolid child = solids.get(c.childIndex);
+                c.childName = child.name;
+                float sx = 0, sy = 0, sz = 0; int n = 0;
+                for (PhyConvexHull hull : child.convexHulls) {
+                    for (PhyVertex v : hull.vertices) { sx += v.x; sy += v.y; sz += v.z; n++; }
+                }
+                if (n > 0) {
+                    c.pivotX = sx / n; c.pivotY = sy / n; c.pivotZ = sz / n;
+                }
+            }
+            out.add(c);
+            idx = braceClose + 1;
+        }
+    }
+
+    private static void parseEditParams(byte[] data, int kvStart, int kvEnd, ParsedPhy result) {
+        String kvText = new String(data, kvStart, kvEnd - kvStart, StandardCharsets.UTF_8);
+        int blockStart = kvText.indexOf("editparams");
+        if (blockStart < 0) return;
+        int braceOpen = kvText.indexOf('{', blockStart);
+        if (braceOpen < 0) return;
+        int braceClose = kvText.indexOf('}', braceOpen);
+        if (braceClose < 0) return;
+        String block = kvText.substring(braceOpen + 1, braceClose);
+        Map<String, String> props = new HashMap<>();
+        int propIdx = 0;
+        while (true) {
+            int q1 = block.indexOf('"', propIdx); if (q1 < 0) break;
+            int q2 = block.indexOf('"', q1 + 1); if (q2 < 0) break;
+            int q3 = block.indexOf('"', q2 + 1); if (q3 < 0) break;
+            int q4 = block.indexOf('"', q3 + 1); if (q4 < 0) break;
+            props.put(block.substring(q1 + 1, q2), block.substring(q3 + 1, q4));
+            propIdx = q4 + 1;
+        }
+        result.rootName = props.getOrDefault("rootname", "");
+        result.totalMass = parseFloatOr(props.get("totalmass"), 0f);
+    }
+
+    private static int parseIntOr(String v, int def) {
+        if (v == null) return def;
+        try { return Integer.parseInt(v.trim()); } catch (NumberFormatException e) { return def; }
+    }
+
+    private static float parseFloatOr(String v, float def) {
+        if (v == null) return def;
+        try { return Float.parseFloat(v.trim()); } catch (NumberFormatException e) { return def; }
     }
 
     private static void parseSurfaceData(byte[] data, int absoluteStart, int size, PhySolid solid, int solidIdx) {

@@ -20,7 +20,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 public class NpcRagdoll extends Entity {
@@ -47,12 +49,16 @@ public class NpcRagdoll extends Entity {
     private long[] jointIds = new long[0];
     private boolean physicsInitialized = false;
 
+    private boolean grounded = false;
+
     private boolean meshOwned = false;
 
     private float deathVelocityX = 0;
     private float deathVelocityY = 0.2f;
     private float deathVelocityZ = 0;
     private final float deathAngularVelY = 0;
+    private float deathAngularVelX = 0;
+    private float deathAngularVelZ = 0;
 
     public NpcRagdoll(EntityType<? extends NpcRagdoll> entityType, Level level) {
         super(entityType, level);
@@ -69,8 +75,8 @@ public class NpcRagdoll extends Entity {
         this.deathVelocityX = dvx;
         this.deathVelocityY = dvy;
         this.deathVelocityZ = dvz;
-        float deathAngularVelX = (float) (Math.random() * 2 - 1) * 0.3f;
-        float deathAngularVelZ = (float) (Math.random() * 2 - 1) * 0.3f;
+        this.deathAngularVelX = (float) (Math.random() * 2 - 1) * 1.2f;
+        this.deathAngularVelZ = (float) (Math.random() * 2 - 1) * 1.2f;
         this.blocksBuilding = true;
     }
 
@@ -211,6 +217,10 @@ public class NpcRagdoll extends Entity {
             boneDepths[i] = depth;
         }
 
+        Map<String, PhyJointSpec> phySpecs = loadPhyConstraints();
+        Map<String, PhyParser.PhySolid> solidsByName = new HashMap<>();
+        loadPhySolidMap(solidsByName);
+
         for (int i = 0; i < boneCount; i++) {
             MdlDataTypes.Bone bone = modelBones.get(i);
 
@@ -229,31 +239,222 @@ public class NpcRagdoll extends Entity {
             float worldZ = baseZ + bx * sinYaw + bz * cosYaw;
             float worldY = baseY + by;
 
-            // Mass: root bones (depth 0) are heaviest, leaves are lightest
+            // Mass: root bones (depth 0) are heaviest, leaves are lightest.
+            // Override with the .phy solid mass when present.
             float mass = getMass(boneDepths, i, bone);
+            PhyParser.PhySolid solid = solidsByName.get(bone.name);
+            if (solid != null && solid.mass > 0) mass = solid.mass;
 
-            boneBodyIds[i] = PhysicsBridge.createRigidBody(worldX, worldY, worldZ, mass);
+            // Capsule: radius scaled to the bone's length, axis along Y.
+            float boneLen = boneLength(bone);
+            float capRadius = Math.max(0.1f, boneLen * modelScale * 0.18f);
+            float capHeight = Math.max(0.2f, boneLen * modelScale * 0.9f);
+            boneBodyIds[i] = PhysicsBridge.createRigidBodyWithShape(
+                worldX, worldY, worldZ, mass, PhysicsBridge.SHAPE_CAPSULE,
+                new float[]{capRadius, capHeight});
+
+            // Apply .phy damping if present (linear + angular).
+            if (solid != null && (solid.damping != 0 || solid.rotdamping != 0)) {
+                PhysicsBridge.setDamping(boneBodyIds[i],
+                    solid.damping > 0 ? solid.damping : 0.1f,
+                    solid.rotdamping > 0 ? solid.rotdamping : 0.1f);
+            }
+
             PhysicsBridge.setVelocity(boneBodyIds[i],
                     deathVelocityX, deathVelocityY + (float)(Math.random() * 0.5), deathVelocityZ);
+            // Give each bone a small random tumble so the ragdoll folds naturally.
+            PhysicsBridge.setAngularVelocity(boneBodyIds[i],
+                    deathAngularVelX * (float)(Math.random() * 0.5 + 0.5),
+                    deathAngularVelY,
+                    deathAngularVelZ * (float)(Math.random() * 0.5 + 0.5));
         }
 
-        // Create joints between parent and child bones
+        // Create joints between parent and child bones. Each joint is a real
+        // cone-twist (ball-in-socket + swing/twist limits) with the anchor
+        // expressed in each body's local frame and the joint axis aligned
+        // with the bone direction.
         int jointIdx = 0;
         for (int i = 0; i < boneCount; i++) {
             MdlDataTypes.Bone bone = modelBones.get(i);
             if (bone.parent >= 0 && bone.parent < boneCount) {
-                // Position joint at midpoint between parent and child
                 float[] parentPos = PhysicsBridge.getPosition(boneBodyIds[bone.parent]);
                 float[] childPos = PhysicsBridge.getPosition(boneBodyIds[i]);
-                float jx = (parentPos[0] + childPos[0]) / 2.0f - baseX;
-                float jy = (parentPos[1] + childPos[1]) / 2.0f - baseY;
-                float jz = (parentPos[2] + childPos[2]) / 2.0f - baseZ;
-                jointIds[jointIdx++] = PhysicsBridge.createJoint(
-                    boneBodyIds[bone.parent], boneBodyIds[i], jx, jy, jz, jx, jy, jz);
+
+                // .phy-driven joint spec (child bone name lookup), if available.
+                PhyJointSpec spec = (phySpecs != null) ? phySpecs.get(bone.name) : null;
+
+                float jx, jy, jz;
+                if (spec != null && spec.pivotMc != null) {
+                    // Pivot is relative to the child bone's creation position in
+                    // world space (Source space, convert via same transform).
+                    float px = -spec.pivotMc[1];
+                    float py = spec.pivotMc[2];
+                    float pz = spec.pivotMc[0];
+                    px *= modelScale; py *= modelScale; pz *= modelScale;
+                    float wx = baseX + px * cosYaw - pz * sinYaw;
+                    float wz = baseZ + px * sinYaw + pz * cosYaw;
+                    float wy = baseY + py;
+                    // Project onto the parent-child segment for stability.
+                    jx = (parentPos[0] + wx) * 0.5f;
+                    jy = (parentPos[1] + wy) * 0.5f;
+                    jz = (parentPos[2] + wz) * 0.5f;
+                } else {
+                    jx = (parentPos[0] + childPos[0]) / 2.0f;
+                    jy = (parentPos[1] + childPos[1]) / 2.0f;
+                    jz = (parentPos[2] + childPos[2]) / 2.0f;
+                }
+
+                // Local-frame anchors (bodies have identity rotation at creation).
+                float pax = jx - parentPos[0], pay = jy - parentPos[1], paz = jz - parentPos[2];
+                float pbx = jx - childPos[0], pby = jy - childPos[1], pbz = jz - childPos[2];
+
+                // Joint axis = bone direction (world == local at creation).
+                float dx = childPos[0] - parentPos[0];
+                float dy = childPos[1] - parentPos[1];
+                float dz = childPos[2] - parentPos[2];
+                float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (len < 1e-4f) { dx = 0; dy = 1; dz = 0; len = 1; }
+                float ax = dx / len, ay = dy / len, az = dz / len;
+
+                float swing1, swing2, twist;
+                if (spec != null) {
+                    swing1 = spec.swing1; swing2 = spec.swing2; twist = spec.twist;
+                } else {
+                    float[] spans = getJointSpans(bone.parent >= 0 ? modelBones.get(bone.parent).name : null, bone.name);
+                    swing1 = spans[0]; swing2 = spans[1]; twist = spans[2];
+                }
+
+                long jointId = PhysicsBridge.createConeTwistJointEx(
+                    boneBodyIds[bone.parent], boneBodyIds[i],
+                    pax, pay, paz, pbx, pby, pbz,
+                    ax, ay, az, ax, ay, az,
+                    swing1, swing2, twist);
+                jointIds[jointIdx++] = jointId;
+
+                if (spec != null && spec.friction > 0) {
+                    // Friction softens the swing/twist limits slightly.
+                    float damped = 1.0f / (1.0f + spec.friction * 0.1f);
+                    PhysicsBridge.setJointAngularLimits(jointId,
+                        swing1 * damped, swing2 * damped, twist * damped);
+                }
             }
         }
 
         meshOwned = true;
+    }
+
+    /**
+     * Best-effort resolution of .phy-driven constraints for this ragdoll.
+     * Returns a map from child bone name -> {parentName, pivot(MC space),
+     * swing1(rad), swing2(rad), twist(rad), friction}. Falls back through:
+     *   .phy ragdollconstraint blocks -> ragdoll->joints + heuristic spans
+     *   -> empty (caller uses pure heuristic).
+     */
+    private Map<String, PhyJointSpec> loadPhyConstraints() {
+        Map<String, PhyJointSpec> result = new HashMap<>();
+        String modelName = entityData.get(DATA_MODEL_NAME);
+        if (modelName.isEmpty()) return result;
+
+        Path modelsDir = MdlModelRenderer.getModelsDir();
+        if (modelsDir == null) return result;
+        Path packageDir = modelsDir.resolve(modelName);
+        Path phyFile = findPhyFile(packageDir);
+        if (phyFile == null) return result;
+
+        PhyParser.ParsedPhy phy;
+        try {
+            ModelParserStrategy strategy = ModelParserProvider.getStrategy();
+            phy = strategy.parsePhy(Files.readAllBytes(phyFile));
+        } catch (Exception e) {
+            LOGGER.debug("[NpcRagdoll] Failed to parse PHY: {}", e.getMessage());
+            return result;
+        }
+        if (phy == null || !phy.valid) return result;
+
+        // Preferred: real ragdollconstraint blocks.
+        for (PhyParser.PhyConstraint c : phy.ragdollConstraints) {
+            if (c.childName == null || c.parentName == null) continue;
+            float swing1 = rad(c.xmin, c.xmax);
+            float swing2 = rad(c.ymin, c.ymax);
+            float twist = rad(c.zmin, c.zmax);
+            float friction = (c.xfriction + c.yfriction + c.zfriction) / 3f;
+            PhyJointSpec spec = new PhyJointSpec(c.parentName, new float[]{c.pivotX, c.pivotY, c.pivotZ},
+                    swing1, swing2, twist, friction);
+            result.put(c.childName, spec);
+        }
+        if (!result.isEmpty()) return result;
+
+        // Fallback: .phy ragdoll->joints are not exposed through the Java
+        // parser, so leave the map empty — the caller uses pure heuristics.
+        return result;
+    }
+
+    /** Convert a Source Euler range [min,max] (radians) into a cone half-angle. */
+    private static float rad(float min, float max) {
+        float span = Math.abs(max - min) * 0.5f;
+        return Math.min(span, (float) Math.PI);
+    }
+
+    private static Path findPhyFile(Path packageDir) {
+        if (packageDir == null) return null;
+        try (Stream<Path> files = Files.walk(packageDir, 4)) {
+            for (Path f : files.filter(Files::isRegularFile).toList()) {
+                if (f.getFileName().toString().toLowerCase().endsWith(".phy")) return f;
+            }
+        } catch (IOException e) {
+            LOGGER.debug("[NpcRagdoll] PHY search failed: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /** Resolved .phy joint spec (all values in Minecraft space / radians). */
+    private static class PhyJointSpec {
+        final String parentName;
+        final float[] pivotMc;
+        final float swing1, swing2, twist, friction;
+        PhyJointSpec(String parentName, float[] pivotMc, float swing1, float swing2, float twist, float friction) {
+            this.parentName = parentName;
+            this.pivotMc = pivotMc;
+            this.swing1 = swing1;
+            this.swing2 = swing2;
+            this.twist = twist;
+            this.friction = friction;
+        }
+    }
+
+    /**
+     * Pick swing/twist spans (radians) for a bone joint based on the Source
+     * bone-name conventions used by ValveBiped rigs. Hinge-like joints
+     * (knee/elbow/foot/hand) get a narrow cone, ball joints (shoulder/hip)
+     * get a wide cone, the spine/neck get moderate values.
+     */
+    private static float[] getJointSpans(String parentName, String childName) {
+        String parent = parentName != null ? parentName.toLowerCase() : "";
+        String child = childName != null ? childName.toLowerCase() : "";
+        String combined = parent + " " + child;
+
+        if (containsAny(combined, "calf", "forearm", "foot", "toe", "hand", "finger", "elbow", "knee", "ankle")) {
+            // Hinge approximation: narrow swing cone + small twist.
+            return new float[]{0.25f, 0.9f, 0.15f};
+        }
+        if (containsAny(combined, "upperarm", "thigh", "shoulder", "clavicle")) {
+            // Ball joint: wide swing cone, moderate twist.
+            return new float[]{1.2f, 1.2f, 0.8f};
+        }
+        if (containsAny(combined, "neck", "head", "skull")) {
+            return new float[]{0.55f, 0.55f, 0.45f};
+        }
+        if (containsAny(combined, "spine", "pelvis", "chest", "abdomen")) {
+            return new float[]{0.6f, 0.6f, 0.5f};
+        }
+        return new float[]{0.8f, 0.8f, 0.6f};
+    }
+
+    private static boolean containsAny(String text, String... keys) {
+        for (String key : keys) {
+            if (text.contains(key)) return true;
+        }
+        return false;
     }
 
     private static float getMass(int[] boneDepths, int i, MdlDataTypes.Bone bone) {
@@ -272,6 +473,30 @@ public class NpcRagdoll extends Entity {
         else if (name.contains("upperarm") || name.contains("thigh") || name.contains("calf")) mass = 3.0f;
         else if (name.contains("foot") || name.contains("hand") || name.contains("forearm")) mass = 1.5f;
         return mass;
+    }
+
+    private void loadPhySolidMap(Map<String, PhyParser.PhySolid> out) {
+        String modelName = entityData.get(DATA_MODEL_NAME);
+        if (modelName.isEmpty()) return;
+        Path modelsDir = MdlModelRenderer.getModelsDir();
+        if (modelsDir == null) return;
+        Path phyFile = findPhyFile(modelsDir.resolve(modelName));
+        if (phyFile == null) return;
+        try {
+            PhyParser.ParsedPhy phy = ModelParserProvider.getStrategy().parsePhy(Files.readAllBytes(phyFile));
+            if (phy != null && phy.valid) {
+                for (PhyParser.PhySolid s : phy.solids) {
+                    if (s.name != null) out.put(s.name, s);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.debug("[NpcRagdoll] Solid map failed: {}", e.getMessage());
+        }
+    }
+
+    private static float boneLength(MdlDataTypes.Bone bone) {
+        float[] pos = bone.pos;
+        return (float) Math.sqrt(pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2]);
     }
 
     private List<MdlDataTypes.Bone> loadModelBones() {
@@ -380,6 +605,8 @@ public class NpcRagdoll extends Entity {
             boneBodyIds[i] = PhysicsBridge.createRigidBody(worldX, worldY, worldZ, boneMasses[i]);
             PhysicsBridge.setVelocity(boneBodyIds[i],
                     deathVelocityX, deathVelocityY + (float)(Math.random() * 0.5), deathVelocityZ);
+            PhysicsBridge.setAngularVelocity(boneBodyIds[i],
+                    deathAngularVelX, deathAngularVelY, deathAngularVelZ);
         }
 
         for (int i = 0; i < boneCount - 1; i++) {
@@ -420,6 +647,12 @@ public class NpcRagdoll extends Entity {
         avgZ /= boneBodyIds.length;
 
         this.setPosRaw(avgX, avgY, avgZ);
+
+        boolean anyGrounded = false;
+        for (long bodyId : boneBodyIds) {
+            if (PhysicsBridge.isBodyGrounded(bodyId)) { anyGrounded = true; break; }
+        }
+        this.grounded = anyGrounded;
     }
 
     private void cleanupPhysics() {
@@ -476,6 +709,11 @@ public class NpcRagdoll extends Entity {
 
     public boolean isFading() {
         return age > DESPAWN_START;
+    }
+
+    /** True if at least one bone touched the ground in the last physics step. */
+    public boolean isGrounded() {
+        return grounded;
     }
 
     public long[] getBoneBodyIds() {

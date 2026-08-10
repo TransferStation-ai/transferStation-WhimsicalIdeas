@@ -473,6 +473,39 @@ public class WindowsNativeModelParserStrategy implements ModelParserStrategy {
                 result.solids.add(solid);
             }
 
+            // --- Segment A: per-solid physics properties.
+            int propCount = buf.getInt();
+            for (int i = 0; i < propCount && i < result.solids.size(); i++) {
+                PhyParser.PhySolid solid = result.solids.get(i);
+                solid.parent = buf.getInt();
+                solid.mass = buf.getFloat();
+                solid.surfaceprop = readString(buf);
+                solid.damping = buf.getFloat();
+                solid.rotdamping = buf.getFloat();
+                solid.inertia = buf.getFloat();
+                solid.volume = buf.getFloat();
+            }
+
+            // --- Segment B: ragdoll constraints.
+            int constraintCount = buf.getInt();
+            result.ragdollConstraints = new ArrayList<>(constraintCount);
+            for (int i = 0; i < constraintCount; i++) {
+                PhyParser.PhyConstraint c = new PhyParser.PhyConstraint();
+                c.parentIndex = buf.getInt();
+                c.childIndex = buf.getInt();
+                c.parentName = readString(buf);
+                c.childName = readString(buf);
+                c.xmin = buf.getFloat(); c.xmax = buf.getFloat(); c.xfriction = buf.getFloat();
+                c.ymin = buf.getFloat(); c.ymax = buf.getFloat(); c.yfriction = buf.getFloat();
+                c.zmin = buf.getFloat(); c.zmax = buf.getFloat(); c.zfriction = buf.getFloat();
+                c.pivotX = buf.getFloat(); c.pivotY = buf.getFloat(); c.pivotZ = buf.getFloat();
+                result.ragdollConstraints.add(c);
+            }
+
+            // --- Segment C: editparams.
+            result.rootName = readString(buf);
+            result.totalMass = buf.getFloat();
+
             result.valid = true;
             return result;
         } catch (Exception e) {
