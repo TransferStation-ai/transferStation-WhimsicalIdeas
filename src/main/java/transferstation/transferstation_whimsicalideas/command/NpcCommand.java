@@ -17,11 +17,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.RegistryObject;
 import transferstation.transferstation_whimsicalideas.DebugConfig;
 import transferstation.transferstation_whimsicalideas.Transferstation_whimsicalideas;
-import transferstation.transferstation_whimsicalideas.client.model.MdlModelRenderer;
-import transferstation.transferstation_whimsicalideas.client.model.NpcChatHandler;
-import transferstation.transferstation_whimsicalideas.client.model.NpcEntity;
-import transferstation.transferstation_whimsicalideas.client.model.NpcModelRegistry;
-import transferstation.transferstation_whimsicalideas.client.model.TextureDebugExporter;
+import transferstation.transferstation_whimsicalideas.client.model.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

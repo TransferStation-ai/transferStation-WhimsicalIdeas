@@ -1,7 +1,6 @@
 package transferstation.transferstation_whimsicalideas.client.animation;
 
 import org.joml.Quaternionf;
-import org.joml.Vector3f;
 
 /**
  * Cubic Hermite spline and improved quaternion interpolation utilities.

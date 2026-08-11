@@ -10,7 +10,9 @@ import transferstation.transferstation_whimsicalideas.client.model.SourceModelDa
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
 
 public class BBModelWriter {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();

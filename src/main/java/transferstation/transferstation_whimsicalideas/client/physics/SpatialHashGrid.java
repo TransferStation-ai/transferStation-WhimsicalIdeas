@@ -1,10 +1,6 @@
 package transferstation.transferstation_whimsicalideas.client.physics;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Spatial hash grid for broad-phase collision detection and spatial queries.

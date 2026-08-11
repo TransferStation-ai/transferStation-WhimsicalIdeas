@@ -4,7 +4,6 @@ import com.mojang.logging.LogUtils;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.physics.CollisionResponseHandler;
-import transferstation.transferstation_whimsicalideas.client.physics.PhysicsDebugRenderer;
 import transferstation.transferstation_whimsicalideas.client.physics.PhysicsMaterial;
 import transferstation.transferstation_whimsicalideas.client.physics.SpatialHashGrid;
 import transferstation.transferstation_whimsicalideas.client.physics.TriggerVolume;

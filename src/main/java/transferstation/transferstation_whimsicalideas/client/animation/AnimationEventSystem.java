@@ -145,21 +145,12 @@ public final class AnimationEventSystem {
     }
 
     /**
-     * A single frame event bound to an animation.
-     */
-    public static class AnimationEvent {
-        public final int frame;
-        public final EventType type;
-        public final Consumer<LivingEntity> listener;
+         * A single frame event bound to an animation.
+         */
+        public record AnimationEvent(int frame, EventType type, Consumer<LivingEntity> listener) {
+            public AnimationEvent(int frame, Consumer<LivingEntity> listener) {
+                this(frame, EventType.CUSTOM, listener);
+            }
 
-        public AnimationEvent(int frame, Consumer<LivingEntity> listener) {
-            this(frame, EventType.CUSTOM, listener);
-        }
-
-        public AnimationEvent(int frame, EventType type, Consumer<LivingEntity> listener) {
-            this.frame = frame;
-            this.type = type;
-            this.listener = listener;
-        }
     }
 }

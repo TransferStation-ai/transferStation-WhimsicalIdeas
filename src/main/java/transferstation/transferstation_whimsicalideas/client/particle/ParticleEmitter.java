@@ -5,12 +5,7 @@ import org.joml.Math;
 import org.joml.Vector3f;
 import transferstation.transferstation_whimsicalideas.client.particle.collision.ParticleCollisionHandler;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 import java.util.function.Consumer;
 
 public class ParticleEmitter {

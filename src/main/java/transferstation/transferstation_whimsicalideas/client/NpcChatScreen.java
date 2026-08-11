@@ -76,7 +76,7 @@ public class NpcChatScreen extends Screen {
                 && VoiceConfig.isEnabled()
                 && VoskSttEngine.isInitialized();
         micButton = addRenderableWidget(Button.builder(
-            Component.literal(micAvail ? "\uD83C\uDFA4" : "\u00A77\uD83C\uDFA4"),
+            Component.literal(micAvail ? "\uD83C\uDFA4" : "§7\uD83C\uDFA4"),
             btn -> handleMicPress()
         ).bounds(cx - 165, height - 30, 20, 18).build());
         micButton.active = micAvail;
@@ -97,10 +97,10 @@ public class NpcChatScreen extends Screen {
 
         // Quick reply toggle button
         addRenderableWidget(Button.builder(
-            Component.literal(showQuickReplies ? "\u25BC Quick" : "\u25B6 Quick"),
+            Component.literal(showQuickReplies ? "▼ Quick" : "▶ Quick"),
             btn -> {
                 showQuickReplies = !showQuickReplies;
-                btn.setMessage(Component.literal(showQuickReplies ? "\u25BC Quick" : "\u25B6 Quick"));
+                btn.setMessage(Component.literal(showQuickReplies ? "▼ Quick" : "▶ Quick"));
             }
         ).bounds(cx + 167, height - 30, 52, 18).build());
 
@@ -109,8 +109,7 @@ public class NpcChatScreen extends Screen {
             int qrStartY = height - 56;
             for (int i = 0; i < QUICK_REPLY_COUNT; i++) {
                 final int idx = i;
-                String label = i < DEFAULT_QUICK_REPLIES.length ? DEFAULT_QUICK_REPLIES[i] : "";
-                if (label.isEmpty()) continue;
+                String label = DEFAULT_QUICK_REPLIES[i];
                 addRenderableWidget(Button.builder(
                     Component.literal(label),
                     btn -> {
@@ -166,7 +165,7 @@ public class NpcChatScreen extends Screen {
 
             // Draw message bubble background
             int msgMaxWidth = 280;
-            String rawText = msg.isPlayer ? msg.text : msg.text;
+            String rawText = msg.text;
             List<FormattedCharSequence> lines = font.split(Component.literal(rawText), msgMaxWidth);
             int bubbleHeight = lines.size() * lineHeight + 4;
             int bubbleX = msg.isPlayer ? cx + 5 : cx - 148;
@@ -181,7 +180,7 @@ public class NpcChatScreen extends Screen {
             graphics.fillGradient(bubbleX, y - bubbleHeight + lineHeight, bubbleX + bubbleW, y + lineHeight, bubbleColor, bubbleColor);
 
             // Render text
-            String prefix = msg.isPlayer ? "\u00A7e\u4F60\u00A7r: " : "\u00A7b" + npcName + "\u00A7r: ";
+            String prefix = msg.isPlayer ? "§e你§r: " : "§b" + npcName + "§r: ";
             String text = prefix + rawText;
             var wrappedLines = font.split(Component.literal(text), msgMaxWidth);
             for (int li = wrappedLines.size() - 1; li >= 0 && y > chatTop; li--) {
@@ -195,7 +194,7 @@ public class NpcChatScreen extends Screen {
 
         // Typewriter effect pending reply
         if (!pendingReply.isEmpty()) {
-            String display = "\u00A7b" + npcName + "\u00A7r: " + displayReply;
+            String display = "§b" + npcName + "§r: " + displayReply;
             y -= lineHeight;
             if (y >= chatTop - 5) {
                 graphics.drawString(font, display, cx - 145, y, 0xE0E0E0);
@@ -236,13 +235,13 @@ public class NpcChatScreen extends Screen {
         if (!isRecording) {
             // Start recording
             isRecording = true;
-            micButton.setMessage(Component.literal("\u00A7c\uD83D\uDD34"));
-            voiceStatusText = "\u00A7c\u5F55\u97F3\u4E2D...";
+            micButton.setMessage(Component.literal("§c\uD83D\uDD34"));
+            voiceStatusText = "§c录音中...";
             voiceStatusTimer = 0;
 
             VoiceCaptureService.startRecording(wavData -> net.minecraft.client.Minecraft.getInstance().execute(() -> {
-                micButton.setMessage(Component.literal("\u00A7e\u23F3"));
-                voiceStatusText = "\u00A7e\u8BC6\u522B\u4E2D...";
+                micButton.setMessage(Component.literal("§e⏳"));
+                voiceStatusText = "§e识别中...";
 
                 VoskSttEngine.transcribe(wavData)
                     .thenAccept(text -> net.minecraft.client.Minecraft.getInstance().execute(() -> {
@@ -256,7 +255,7 @@ public class NpcChatScreen extends Screen {
                             }
                             voiceStatusText = "";
                         } else {
-                            voiceStatusText = "\u00A77\u672A\u68C0\u6D4B\u5230\u8BED\u97F3";
+                            voiceStatusText = "§7未检测到语音";
                             voiceStatusTimer = 40;
                         }
                         micButton.setMessage(Component.literal("\uD83C\uDFA4"));

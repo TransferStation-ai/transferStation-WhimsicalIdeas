@@ -484,17 +484,15 @@ public class AnimationProcessor {
 
         for (int i = 0; i < kfs.size() - 1; i++) {
             AnimationData.KeyFrame a = kfs.get(i);
-            AnimationData.KeyFrame b = kfs.get(i + 1);
-            if (frameFloat >= a.frame && frameFloat <= b.frame) {
-                float t = (b.frame > a.frame) ? (frameFloat - a.frame) / (b.frame - a.frame) : 0;
+            AnimationData.KeyFrame p2 = kfs.get(i + 1);
+            if (frameFloat >= a.frame && frameFloat <= p2.frame) {
+                float t = (p2.frame > a.frame) ? (frameFloat - a.frame) / (p2.frame - a.frame) : 0;
 
                 // Get up to 4 keyframes for cubic interpolation: p0, p1, p2, p3
                 AnimationData.KeyFrame p0 = (i > 0) ? kfs.get(i - 1) : a;
-                AnimationData.KeyFrame p1 = a;
-                AnimationData.KeyFrame p2 = b;
-                AnimationData.KeyFrame p3 = (i + 2 < kfs.size()) ? kfs.get(i + 2) : b;
+                AnimationData.KeyFrame p3 = (i + 2 < kfs.size()) ? kfs.get(i + 2) : p2;
 
-                return cubicInterpolate(p0, p1, p2, p3, t);
+                return cubicInterpolate(p0, a, p2, p3, t);
             }
         }
         return toDelta(last);

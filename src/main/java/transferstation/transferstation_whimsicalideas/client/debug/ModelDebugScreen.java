@@ -16,17 +16,7 @@ import org.slf4j.Logger;
 import transferstation.transferstation_whimsicalideas.client.GmodModelConfig;
 import transferstation.transferstation_whimsicalideas.client.animation.AnimationProcessor;
 import transferstation.transferstation_whimsicalideas.client.editor.ModelViewport;
-import transferstation.transferstation_whimsicalideas.client.model.JavaModelParserStrategy;
-import transferstation.transferstation_whimsicalideas.client.model.ModelDiagnostics;
-import transferstation.transferstation_whimsicalideas.client.model.ModelLoadDiagnostics;
-import transferstation.transferstation_whimsicalideas.client.model.ModelLoadManager;
-import transferstation.transferstation_whimsicalideas.client.model.ModelLoadProgress;
-import transferstation.transferstation_whimsicalideas.client.model.ModelPackage;
-import transferstation.transferstation_whimsicalideas.client.model.ModelParserProvider;
-import transferstation.transferstation_whimsicalideas.client.model.ModelParserStrategy;
-import transferstation.transferstation_whimsicalideas.client.model.NpcChatHandler;
-import transferstation.transferstation_whimsicalideas.client.model.PhysicsBridge;
-import transferstation.transferstation_whimsicalideas.client.model.SourceModelData;
+import transferstation.transferstation_whimsicalideas.client.model.*;
 
 import java.io.IOException;
 import java.lang.management.GarbageCollectorMXBean;
@@ -85,8 +75,6 @@ public class ModelDebugScreen extends Screen {
     private boolean panning = false;
     private int lastMouseX, lastMouseY;
 
-    // Search/filter
-    private EditBox searchBox;
     private String filterText = "";
 
     // Collapsible sections
@@ -140,27 +128,26 @@ public class ModelDebugScreen extends Screen {
 
         int by = height - 24;
         int btnW = 100;
-        int bx = vpX;
 
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.transferstation_whimsicalideas.debug_reload"),
                 btn -> reloadModel()
-        ).pos(bx, by).size(btnW, 18).build());
+        ).pos(vpX, by).size(btnW, 18).build());
 
         addRenderableWidget(Button.builder(
                 getStrategyToggleLabel(),
                 btn -> toggleParserStrategy()
-        ).pos(bx + btnW + 4, by).size(btnW + 20, 18).build());
+        ).pos(vpX + btnW + 4, by).size(btnW + 20, 18).build());
 
         addRenderableWidget(Button.builder(
                 Component.literal("Export"),
                 btn -> exportToJson()
-        ).pos(bx + btnW * 2 + 8, by).size(btnW - 20, 18).build());
+        ).pos(vpX + btnW * 2 + 8, by).size(btnW - 20, 18).build());
 
         addRenderableWidget(Button.builder(
                 Component.literal(comparisonMode ? "Exit Compare" : "Compare"),
                 btn -> toggleComparisonMode()
-        ).pos(bx + btnW * 3 + 12, by).size(btnW - 20, 18).build());
+        ).pos(vpX + btnW * 3 + 12, by).size(btnW - 20, 18).build());
 
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.transferstation_whimsicalideas.back"),
@@ -168,7 +155,8 @@ public class ModelDebugScreen extends Screen {
         ).pos(10, 6).size(60, 18).build());
 
         // Search box
-        searchBox = new EditBox(font, vpX, by - 22, vpW, 16,
+        // Search/filter
+        EditBox searchBox = new EditBox(font, vpX, by - 22, vpW, 16,
                 Component.literal("Filter..."));
         searchBox.setResponder(s -> {
             filterText = s.toLowerCase();
@@ -230,19 +218,17 @@ public class ModelDebugScreen extends Screen {
         } else {
             future = ModelLoadManager.loadModelAsync(packageDir);
         }
-        future.whenComplete((data, t) -> {
-            Minecraft.getInstance().execute(() -> {
-                loading = false;
-                if (data != null) {
-                    model = data;
-                    diag = buildDiagnosticsFromModel(model);
-                    onModelReady();
-                    runValidationChecks();
-                } else {
-                    loadError = t != null ? t.getMessage() : "Load failed";
-                }
-            });
-        });
+        future.whenComplete((data, t) -> Minecraft.getInstance().execute(() -> {
+            loading = false;
+            if (data != null) {
+                model = data;
+                diag = buildDiagnosticsFromModel(model);
+                onModelReady();
+                runValidationChecks();
+            } else {
+                loadError = t != null ? t.getMessage() : "Load failed";
+            }
+        }));
     }
 
     private void reloadModel() {
@@ -331,15 +317,13 @@ public class ModelDebugScreen extends Screen {
             setupComparisonViewport();
             comparisonLoading = false;
         } else {
-            ModelLoadManager.loadModelAsync(comparisonPackageDir).whenComplete((data, t) -> {
-                Minecraft.getInstance().execute(() -> {
-                    comparisonLoading = false;
-                    if (data != null) {
-                        comparisonModel = data;
-                        setupComparisonViewport();
-                    }
-                });
-            });
+            ModelLoadManager.loadModelAsync(comparisonPackageDir).whenComplete((data, t) -> Minecraft.getInstance().execute(() -> {
+                comparisonLoading = false;
+                if (data != null) {
+                    comparisonModel = data;
+                    setupComparisonViewport();
+                }
+            }));
         }
     }
 
@@ -384,7 +368,7 @@ public class ModelDebugScreen extends Screen {
         } else {
             for (int i = 0; i < model.bones.size(); i++) {
                 SourceModelData.BoneInfo bone = model.bones.get(i);
-                if (bone.parent() >= i && bone.parent() >= 0) {
+                if (bone.parent() >= i) {
                     warnings.add("BONE[" + i + "]: parent (" + bone.parent() + ") >= self - circular hierarchy");
                 }
             }
@@ -420,7 +404,7 @@ public class ModelDebugScreen extends Screen {
 
         // Check texture registration
         int registered = ModelLoadManager.getColorResolver().getStatistics().registeredTextures();
-        if (model.meshes.size() > 0 && registered == 0) {
+        if (!model.meshes.isEmpty() && registered == 0) {
             warnings.add("TEXTURES: 0 registered in color resolver");
         }
 
@@ -603,13 +587,12 @@ public class ModelDebugScreen extends Screen {
             panelX = 10;
             panelY = 30;
             panelW = width - 20;
-            panelH = height - 56;
         } else {
             panelX = viewport.getX() + viewport.getWidth() + 10;
             panelY = 30;
             panelW = width - panelX - 10;
-            panelH = height - 56;
         }
+        panelH = height - 56;
 
         List<String[]> lines = collectPanelLines();
         int visible = Math.max(1, panelH / PANEL_LINE_H);
@@ -649,11 +632,9 @@ public class ModelDebugScreen extends Screen {
 
         // Scroll indicator
         if (lines.size() > visible) {
-            int scrollY = panelY;
-            int scrollH = panelH;
-            int thumbH = Math.max(10, (int) ((float) visible / lines.size() * scrollH));
-            int thumbY = scrollY + (int) ((float) panelScroll / Math.max(1, maxScroll) * (scrollH - thumbH));
-            graphics.fill(panelX + panelW - 4, scrollY, panelX + panelW - 1, scrollY + scrollH, 0x333333);
+            int thumbH = Math.max(10, (int) ((float) visible / lines.size() * panelH));
+            int thumbY = panelY + (int) ((float) panelScroll / Math.max(1, maxScroll) * (panelH - thumbH));
+            graphics.fill(panelX + panelW - 4, panelY, panelX + panelW - 1, panelY + panelH, 0x333333);
             graphics.fill(panelX + panelW - 4, thumbY, panelX + panelW - 1, thumbY + thumbH, 0x888888);
             graphics.drawString(font, panelScroll + "/" + maxScroll,
                     panelX + panelW - 40, panelY + panelH - 10, 0x777777);
@@ -864,8 +845,7 @@ public class ModelDebugScreen extends Screen {
             for (int i = 0; i < packages.size(); i++) {
                 ModelPackage pkg = packages.get(i);
                 boolean selected = i == selectedPackageIndex;
-                boolean isCompare = comparisonMode && comparisonModelName != null
-                        && pkg.getName().equals(comparisonModelName);
+                boolean isCompare = comparisonMode && pkg.getName().equals(comparisonModelName);
                 String prefix = selected ? "> " : (isCompare ? "= " : "  ");
                 String color = selected ? "55ff55" : (isCompare ? "ffaa44" : "dddddd");
                 lines.add(row(prefix + pkg.getName(), "", color));
@@ -1033,11 +1013,10 @@ public class ModelDebugScreen extends Screen {
         int panelX, panelY;
         if (comparisonMode) {
             panelX = 10;
-            panelY = 30;
         } else {
             panelX = viewport.getX() + viewport.getWidth() + 10;
-            panelY = 30;
         }
+        panelY = 30;
         int panelW = width - panelX - 10;
         int panelH = height - 56;
 
@@ -1080,7 +1059,7 @@ public class ModelDebugScreen extends Screen {
                 if (mouseY >= lineY && mouseY < lineY + PANEL_LINE_H) {
                     String[] kv = lines.get(i);
                     if (kv[2].equals("section")) {
-                        String sectionTitle = kv[0].replaceAll("^\\[.\\] ", "");
+                        String sectionTitle = kv[0].replaceAll("^\\[.] ", "");
                         boolean current = isSectionCollapsed(sectionTitle);
                         sectionCollapsed.put(sectionTitle, !current);
                         return true;

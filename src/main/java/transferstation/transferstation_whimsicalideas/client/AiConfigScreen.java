@@ -42,7 +42,7 @@ public class AiConfigScreen extends Screen {
     private String statusMessage = "";
     private int statusTimer = 0;
     private StatusType statusType = StatusType.INFO;
-    private int scrollOffset = 0;
+    private final int scrollOffset = 0;
     private enum StatusType { INFO, SUCCESS, ERROR }
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5)).build();
@@ -65,16 +65,7 @@ public class AiConfigScreen extends Screen {
             "https://api.player2.game/v1/chat", "gmod-npc", NpcChatHandler.AiProvider.CUSTOM));
     }
 
-    private static class PresetConfig {
-        final String endpoint;
-        final String model;
-        final NpcChatHandler.AiProvider provider;
-
-        PresetConfig(String endpoint, String model, NpcChatHandler.AiProvider provider) {
-            this.endpoint = endpoint;
-            this.model = model;
-            this.provider = provider;
-        }
+    private record PresetConfig(String endpoint, String model, NpcChatHandler.AiProvider provider) {
     }
 
     protected AiConfigScreen() {
@@ -346,12 +337,12 @@ public class AiConfigScreen extends Screen {
             Component.translatable("gui.transferstation_whimsicalideas.voice_download_model"),
             btn -> {
                 btn.active = false;
-                btn.setMessage(Component.literal("\u00A7e\u4E0B\u8F7D\u4E2D..."));
+                btn.setMessage(Component.literal("§e下载中..."));
                 java.util.concurrent.CompletableFuture.runAsync(() -> {
                     boolean ok = VoiceConfig.downloadDefaultModel();
                     net.minecraft.client.Minecraft.getInstance().execute(() -> {
                         if (ok) {
-                            btn.setMessage(Component.literal("\u00A7a\u4E0B\u8F7D\u5B8C\u6210"));
+                            btn.setMessage(Component.literal("§a下载完成"));
                             statusMessage = net.minecraft.network.chat.Component.translatable(
                                 "gui.transferstation_whimsicalideas.voice_download_done").getString();
                             statusTimer = 80;
@@ -392,7 +383,7 @@ public class AiConfigScreen extends Screen {
                         statusTimer = 80;
                         statusType = StatusType.SUCCESS;
                     }));
-                    btn.setMessage(Component.literal("\u00A7c\u505C\u6B62\u6D4B\u8BD5"));
+                    btn.setMessage(Component.literal("§c停止测试"));
                     statusMessage = net.minecraft.network.chat.Component.translatable(
                         "gui.transferstation_whimsicalideas.voice_test_recording").getString();
                     statusTimer = 0;
@@ -485,10 +476,10 @@ public class AiConfigScreen extends Screen {
 
         // Section headers
         int y = 170;
-        graphics.drawString(font, "\u00A7lPresets", cx - 150, y, 0xF3EFE0);
+        graphics.drawString(font, "§lPresets", cx - 150, y, 0xF3EFE0);
         y += 20 + ((PRESETS.size() + 2) / 3) * 20;
 
-        graphics.drawString(font, "\u00A7lImport / Export", cx - 150, y, 0xF3EFE0);
+        graphics.drawString(font, "§lImport / Export", cx - 150, y, 0xF3EFE0);
 
         graphics.drawString(font,
                 Component.translatable("gui.transferstation_whimsicalideas.provider_info"), cx - 150, 180, 0x888888);

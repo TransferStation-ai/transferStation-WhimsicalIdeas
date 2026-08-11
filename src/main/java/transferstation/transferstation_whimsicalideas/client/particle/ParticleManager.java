@@ -5,14 +5,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
-import transferstation.transferstation_whimsicalideas.client.particle.renderer.BeamParticleRenderer;
-import transferstation.transferstation_whimsicalideas.client.particle.renderer.DecalParticleRenderer;
-import transferstation.transferstation_whimsicalideas.client.particle.renderer.LightParticleRenderer;
-import transferstation.transferstation_whimsicalideas.client.particle.renderer.ModelParticleRenderer;
-import transferstation.transferstation_whimsicalideas.client.particle.renderer.ParticleRenderer;
-import transferstation.transferstation_whimsicalideas.client.particle.renderer.RopeParticleRenderer;
-import transferstation.transferstation_whimsicalideas.client.particle.renderer.SpriteParticleRenderer;
-import transferstation.transferstation_whimsicalideas.client.particle.renderer.TrailParticleRenderer;
+import transferstation.transferstation_whimsicalideas.client.particle.renderer.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
