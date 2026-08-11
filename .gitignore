@@ -30,12 +30,16 @@ net/
 
 # Common working directory
 run
+run-data
 #  这东西不该被提交
 .superpowers
 # 我觉得这玩意不应该被追踪
 logs
 # 我觉得提交这个的一定是有大病
 .playwright-mcp
+.slim/deepwork/
+!.slim/deepwork/
+!.slim/deepwork/**
 # BEGIN oh-my-opencode-slim worktrees
 .slim/worktrees/
 .slim/worktrees.json
